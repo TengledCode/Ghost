@@ -1,0 +1,24 @@
+appId: com.aaron.ghost
+productName: Ghost
+directories:
+  output: dist
+  buildResources: resources
+files:
+  - out/**
+  - config/**
+  - package.json
+asarUnpack:
+  - config/**
+  - node_modules/koffi/**
+extraResources:
+  - from: config
+    to: config
+  - from: resources/tray.png
+    to: resources/tray.png
+win:
+  target: nsis
+  icon: resources/icon.png
+nsis:
+  oneClick: true
+  perMachine: false
+  runAfterFinish: true

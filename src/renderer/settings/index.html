@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' ws://127.0.0.1:* ws://localhost:*" />
+  <title>Ghost settings</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <main>
+    <header><h1>Ghost</h1><p class="sub">Your companion's settings. Changes apply immediately.</p></header>
+
+    <section>
+      <h2>Identity</h2>
+      <label>Your name <input data-key="userName" /></label>
+      <label>Companion's name <input data-key="assistantName" /></label>
+    </section>
+
+    <section>
+      <h2>Placement</h2>
+      <label>Corner
+        <select data-key="corner">
+          <option value="bottom-right">Bottom right</option><option value="bottom-left">Bottom left</option>
+          <option value="top-right">Top right</option><option value="top-left">Top left</option>
+        </select>
+      </label>
+      <p class="hint">You can also drag Ghost anywhere. Drop it near a corner to snap.</p>
+      <label>Size <input type="range" min="90" max="420" step="10" data-key="size" data-num /><output></output></label>
+      <label>Idle opacity <input type="range" min="0.2" max="1" step="0.05" data-key="idleOpacity" data-num /><output></output></label>
+      <label class="check"><input type="checkbox" data-key="clickThroughWhenIdle" /> Click-through when idle (hover briefly or hold Alt to grab it)</label>
+    </section>
+
+    <section>
+      <h2>Look</h2>
+      <label>Skin
+        <select data-key="skin"><option value="ghost-shell">Ghost shell</option><option value="classic-orb">Classic orb</option></select>
+      </label>
+      <div class="themes" id="themes"></div>
+      <div class="custom-theme" id="customTheme">
+        <label>Shell <input type="color" data-custom="shell" /></label>
+        <label>Edge <input type="color" data-custom="edge" /></label>
+        <label>Eye <input type="color" data-custom="eye" /></label>
+      </div>
+    </section>
+
+    <section>
+      <h2>Brain</h2>
+      <label>Primary
+        <select data-key="provider"><option value="claude">Claude (Pro/Max subscription)</option><option value="gemini">Gemini (Google account)</option><option value="mock">Offline mock (testing)</option></select>
+      </label>
+      <label>Fallback
+        <select data-key="fallbackProvider" data-nullable><option value="">None</option><option value="gemini">Gemini</option><option value="claude">Claude</option></select>
+      </label>
+      <label>Model
+        <select data-key="modelTier">
+          <option value="auto">Auto: Haiku for quick things, Sonnet normally, Opus when asked to think hard</option>
+          <option value="fast">Always fast (Haiku / Flash)</option><option value="balanced">Always balanced (Sonnet)</option><option value="deep">Always deep (Opus / Pro)</option>
+        </select>
+      </label>
+      <button type="button" id="newConversation">Start a new conversation</button>
+    </section>
+
+    <section>
+      <h2>Voice</h2>
+      <label class="check"><input type="checkbox" data-key="voiceEnabled" /> Speak replies</label>
+      <label>Engine
+        <select data-key="ttsEngine"><option value="elevenlabs">ElevenLabs (free tier, falls back to Edge)</option><option value="edge">Edge neural (free, unlimited)</option></select>
+      </label>
+      <label>ElevenLabs key <input type="password" id="elevenKey" placeholder="Paste your free-tier API key" /><button type="button" id="saveKey">Save</button></label>
+      <p class="hint" id="keyStatus"></p>
+      <div class="voices"><h3>ElevenLabs voices</h3><div id="elevenVoices"></div></div>
+      <div class="voices"><h3>Edge voices (fallback)</h3><div id="edgeVoices"></div></div>
+      <label>Ghost filter <input type="range" min="0" max="1" step="0.05" data-key="ghostFilter" data-num /><output></output></label>
+      <label>Volume <input type="range" min="0" max="1" step="0.05" data-key="volume" data-num /><output></output></label>
+    </section>
+
+    <section>
+      <h2>Behaviour</h2>
+      <label>Summon hotkey <input id="hotkey" readonly /></label>
+      <p class="hint">Click the box, then press the new combination.</p>
+      <label class="check"><input type="checkbox" data-key="launchAtLogin" /> Start with Windows</label>
+      <label class="check"><input type="checkbox" data-key="hideOnFullscreen" /> Hide over fullscreen games and apps (voice and reminders keep working)</label>
+    </section>
+  </main>
+  <script type="module" src="./main.ts"></script>
+</body>
+</html>

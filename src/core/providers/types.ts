@@ -1,0 +1,32 @@
+export type ProviderEvent =
+  | { type: 'session'; sessionId: string }
+  | { type: 'text_delta'; text: string }
+  | { type: 'tool_start'; name: string }
+  | { type: 'tool_end'; name: string }
+  | { type: 'done'; text: string; sessionId?: string }
+  | { type: 'error'; message: string; kind?: 'auth' | 'limit' | 'missing' | 'other' };
+
+export interface SendRequest {
+  prompt: string;
+  model: string;
+  personaFile: string; // stable system prompt, written to disk by the core
+  persona: string;
+  sessionId?: string;
+  mcpConfigPath: string;
+  workspace: string; // cwd for the CLI, so it never picks up an unrelated project's CLAUDE.md
+  signal: AbortSignal;
+}
+
+export interface Provider {
+  readonly id: 'claude' | 'gemini' | 'mock';
+  isAvailable(): Promise<boolean>;
+  send(req: SendRequest): AsyncIterable<ProviderEvent>;
+}
+
+/** Classifies CLI error text so Ghost can say something useful ("I've hit the usage limit"). */
+export function classifyError(text: string): 'auth' | 'limit' | 'missing' | 'other' {
+  if (/ENOENT|not recognized as an internal|command not found|is not recognized/i.test(text)) return 'missing';
+  if (/usage limit|rate.?limit|quota|limit reached|resets at|too many requests|429/i.test(text)) return 'limit';
+  if (/log ?in|logged out|auth|unauthori[sz]ed|401|credential|oauth/i.test(text)) return 'auth';
+  return 'other';
+}

@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' ws://127.0.0.1:* ws://localhost:*; media-src 'self' blob: data:; img-src 'self' data:" />
+  <title>Ghost</title>
+  <link rel="stylesheet" href="./style.css" />
+  <script src="../shipnotes/voice-orb.js" defer></script>
+  <script src="../shipnotes/signal-orb.js" defer></script>
+</head>
+<body>
+  <div id="stage" data-orient="bottom-right" data-state="idle">
+    <div id="stack">
+      <div id="history" class="panel interactive" hidden></div>
+      <div id="notice" hidden></div>
+      <div id="confirm" class="panel interactive" hidden>
+        <div class="confirm-title">Permission needed</div>
+        <div class="confirm-summary"></div>
+        <div class="confirm-actions">
+          <button class="deny" type="button">Deny <kbd>Esc</kbd></button>
+          <button class="allow" type="button">Allow <kbd>Enter</kbd></button>
+        </div>
+      </div>
+      <div id="bubble" class="panel interactive" hidden>
+        <div class="bubble-text"></div>
+        <div class="bubble-meta"><span class="meta-label"></span><button class="history-toggle" type="button" title="Show transcript">Transcript</button></div>
+      </div>
+      <form id="input" class="panel interactive" hidden autocomplete="off">
+        <input name="q" placeholder="Speak your mind, Aaron…" aria-label="Message Ghost" />
+        <button type="submit" class="send" title="Send">↵</button>
+        <button type="button" class="gear" title="Settings">⚙</button>
+      </form>
+    </div>
+    <div id="shell" class="interactive-shell" aria-label="Ghost">
+      <div class="eye">
+        <voice-orb state="idle" particles="5000"></voice-orb>
+        <signal-orb state="searching" particles="3500"></signal-orb>
+      </div>
+      <div class="label" aria-live="polite"></div>
+    </div>
+  </div>
+  <script type="module" src="./main.ts"></script>
+</body>
+</html>

@@ -1,0 +1,417 @@
+import { randomBytes, randomUUID } from 'node:crypto';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import type { AddressInfo } from 'node:net';
+import { WebSocketServer, WebSocket } from 'ws';
+import type { ClientMessage, ClientRole, CoreMessage, GhostState } from '../shared/protocol';
+import { parseMessage } from '../shared/protocol';
+import type { ProviderId, Settings } from '../shared/settings';
+import { classify, describe } from './approvals/classify';
+import { MemoryStore } from './memory/store';
+import { buildPersona, buildTurnPrompt } from './persona';
+import type { Provider, ProviderEvent } from './providers/types';
+import { ReminderScheduler } from './reminders/scheduler';
+import { modelFor, routeTier } from './router';
+import { SentenceSplitter } from './sentenceSplitter';
+import { TOOL_DEFS, type ToolName } from './tools/definitions';
+import { CLAUDE_BUILTIN_TOOLS } from './providers/claude';
+import { ToolExecutor, type Host } from './tools/executor';
+import type { TtsService } from './tts/service';
+
+export interface CoreOptions {
+  dataDir: string;
+  personaPath: string;
+  mcpServerPath: string; // compiled out/main/mcpServer.js
+  nodeExecPath: string; // Electron binary (run as node) or node itself
+  providers: Partial<Record<ProviderId, Provider>>;
+  tts: TtsService;
+  host: Host;
+  settings: () => Settings;
+  port?: number;
+  approvalTimeoutMs?: number;
+}
+
+interface Client { ws: WebSocket; role: ClientRole | null }
+interface Turn { id: string; abort: AbortController; spoken: number; audioSent: number; audioDone: boolean; textDone: boolean }
+
+const SESSION_IDLE_MS = 2 * 3600_000; // start a fresh conversation after 2h of quiet to keep context (and usage) small
+const TOOL_LABEL: Record<string, string> = { WebSearch: 'Searching the web', WebFetch: 'Reading a page', google_web_search: 'Searching the web', web_fetch: 'Reading a page' };
+
+export class GhostCore {
+  readonly token = randomBytes(24).toString('hex');
+  port = 0;
+  private wss: WebSocketServer | null = null;
+  private clients = new Set<Client>();
+  private state: GhostState = 'idle';
+  private turn: Turn | null = null;
+  private sessionId: string | undefined;
+  private lastActivity = 0;
+  private transcript: string[] = [];
+  private approvals = new Map<string, (ok: boolean) => void>();
+  private idleTimer: NodeJS.Timeout | null = null;
+  private speechQueue: Promise<void> = Promise.resolve();
+  readonly memory: MemoryStore;
+  readonly reminders: ReminderScheduler;
+  private executor: ToolExecutor;
+  private workspace: string;
+  private personaFile: string;
+  private mcpConfigPath: string;
+
+  constructor(private readonly o: CoreOptions) {
+    this.workspace = join(o.dataDir, 'workspace');
+    this.personaFile = join(o.dataDir, 'persona.generated.md');
+    this.mcpConfigPath = join(o.dataDir, 'ghost-mcp.json');
+    mkdirSync(this.workspace, { recursive: true });
+    this.memory = new MemoryStore(join(o.dataDir, 'memory.json'));
+    this.reminders = new ReminderScheduler(join(o.dataDir, 'reminders.json'), r => this.fireReminder(r.id, r.text));
+    this.executor = new ToolExecutor(o.host, this.memory, this.reminders);
+    o.tts.onFallback = reason => this.broadcast({ type: 'notice', level: 'info', text: `Voice switched to Edge (${reason}).` });
+  }
+
+  async start(): Promise<void> {
+    await new Promise<void>((resolve, reject) => {
+      const listen = (port: number) => {
+        const wss = new WebSocketServer({ host: '127.0.0.1', port });
+        wss.once('listening', () => { this.wss = wss; resolve(); });
+        wss.once('error', (e: NodeJS.ErrnoException) => (e.code === 'EADDRINUSE' && port !== 0 ? listen(0) : reject(e)));
+      };
+      listen(this.o.port ?? 47831);
+    });
+    this.port = (this.wss!.address() as AddressInfo).port;
+    this.wss!.on('connection', ws => this.onConnection(ws));
+    this.writeCliConfig();
+    this.reminders.start();
+  }
+
+  stop(): void {
+    this.turn?.abort.abort();
+    this.reminders.stop();
+    for (const c of this.clients) c.ws.close();
+    this.wss?.close();
+  }
+
+  get url(): string { return `ws://127.0.0.1:${this.port}`; }
+
+  /** Rewrite persona + CLI config files (called on start and when settings change). */
+  writeCliConfig(): void {
+    const s = this.o.settings();
+    writeFileSync(this.personaFile, buildPersona(this.o.personaPath, s));
+    const server = {
+      command: this.o.nodeExecPath,
+      args: [this.o.mcpServerPath],
+      env: { ELECTRON_RUN_AS_NODE: '1', GHOST_CORE_URL: this.url, GHOST_TOKEN: this.token },
+    };
+    writeFileSync(this.mcpConfigPath, JSON.stringify({ mcpServers: { ghost: server } }, null, 2));
+    // Gemini CLI reads project settings from <cwd>/.gemini/settings.json.
+    mkdirSync(join(this.workspace, '.gemini'), { recursive: true });
+    const geminiReadOnly = ['google_web_search', 'web_fetch', 'read_file', 'read_many_files', 'glob', 'search_file_content', 'list_directory'];
+    writeFileSync(join(this.workspace, '.gemini', 'settings.json'), JSON.stringify({
+      mcpServers: { ghost: { ...server, trust: true } },
+      tools: { exclude: ['run_shell_command', 'write_file', 'replace', 'save_memory'], allowed: geminiReadOnly },
+    }, null, 2));
+    // Claude Code: keep this folder free of project instructions.
+    writeFileSync(join(this.workspace, 'README.txt'), 'Ghost working folder for the Claude/Gemini CLIs. Safe to leave empty.\n');
+  }
+
+  // ---------------------------------------------------------------- connections
+
+  private onConnection(ws: WebSocket): void {
+    const client: Client = { ws, role: null };
+    this.clients.add(client);
+    const authTimer = setTimeout(() => { if (!client.role) ws.close(4001, 'auth timeout'); }, 5000);
+    ws.on('close', () => { clearTimeout(authTimer); this.clients.delete(client); });
+    ws.on('message', raw => {
+      const msg = parseMessage<ClientMessage>(raw);
+      if (!msg) return;
+      if (!client.role) {
+        if (msg.type !== 'hello' || msg.token !== this.token) { ws.close(4003, 'bad token'); return; }
+        client.role = msg.role;
+        clearTimeout(authTimer);
+        if (msg.role === 'ui') {
+          const s = this.o.settings();
+          this.send(client, { type: 'welcome', name: s.assistantName, userName: s.userName });
+          this.send(client, { type: 'state', state: this.state });
+        }
+        return;
+      }
+      void this.handle(client, msg);
+    });
+  }
+
+  private async handle(client: Client, msg: ClientMessage): Promise<void> {
+    switch (msg.type) {
+      case 'user_message': return this.userMessage(msg.text);
+      case 'typing':
+        if (msg.active && (this.state === 'idle' || this.state === 'done')) this.setState('listening');
+        else if (!msg.active && this.state === 'listening') this.setState('idle');
+        return;
+      case 'cancel': return this.cancel();
+      case 'approval_response': this.approvals.get(msg.id)?.(msg.approved); return;
+      case 'playback_finished':
+        if (this.turn?.id === msg.turnId || msg.turnId.startsWith('reminder-') || msg.turnId.startsWith('preview-')) this.finishSpeaking(msg.turnId);
+        return;
+      case 'new_conversation': return this.newConversation();
+      case 'voice_preview': return this.voicePreview(msg.engine, msg.voice, msg.text);
+      case 'tool_call':
+        if (client.role !== 'mcp') return;
+        return this.toolCall(client, msg.id, msg.tool, msg.args);
+      default: return;
+    }
+  }
+
+  private send(c: Client, m: CoreMessage): void { if (c.ws.readyState === WebSocket.OPEN) c.ws.send(JSON.stringify(m)); }
+  private broadcast(m: CoreMessage): void { for (const c of this.clients) if (c.role === 'ui') this.send(c, m); }
+
+  private setState(state: GhostState, detail?: string): void {
+    if (this.idleTimer) { clearTimeout(this.idleTimer); this.idleTimer = null; }
+    this.state = state;
+    this.broadcast({ type: 'state', state, detail });
+    if (state === 'done' || state === 'error') {
+      this.idleTimer = setTimeout(() => { this.state = 'idle'; this.broadcast({ type: 'state', state: 'idle' }); }, state === 'done' ? 900 : 2500);
+    }
+  }
+
+  // ---------------------------------------------------------------- turns
+
+  cancel(): void {
+    this.turn?.abort.abort();
+    this.turn = null;
+    this.speechQueue = Promise.resolve();
+    for (const resolve of this.approvals.values()) resolve(false);
+    this.setState('idle');
+  }
+
+  newConversation(): void {
+    this.cancel();
+    void this.archiveSession();
+    this.sessionId = undefined;
+    (this.o.providers.gemini as { resetHistory?: () => void } | undefined)?.resetHistory?.();
+    this.broadcast({ type: 'notice', level: 'info', text: 'New conversation.' });
+  }
+
+  async userMessage(text: string): Promise<void> {
+    const message = text.trim();
+    if (!message) return;
+    if (/^\/(new|reset)$/i.test(message)) return this.newConversation();
+    this.cancel();
+    const s = this.o.settings();
+    if (this.sessionId && Date.now() - this.lastActivity > SESSION_IDLE_MS) { void this.archiveSession(); this.sessionId = undefined; }
+    this.lastActivity = Date.now();
+
+    const turn: Turn = { id: randomUUID(), abort: new AbortController(), spoken: 0, audioSent: 0, audioDone: false, textDone: false };
+    this.turn = turn;
+    this.setState('thinking');
+
+    const tier = routeTier(message, s.modelTier);
+    const prompt = buildTurnPrompt(message, { now: new Date(), memories: this.memory.contextFor(message), userName: s.userName });
+    const order = [s.provider, s.fallbackProvider].filter((p, i, a): p is ProviderId => !!p && a.indexOf(p) === i);
+    const splitter = new SentenceSplitter();
+    let reply = '';
+
+    for (const [attempt, pid] of order.entries()) {
+      const provider = this.o.providers[pid];
+      if (!provider) continue;
+      const model = modelFor(pid, tier);
+      let failed: ProviderEvent & { type: 'error' } | null = null;
+      try {
+        for await (const ev of provider.send({
+          prompt, model, persona: buildPersona(this.o.personaPath, s), personaFile: this.personaFile,
+          sessionId: pid === 'claude' ? this.sessionId : undefined,
+          mcpConfigPath: this.mcpConfigPath, workspace: this.workspace, signal: turn.abort.signal,
+        })) {
+          if (this.turn !== turn) return;
+          if (ev.type === 'session' && pid === 'claude') this.sessionId = ev.sessionId;
+          else if (ev.type === 'text_delta') {
+            reply += ev.text;
+            this.broadcast({ type: 'text_delta', turnId: turn.id, text: ev.text });
+            if (this.state === 'searching') this.setState('thinking');
+            for (const sentence of splitter.push(ev.text)) this.queueSpeech(turn, sentence);
+          } else if (ev.type === 'tool_start') {
+            this.setState('searching', TOOL_LABEL[ev.name] ?? prettyTool(ev.name));
+          } else if (ev.type === 'tool_end') {
+            if (this.state === 'searching') this.setState('thinking');
+          } else if (ev.type === 'done') {
+            if (ev.sessionId && pid === 'claude') this.sessionId = ev.sessionId;
+            if (!reply && ev.text) { reply = ev.text; this.broadcast({ type: 'text_delta', turnId: turn.id, text: ev.text }); splitter.push(ev.text); }
+          } else if (ev.type === 'error') {
+            failed = ev;
+          }
+        }
+      } catch (e) {
+        failed = { type: 'error', message: String(e), kind: 'other' };
+      }
+      if (turn.abort.signal.aborted || this.turn !== turn) return;
+      if (!failed) {
+        for (const sentence of splitter.flush()) this.queueSpeech(turn, sentence);
+        this.transcript.push(`${s.userName}: ${message}`, `${s.assistantName}: ${reply}`);
+        this.broadcast({ type: 'turn_end', turnId: turn.id, text: reply, provider: pid, model: model || 'default' });
+        turn.textDone = true;
+        this.maybeFinish(turn);
+        return;
+      }
+      // Fall back to the next provider only if nothing has been said yet.
+      if (reply || attempt === order.length - 1) {
+        this.reportError(turn, pid, failed);
+        return;
+      }
+      if (pid === 'claude') this.sessionId = undefined;
+      this.broadcast({ type: 'notice', level: 'warn', text: `${pid} unavailable (${failed.kind}); trying ${order[attempt + 1]}.` });
+    }
+  }
+
+  private reportError(turn: Turn, pid: string, err: { message: string; kind?: string }): void {
+    const s = this.o.settings();
+    const line = {
+      limit: `Apologies, ${s.userName}. I've reached the usage limit on your ${pid} plan for now.`,
+      auth: `${s.userName}, I'm signed out of ${pid}. Please run "${pid}" in a terminal and log in again.`,
+      missing: `I can't find the ${pid} command-line tool on this PC, ${s.userName}. It needs installing first.`,
+      other: `Something went wrong on my side, ${s.userName}. The details are in the transcript.`,
+    }[err.kind ?? 'other'] ?? '';
+    this.broadcast({ type: 'text_delta', turnId: turn.id, text: line });
+    this.broadcast({ type: 'turn_end', turnId: turn.id, text: line, provider: pid, model: '' });
+    this.broadcast({ type: 'notice', level: 'error', text: err.message.slice(0, 400) });
+    turn.textDone = true;
+    this.setState('error');
+    this.queueSpeech(turn, line);
+  }
+
+  private queueSpeech(turn: Turn, sentence: string): void {
+    const s = this.o.settings();
+    if (!s.voiceEnabled) return;
+    const seq = turn.spoken++;
+    const synth = this.o.tts
+      .speak(sentence, { engine: s.ttsEngine, elevenLabsVoiceId: s.elevenLabsVoiceId, edgeVoice: s.edgeVoice }, turn.abort.signal)
+      .catch(e => { this.broadcast({ type: 'notice', level: 'warn', text: `Voice unavailable: ${String(e.message ?? e)}` }); return null; });
+    // Synthesis runs in parallel, but delivery keeps sentence order.
+    this.speechQueue = this.speechQueue.then(async () => {
+      const audio = await synth;
+      if (this.turn !== turn || turn.abort.signal.aborted) return;
+      if (audio) {
+        if (this.state !== 'speaking' && this.state !== 'error') this.setState('speaking');
+        turn.audioSent++;
+        this.broadcast({ type: 'audio', turnId: turn.id, seq, mime: audio.mime, data: audio.audio.toString('base64'), engine: audio.engine, last: false });
+      } else {
+        // Keep the sequence contiguous so the player doesn't wait for a sentence that will never come.
+        this.broadcast({ type: 'audio', turnId: turn.id, seq, mime: 'audio/mpeg', data: '', engine: 'none', last: false });
+      }
+      if (seq === turn.spoken - 1 && turn.textDone) this.maybeFinish(turn);
+    });
+  }
+
+  /** When all text is in and every sentence is synthesised, tell clients the last chunk has gone. */
+  private maybeFinish(turn: Turn): void {
+    void this.speechQueue.then(() => {
+      if (this.turn !== turn || turn.audioDone) return;
+      if (!turn.textDone) return;
+      turn.audioDone = true;
+      if (turn.audioSent === 0) { if (this.state !== 'error') this.setState('done'); return; }
+      this.broadcast({ type: 'audio', turnId: turn.id, seq: turn.spoken, mime: 'audio/mpeg', data: '', engine: 'none', last: true });
+    });
+  }
+
+  private finishSpeaking(turnId: string): void {
+    if (this.state === 'speaking' || this.state === 'error') this.setState(this.state === 'error' ? 'error' : 'done');
+    if (this.turn?.id === turnId) this.turn = null;
+  }
+
+  // ---------------------------------------------------------------- tools & approvals
+
+  private async toolCall(client: Client, id: string, tool: string, args: Record<string, unknown>): Promise<void> {
+    const reply = (ok: boolean, result: string) => this.send(client, { type: 'tool_result', id, ok, result });
+    if (!(tool in TOOL_DEFS)) return reply(false, `Unknown tool ${tool}`);
+    const previous = this.state;
+    if (classify(tool, args) === 'confirm') {
+      const approved = await this.requestApproval(tool, args);
+      if (!approved) { this.setState(previous === 'approval' ? 'thinking' : previous); return reply(false, `${this.o.settings().userName} declined this action. Do not retry it; ask what he would prefer instead.`); }
+    }
+    this.setState('searching', prettyTool(tool));
+    try {
+      const result = await this.executor.run(tool as ToolName, args);
+      reply(true, result);
+    } catch (e) {
+      reply(false, `Failed: ${String((e as Error).message ?? e)}`);
+    } finally {
+      if (this.state === 'searching') this.setState('thinking');
+    }
+  }
+
+  private requestApproval(tool: string, args: Record<string, unknown>): Promise<boolean> {
+    const id = randomUUID();
+    this.setState('approval', describe(tool, args));
+    this.broadcast({ type: 'approval_request', id, tool, summary: describe(tool, args), args });
+    return new Promise(resolve => {
+      const timer = setTimeout(() => done(false), this.o.approvalTimeoutMs ?? 60_000);
+      const done = (ok: boolean) => {
+        clearTimeout(timer);
+        if (!this.approvals.delete(id)) return;
+        this.broadcast({ type: 'approval_resolved', id, approved: ok });
+        resolve(ok);
+      };
+      this.approvals.set(id, done);
+    });
+  }
+
+  // ---------------------------------------------------------------- reminders, previews, memory
+
+  private fireReminder(id: string, text: string): void {
+    const s = this.o.settings();
+    const line = `${s.userName}, a reminder: ${text}`;
+    this.broadcast({ type: 'reminder', id, text: line });
+    void this.speakStandalone(`reminder-${id}`, line);
+  }
+
+  private async voicePreview(engine: 'elevenlabs' | 'edge' | 'none', voice: string, text?: string): Promise<void> {
+    const s = this.o.settings();
+    this.o.tts.resetBackoff();
+    const line = text ?? `Good evening, ${s.userName}. Your jacket is pressed, your calendar is clear, and I am at your service.`;
+    await this.speakStandalone(`preview-${randomUUID()}`, line, {
+      engine: engine === 'none' ? 'edge' : engine,
+      elevenLabsVoiceId: engine === 'elevenlabs' ? voice : s.elevenLabsVoiceId,
+      edgeVoice: engine === 'edge' ? voice : s.edgeVoice,
+    });
+  }
+
+  private async speakStandalone(turnId: string, text: string, choice?: Parameters<TtsService['speak']>[1]): Promise<void> {
+    const s = this.o.settings();
+    if (!s.voiceEnabled && !turnId.startsWith('preview-')) return;
+    try {
+      const audio = await this.o.tts.speak(text, choice ?? { engine: s.ttsEngine, elevenLabsVoiceId: s.elevenLabsVoiceId, edgeVoice: s.edgeVoice });
+      this.setState('speaking');
+      this.broadcast({ type: 'audio', turnId, seq: 0, mime: audio.mime, data: audio.audio.toString('base64'), engine: audio.engine, last: false });
+      this.broadcast({ type: 'audio', turnId, seq: 1, mime: audio.mime, data: '', engine: 'none', last: true });
+    } catch (e) {
+      this.broadcast({ type: 'notice', level: 'warn', text: `Voice unavailable: ${String((e as Error).message ?? e)}` });
+    }
+  }
+
+  /** On rotation, condense the finished conversation into a one-paragraph episode using the cheapest tier. */
+  private async archiveSession(): Promise<void> {
+    const lines = this.transcript;
+    this.transcript = [];
+    if (lines.length < 6) return;
+    const s = this.o.settings();
+    const provider = this.o.providers[s.provider];
+    if (!provider || s.provider === 'mock') return;
+    let summary = '';
+    try {
+      for await (const ev of provider.send({
+        prompt: `Summarise this conversation in 2-3 sentences for your long-term memory. Note decisions, plans and facts about ${s.userName}. Reply with the summary only.\n\n${lines.join('\n').slice(-12_000)}`,
+        model: modelFor(s.provider, 'fast'), persona: '', personaFile: this.personaFile, mcpConfigPath: this.mcpConfigPath,
+        workspace: this.workspace, signal: new AbortController().signal,
+      })) if (ev.type === 'done') summary = ev.text;
+    } catch { /* memory is best effort */ }
+    if (summary.trim()) this.memory.addEpisode(summary);
+  }
+}
+
+function prettyTool(name: string): string {
+  const bare = name.replace(/^mcp__ghost__/, '');
+  const map: Record<string, string> = {
+    open_app: 'Opening an app', open_path_or_url: 'Opening', list_windows: 'Checking windows', focus_window: 'Switching windows',
+    close_app: 'Closing an app', run_command: 'Running a command', write_file: 'Writing a file', delete_path: 'Deleting',
+    set_reminder: 'Setting a reminder', list_reminders: 'Checking reminders', cancel_reminder: 'Cancelling a reminder',
+    remember: 'Committing to memory', recall: 'Recalling', forget: 'Forgetting', get_datetime: 'Checking the time',
+    Read: 'Reading a file', Glob: 'Looking for files', Grep: 'Searching files',
+  };
+  return map[bare] ?? (CLAUDE_BUILTIN_TOOLS.includes(bare) ? bare : 'Working');
+}
