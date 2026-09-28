@@ -161,33 +161,31 @@ export class QualityGovernor {
   }
 }
 
-// ---------------------------------------------------------------- speech inflection
+// ---------------------------------------------------------------- speech emphasis
 
 /**
- * Detects inflection in speech: a syllable onset (energy jumps) or a pitch/brightness swing (the
- * high/mid balance moves). Each detection returns a pulse strength 0–1, which the shell turns into a
- * wave of shard kicks around the ring.
+ * Detects emphasis in speech: moments where the voice rises clearly above its own recent level
+ * (a stressed word, a lift in pitch/brightness), rather than every syllable. Returns a pulse
+ * strength 0–1 when one begins, and 0 otherwise. All shards pulse together on it.
  */
-export class InflectionDetector {
-  private energy = 0;
-  private bright = 0;
+export class EmphasisDetector {
+  private fast = 0;
+  private slow = 0;
+  private armed = true;
   private cooldown = 0;
 
   update(bands: [number, number, number], dt: number): number {
     const [low, mid, high] = bands;
-    const energy = low * 0.5 + mid + high * 0.5;
-    const bright = high / (mid + 0.05);
-    const rise = (energy - this.energy) / Math.max(dt, 1 / 240);
-    const swing = Math.abs(bright - this.bright) / Math.max(dt, 1 / 240);
-    // Slow followers: a jump is measured against the recent level, not the previous frame alone.
-    this.energy += (energy - this.energy) * (1 - Math.exp(-dt / 0.08));
-    this.bright += (bright - this.bright) * (1 - Math.exp(-dt / 0.12));
+    const energy = low * 0.4 + mid + high * 0.8; // brighter, higher speech counts as stronger
+    this.fast += (energy - this.fast) * (1 - Math.exp(-dt / 0.03));
+    this.slow += (energy - this.slow) * (1 - Math.exp(-dt / 0.7));
     this.cooldown = Math.max(0, this.cooldown - dt);
-    if (this.cooldown > 0 || energy < 0.12) return 0;
-    const score = Math.max(rise / 6, swing / 9);
-    if (score < 1) return 0;
-    this.cooldown = 0.11; // at most ~9 pulses a second, about the syllable rate
-    return Math.min(1, 0.35 + (score - 1) * 0.3 + energy * 0.4);
+    const threshold = this.slow * 1.28 + 0.06;
+    if (this.fast < this.slow * 1.08 + 0.02) this.armed = true; // re-arm once it falls back
+    if (!this.armed || this.cooldown > 0 || this.fast < threshold || energy < 0.2) return 0;
+    this.armed = false;
+    this.cooldown = 0.2;
+    return Math.min(1, 0.45 + (this.fast / Math.max(0.05, threshold) - 1) * 1.5);
   }
 }
 

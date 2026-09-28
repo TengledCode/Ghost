@@ -5,7 +5,7 @@ import { Hologram } from './hologram';
 import { createMaterials, studioEnvironment, type GhostMaterials } from './materials';
 import { buildModel, CORE_RADIUS, SHARD_REST, type GhostModel } from './model';
 import {
-  Curiosity, DOZE_AFTER, flourishFor, InflectionDetector, MicroLife, POSES, QUALITY, QualityGovernor, Spring,
+  Curiosity, DOZE_AFTER, EmphasisDetector, flourishFor, MicroLife, POSES, QUALITY, QualityGovernor, Spring,
   type Mood, type Pose, type QualityLevel,
 } from './motion';
 import { ParticleCore } from './particleCore';
@@ -40,7 +40,7 @@ export class GhostShell {
   private governor: QualityGovernor;
   private curiosity = new Curiosity();
   private micro = new MicroLife();
-  private inflection = new InflectionDetector();
+  private emphasis = new EmphasisDetector();
 
   private state: GhostState = 'idle';
   private pose: Pose = POSES.idle;
@@ -77,7 +77,6 @@ export class GhostShell {
   private shake = 0;
   private frontAngle = 0;
   private rearAngle = 0;
-  private pulses: { at: number; shard: number; amount: number }[] = [];
 
   // Gaze inputs
   private cursorPx: { dx: number; dy: number } | null = null;
@@ -109,13 +108,13 @@ export class GhostShell {
     host.appendChild(this.canvas);
 
     this.scene.environment = studioEnvironment(this.renderer);
-    const key = new THREE.DirectionalLight('#ffffff', 2.6);
+    const key = new THREE.DirectionalLight('#ffffff', 2.1);
     key.position.set(-2.5, 3.2, 3.5);
-    const rim = new THREE.DirectionalLight('#8fb4ff', 2.4);
-    rim.position.set(3, 1.5, -3);
+    const rim = new THREE.DirectionalLight('#8fb4ff', 0.9);
+    rim.position.set(2, 1.2, -6); // mostly behind: grazes the silhouette instead of glinting off facets
     const fill = new THREE.DirectionalLight('#ffd9b0', 0.3);
     fill.position.set(0, -3, 2);
-    this.scene.add(key, rim, fill, new THREE.AmbientLight('#ffffff', 0.05));
+    this.scene.add(key, rim, fill, new THREE.AmbientLight('#ffffff', 0.18));
 
     this.mats = createMaterials();
     this.model = buildModel(this.mats);
@@ -128,7 +127,7 @@ export class GhostShell {
       const poolMat = this.mats.pool.clone();
       s.pool.material = poolMat;
       return {
-        lift: new Spring(0.1, 0.1, 34 + (s.ring === 'front' ? 0 : 10) + i * 3, 0.55),
+        lift: new Spring(0.1, 0.1, 40, 0.55), // identical springs so field pulses move the shards together
         twist: new Spring(0, 0, 60, 0.5),
         lagX: new Spring(0, 0, 50 + i * 4, 0.45),
         lagY: new Spring(0, 0, 50 + i * 4, 0.45),
@@ -337,21 +336,14 @@ export class GhostShell {
     const b = this.blinkQueue.find(start => t >= start);
     this.blink = b !== undefined ? Math.sin(((t - b) / 0.16) * Math.PI) : 0;
 
-    // ---- speech inflection → a wave of shard pulses around the ring
+    // ---- speech emphasis → every shard pulses together, as one magnetic field
     if (speaking) {
-      const pulse = this.inflection.update([low, mid, high], dt);
+      const pulse = this.emphasis.update([low, mid, high], dt);
       if (pulse > 0) {
-        const n = this.shards.length;
-        const start = Math.floor((t * 7) % n);
-        this.shards.forEach((_, i) => this.pulses.push({ at: t + ((i - start + n) % n) * 0.03, shard: i, amount: pulse }));
+        for (const sh of this.shards) sh.lift.kick(pulse * 4.2);
         this.iris.kick(pulse * 3);
       }
     }
-    this.pulses = this.pulses.filter(pl => {
-      if (t < pl.at) return true;
-      this.shards[pl.shard].lift.kick(pl.amount * 4.5);
-      return false;
-    });
 
     // ---- springs towards the pose
     const dozeDim = this.dozing ? 0.35 : 1;
@@ -378,7 +370,7 @@ export class GhostShell {
     u.colorB.value.copy(this.glowColor).lerp(new THREE.Color('#ffffff'), 0.35);
     u.intensity.value = (0.7 + intensity * 0.3) * (1 - this.blink * 0.7);
     m.eyeLight.color.copy(this.glowColor);
-    m.eyeLight.intensity = 0.6 + intensity * 1.0;
+    m.eyeLight.intensity = 0.12 + intensity * 0.16; // a gentle tint on nearby metal, never a hotspot
     this.fx.setStrength(0.3 + intensity * 0.18);
 
     // ---- body

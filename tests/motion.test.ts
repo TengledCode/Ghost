@@ -83,24 +83,31 @@ describe('QualityGovernor', () => {
   });
 });
 
-import { InflectionDetector, MicroLife, moodFromMessage } from '../src/renderer/overlay/shell/motion';
+import { EmphasisDetector, MicroLife, moodFromMessage } from '../src/renderer/overlay/shell/motion';
 
-describe('InflectionDetector', () => {
+describe('EmphasisDetector', () => {
   const dt = 1 / 60;
-  it('fires on syllable onsets and pitch swings, not on steady tone or silence', () => {
-    const d = new InflectionDetector();
-    for (let i = 0; i < 30; i++) d.update([0.5, 0.5, 0.2], dt); // the tone's own onset may pulse
+  it('ignores steady speech and silence, fires on stressed words', () => {
+    const d = new EmphasisDetector();
+    for (let i = 0; i < 60; i++) d.update([0.5, 0.5, 0.2], dt);
     let pulses = 0;
-    for (let i = 0; i < 120; i++) pulses += d.update([0.5, 0.5, 0.2], dt) > 0 ? 1 : 0; // then steady: nothing
+    for (let i = 0; i < 120; i++) pulses += d.update([0.5, 0.5, 0.2], dt) > 0 ? 1 : 0;
     expect(pulses).toBe(0);
-    pulses = 0;
-    for (let i = 0; i < 120; i++) pulses += d.update([0, 0, 0], dt) > 0 ? 1 : 0; // silence
+    for (let i = 0; i < 120; i++) pulses += d.update([0, 0, 0], dt) > 0 ? 1 : 0;
     expect(pulses).toBe(0);
-    // Syllables at ~5 Hz: energy bursts every 12 frames.
-    pulses = 0;
-    for (let i = 0; i < 120; i++) { const on = i % 12 < 5; pulses += d.update(on ? [0.6, 0.8, 0.3] : [0.2, 0.15, 0.05], dt) > 0 ? 1 : 0; }
-    expect(pulses).toBeGreaterThanOrEqual(7);
-    expect(pulses).toBeLessThanOrEqual(11);
+  });
+  it('does not fire on every even syllable, only on the emphasised ones', () => {
+    const d = new EmphasisDetector();
+    let even = 0, stressed = 0;
+    // 4 s of even syllables at ~5 Hz, then 4 s where every 4th syllable is stressed.
+    for (let i = 0; i < 240; i++) { const on = i % 12 < 5; even += d.update(on ? [0.45, 0.5, 0.2] : [0.35, 0.38, 0.15], dt) > 0 ? 1 : 0; }
+    for (let i = 0; i < 240; i++) {
+      const syl = Math.floor(i / 12), on = i % 12 < 5, stress = syl % 4 === 0;
+      stressed += d.update(on ? (stress ? [0.7, 0.9, 0.5] : [0.45, 0.5, 0.2]) : [0.35, 0.38, 0.15], dt) > 0 ? 1 : 0;
+    }
+    expect(even).toBeLessThanOrEqual(2);
+    expect(stressed).toBeGreaterThanOrEqual(4);
+    expect(stressed).toBeLessThanOrEqual(6);
   });
 });
 

@@ -1,10 +1,36 @@
 import * as THREE from 'three';
-import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-
-/** Studio reflections for the metal. Without an environment, metal renders flat and dark. */
+/**
+ * A soft studio for metal reflections: a gradient dome (dark floor, cool-grey sky) with three large,
+ * dim softboxes. Stock room environments carry near-blinding light panels that flat-shaded facets
+ * mirror as white patches, so this one keeps every source gentle.
+ */
 export function studioEnvironment(renderer: THREE.WebGLRenderer): THREE.Texture {
+  const studio = new THREE.Scene();
+  const dome = new THREE.Mesh(
+    new THREE.SphereGeometry(10, 32, 16),
+    new THREE.ShaderMaterial({
+      side: THREE.BackSide,
+      vertexShader: 'varying vec3 p; void main(){ p = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+      fragmentShader: `varying vec3 p; void main(){
+        float h = normalize(p).y;
+        vec3 floorC = vec3(0.07, 0.075, 0.09), horizon = vec3(0.34, 0.36, 0.4), sky = vec3(0.58, 0.61, 0.66);
+        vec3 c = h < 0.0 ? mix(horizon, floorC, -h) : mix(horizon, sky, h);
+        gl_FragColor = vec4(c, 1.0);
+      }`,
+    }),
+  );
+  studio.add(dome);
+  const softbox = (w: number, h: number, pos: [number, number, number], level: number) => {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: new THREE.Color(level, level, level * 1.04), side: THREE.DoubleSide }));
+    m.position.set(...pos);
+    m.lookAt(0, 0, 0);
+    studio.add(m);
+  };
+  softbox(6, 4, [-5, 5, 4], 1.7); // key, upper left front
+  softbox(4, 6, [6, 1, -3], 0.8); // side
+  softbox(8, 2, [0, -2, 7], 0.55); // low front fill
   const pmrem = new THREE.PMREMGenerator(renderer);
-  const env = pmrem.fromScene(new RoomEnvironment(), 0.03).texture;
+  const env = pmrem.fromScene(studio, 0.04).texture;
   pmrem.dispose();
   return env;
 }
@@ -88,13 +114,13 @@ export function createMaterials(): GhostMaterials {
   brushed.repeat.set(2, 2);
   const panels = panelTexture();
   const armour = new THREE.MeshStandardMaterial({
-    color: '#7a818c', metalness: 0.86, roughness: 0.34, roughnessMap: brushed, flatShading: true, envMapIntensity: 0.68,
+    color: '#959ca7', metalness: 0.8, roughness: 0.42, roughnessMap: brushed, flatShading: true, envMapIntensity: 1.45,
   });
   const armourDark = armour.clone();
   armourDark.color.set('#6a717c');
   // Engraved, not lit: panel lines are cut into the metal and catch light, with no glow of their own.
   const core = new THREE.MeshStandardMaterial({
-    color: '#2b3038', metalness: 0.85, roughness: 0.42, bumpMap: panels, bumpScale: -1.4, envMapIntensity: 0.5, roughnessMap: brushed,
+    color: '#3a4049', metalness: 0.85, roughness: 0.42, bumpMap: panels, bumpScale: -1.4, envMapIntensity: 1.0, roughnessMap: brushed,
   });
   const cavity = new THREE.MeshStandardMaterial({ color: '#07090c', metalness: 0.3, roughness: 0.9, side: THREE.BackSide });
   // No colour of its own: the glow it shows is reflected light from the pool beneath (set per shard).
@@ -113,7 +139,7 @@ export function createMaterials(): GhostMaterials {
     setGlow(color, intensity) {
       pool.color.copy(color);
       pool.opacity = Math.min(0.7, 0.06 + intensity * 0.1);
-      iris.color.copy(color).multiplyScalar(0.7 + intensity * 0.6);
+      iris.color.copy(color).multiplyScalar(1.3 + intensity * 0.9);
     },
     setMetal(hex) {
       armour.color.set(hex);

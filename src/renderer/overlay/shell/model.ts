@@ -96,7 +96,7 @@ export function buildModel(m: GhostMaterials): GhostModel {
   eye.add(lip, iris, particleAnchor, dome);
   root.add(eye);
 
-  const eyeLight = new THREE.PointLight('#7fd4ff', 2.5, 3, 1.6);
+  const eyeLight = new THREE.PointLight('#7fd4ff', 0.3, 2.2, 1);
   eyeLight.position.set(0, 0, lipZ + 0.25);
   root.add(eyeLight);
 

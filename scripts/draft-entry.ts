@@ -9,6 +9,7 @@ const stage = $('#stage');
 const host = $('#ghost');
 let themeName = 'classic';
 const shell = new GhostShell(host, THEMES[themeName]);
+(window as unknown as { ghostShell: GhostShell }).ghostShell = shell; // handy for inspecting from devtools
 
 // ---- states
 const DESCRIPTIONS: Record<GhostState, string> = {
@@ -16,7 +17,7 @@ const DESCRIPTIONS: Record<GhostState, string> = {
   listening: 'You are typing. Turns to the input bar, plates ease open, iris widens.',
   thinking: 'Plates unlock with a twist and the two sets counter-rotate. Amber core.',
   searching: 'Fully unfolded, rear set orbits, body sweeps; the core becomes scan rings.',
-  speaking: 'Shards pulse in a wave on each word and inflection. Press Play voice sample.',
+  speaking: 'All shards pulse together on emphasised words. Press Play voice sample.',
   done: 'Snaps shut with a flash and a small nod.',
   approval: 'Half open, seams go amber, looks up at the confirm card.',
   error: 'Red flicker and a quick shake.',
@@ -114,10 +115,11 @@ function playVoice(): void {
   u.pitch = 1.08;
   u.onstart = () => { speakingNow = true; setState('speaking'); };
   u.onboundary = e => {
-    // Each word: a burst of energy; punctuation before it: a pitch swing (an inflection).
-    const before = LINE.slice(Math.max(0, e.charIndex - 2), e.charIndex);
-    env = 1;
-    swing = /[,.?!]/.test(before) ? 1 : 0.35;
+    // Stressed-sounding words (long ones, or the first word after punctuation) are the emphasis.
+    const word = LINE.slice(e.charIndex).match(/^[\w']+/)?.[0] ?? '';
+    const afterPause = /[,.?!]\s*$/.test(LINE.slice(Math.max(0, e.charIndex - 3), e.charIndex));
+    env = word.length >= 6 || afterPause ? 1 : 0.45;
+    swing = afterPause ? 1 : 0;
     lastBoundary = performance.now();
   };
   u.onend = u.onerror = () => { speakingNow = false; env = 0; shell.setBands([0, 0, 0]); if (state === 'speaking') setState('done'); };
@@ -133,12 +135,13 @@ let lastT = performance.now();
   lastT = now;
   if (!speakingNow) return;
   // No boundary events for a while (some voices don't send them): keep a steady syllable rhythm.
-  if (now - lastBoundary > 450) { env = Math.max(env, 0.6); swing = Math.max(swing, 0.2 * Math.random()); }
+  // Without word events (some voices), fall back to a gentle steady level: no false emphasis.
+  if (now - lastBoundary > 450) env = Math.max(env, 0.4);
   syllable += dt * 5.5 * Math.PI * 2;
   env *= Math.exp(-dt / 0.35);
   swing *= Math.exp(-dt / 0.12);
   const s = Math.abs(Math.sin(syllable));
-  shell.setBands([0.35 + 0.4 * env * s, 0.3 + 0.55 * env * s + 0.2 * swing, 0.15 + 0.35 * swing + 0.15 * env * s]);
+  shell.setBands([0.3 + 0.35 * env * (0.85 + 0.15 * s), 0.25 + 0.5 * env * (0.85 + 0.15 * s) + 0.15 * swing, 0.12 + 0.3 * swing + 0.12 * env]);
 })();
 
 // ---- reactions
