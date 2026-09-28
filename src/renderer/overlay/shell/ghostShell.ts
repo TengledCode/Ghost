@@ -5,7 +5,7 @@ import { Hologram } from './hologram';
 import { createMaterials, studioEnvironment, type GhostMaterials } from './materials';
 import { buildModel, CORE_RADIUS, SHARD_REST, type GhostModel } from './model';
 import {
-  Curiosity, DOZE_AFTER, EmphasisDetector, flourishFor, MicroLife, POSES, QUALITY, QualityGovernor, Spring,
+  Articulator, Curiosity, DOZE_AFTER, EmphasisDetector, flourishFor, MicroLife, POSES, QUALITY, QualityGovernor, Spring,
   type Mood, type Pose, type QualityLevel,
 } from './motion';
 import { ParticleCore } from './particleCore';
@@ -41,6 +41,7 @@ export class GhostShell {
   private curiosity = new Curiosity();
   private micro = new MicroLife();
   private emphasis = new EmphasisDetector();
+  private mouth = new Articulator();
 
   private state: GhostState = 'idle';
   private pose: Pose = POSES.idle;
@@ -336,13 +337,12 @@ export class GhostShell {
     const b = this.blinkQueue.find(start => t >= start);
     this.blink = b !== undefined ? Math.sin(((t - b) / 0.16) * Math.PI) : 0;
 
-    // ---- speech emphasis → every shard pulses together, as one magnetic field
+    // ---- speech: the shards open and close with the voice like a mouth, all together, every frame.
+    // Emphasis adds only a light accent on top.
+    const open = this.mouth.update([low, mid, high], dt, speaking === 1);
     if (speaking) {
-      const pulse = this.emphasis.update([low, mid, high], dt);
-      if (pulse > 0) {
-        for (const sh of this.shards) sh.lift.kick(pulse * 4.2);
-        this.iris.kick(pulse * 3);
-      }
+      const accent = this.emphasis.update([low, mid, high], dt);
+      if (accent > 0) for (const sh of this.shards) sh.lift.kick(accent * 1.2);
     }
 
     // ---- springs towards the pose
@@ -351,8 +351,8 @@ export class GhostShell {
     this.frontSpeed.target = this.dozing ? 0.05 : p.frontSpin;
     this.rearSpeed.target = this.dozing ? -0.03 : p.rearSpin;
     this.bob.target = this.dozing ? 1.6 : p.bob;
-    this.iris.target = (this.dozing ? 0.55 : p.iris) + speaking * low * 0.2 + this.near.value * 0.2 + (mood === 'curious' ? 0.15 : 0);
-    this.glow.target = (p.glow + speaking * (low * 0.5 + mid * 0.25) + this.near.value * 0.2 - (mood === 'sad' ? 0.35 : 0)) * dozeDim;
+    this.iris.target = (this.dozing ? 0.55 : p.iris) + open * 0.22 + this.near.value * 0.2 + (mood === 'curious' ? 0.15 : 0);
+    this.glow.target = (p.glow + open * 0.45 + this.near.value * 0.2 - (mood === 'sad' ? 0.35 : 0)) * dozeDim;
     p.eye.forEach((w, i) => { this.eyeW[i].target = w; });
     this.scan.target = p.scan;
     for (const s of [this.yaw, this.pitch, this.roll, this.eyeYaw, this.eyePitch, this.recoil, this.approach, this.hop, this.twist, this.frontSpeed,
@@ -393,12 +393,12 @@ export class GhostShell {
     m.segments.forEach((seg, i) => {
       const a = this.shards[i];
       const float = (0.035 * Math.sin(t * 0.9 + seg.phase) + 0.018 * Math.sin(t * 2.3 + seg.phase * 2)) * motion * (this.dozing ? 2 : 1);
-      a.lift.target = p.split + (this.dozing ? 0.25 : 0) + speaking * low * 0.08 + this.near.value * 0.06 - sag;
+      a.lift.target = p.split + (this.dozing ? 0.25 : 0) + this.near.value * 0.06 - sag;
       // Secondary motion: when the body turns, the shards trail behind and overshoot.
       a.lagX.target = -this.pitch.velocity * 0.05;
       a.lagY.target = -this.yaw.velocity * 0.05;
       for (const s of [a.lift, a.twist, a.lagX, a.lagY]) s.step(dt);
-      const lift = Math.max(-0.04, a.lift.value) + float;
+      const lift = Math.max(-0.04, a.lift.value) + float + open * 0.24; // the mouth offset is applied directly, so it never lags
       seg.body.position.z = SHARD_REST + lift * (seg.ring === 'front' ? 0.55 : 0.75);
       seg.body.rotation.set(
         lift * 0.3 * (seg.ring === 'front' ? 1 : -1) + a.lagX.value + Math.sin(t * 1.1 + seg.phase) * 0.03 * motion,

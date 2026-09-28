@@ -189,6 +189,24 @@ export class EmphasisDetector {
   }
 }
 
+/**
+ * Continuous "mouth" movement from the voice: like jaw and lip muscles, it opens fast on each
+ * syllable and closes a little slower, every frame. Vowels (the mid band) open it most, bass adds
+ * weight, and consonants (the high band) add small quick flicks. Returns 0 (closed) to 1 (wide).
+ */
+export class Articulator {
+  value = 0;
+
+  update(bands: [number, number, number], dt: number, speaking: boolean): number {
+    const [low, mid, high] = bands;
+    const raw = speaking ? (mid * 0.9 + low * 0.35 + high * 0.3 - 0.16) * 1.7 : 0;
+    const target = Math.min(1, Math.max(0, raw));
+    const tau = target > this.value ? 0.028 : 0.09; // open fast, close a bit slower
+    this.value += (target - this.value) * (1 - Math.exp(-dt / tau));
+    return this.value;
+  }
+}
+
 // ---------------------------------------------------------------- eye micro-life
 
 export type MicroAct =

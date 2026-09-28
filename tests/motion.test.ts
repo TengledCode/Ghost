@@ -83,7 +83,7 @@ describe('QualityGovernor', () => {
   });
 });
 
-import { EmphasisDetector, MicroLife, moodFromMessage } from '../src/renderer/overlay/shell/motion';
+import { Articulator, EmphasisDetector, MicroLife, moodFromMessage } from '../src/renderer/overlay/shell/motion';
 
 describe('EmphasisDetector', () => {
   const dt = 1 / 60;
@@ -129,5 +129,27 @@ describe('moodFromMessage', () => {
     expect(moodFromMessage('Cheers, that was great')).toBe('happy');
     expect(moodFromMessage('what time is it in Tokyo?')).toBe('curious');
     expect(moodFromMessage('open spotify')).toBeNull();
+  });
+});
+
+describe('Articulator', () => {
+  const dt = 1 / 60;
+  it('tracks the voice continuously: opens within ~60 ms, closes within ~200 ms', () => {
+    const a = new Articulator();
+    for (let i = 0; i < 4; i++) a.update([0.6, 0.85, 0.3], dt, true);
+    expect(a.value).toBeGreaterThan(0.75);
+    for (let i = 0; i < 12; i++) a.update([0.15, 0.12, 0.05], dt, true);
+    expect(a.value).toBeLessThan(0.15);
+  });
+  it('follows level: louder vowels open wider than quiet ones', () => {
+    const loud = new Articulator(), quiet = new Articulator();
+    for (let i = 0; i < 20; i++) { loud.update([0.6, 0.85, 0.3], dt, true); quiet.update([0.3, 0.4, 0.1], dt, true); }
+    expect(loud.value).toBeGreaterThan(quiet.value + 0.3);
+    expect(quiet.value).toBeGreaterThan(0.1);
+  });
+  it('stays shut when not speaking', () => {
+    const a = new Articulator();
+    for (let i = 0; i < 20; i++) a.update([0.9, 0.9, 0.9], dt, false);
+    expect(a.value).toBe(0);
   });
 });

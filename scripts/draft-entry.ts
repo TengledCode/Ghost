@@ -17,7 +17,7 @@ const DESCRIPTIONS: Record<GhostState, string> = {
   listening: 'You are typing. Turns to the input bar, plates ease open, iris widens.',
   thinking: 'Plates unlock with a twist and the two sets counter-rotate. Amber core.',
   searching: 'Fully unfolded, rear set orbits, body sweeps; the core becomes scan rings.',
-  speaking: 'All shards pulse together on emphasised words. Press Play voice sample.',
+  speaking: 'Shards open and close together with the voice, like a mouth, wider on stressed syllables. Press Play voice sample.',
   done: 'Snaps shut with a flash and a small nod.',
   approval: 'Half open, seams go amber, looks up at the confirm card.',
   error: 'Red flicker and a quick shake.',
@@ -98,7 +98,36 @@ $('#resetView').onclick = () => { orbitYaw = orbitPitch = 0; shell.setViewOrbit(
 // the real ElevenLabs/Edge audio drives them through the analyser instead.
 const LINE = 'Good evening, Aaron. Your jacket is pressed, your calendar is clear, and I am at your service. Shall I open Spotify, or would you prefer some quiet?';
 let speakingNow = false;
-let env = 0, syllable = 0, swing = 0, lastBoundary = 0;
+let lastBoundary = 0;
+// The current word as a little syllable timeline: [start s, peak level, is-consonant-heavy][]
+let word = null as { t0: number; syl: [number, number, boolean][]; dur: number } | null;
+let fallbackT = 0;
+
+/** Split a word into syllables (vowel groups) with rough timing and stress, for a mouth-like envelope. */
+function planWord(text: string, afterPause: boolean): { syl: [number, number, boolean][]; dur: number } {
+  const groups = text.toLowerCase().match(/[^aeiouy]*[aeiouy]+(?:[^aeiouy]*$)?/g) ?? [text];
+  const per = 0.15; // seconds per syllable at this speaking rate
+  const syl = groups.map((g, i): [number, number, boolean] => {
+    const stressed = i === 0 && (groups.length > 1 || text.length >= 5 || afterPause);
+    const consonants = (g.match(/[^aeiouy]/g) ?? []).length;
+    return [i * per, stressed ? 1 : 0.62 + Math.random() * 0.12, consonants >= 2];
+  });
+  return { syl, dur: groups.length * per };
+}
+
+/** Envelope at time t into the word: each syllable swells open and closes again. */
+function wordLevel(t: number): { level: number; bite: number } {
+  if (!word) return { level: 0, bite: 0 };
+  let level = 0, bite = 0;
+  for (const [start, peak, heavy] of word.syl) {
+    const x = (t - start) / 0.15;
+    if (x < 0 || x > 1) continue;
+    level = Math.max(level, peak * Math.sin(Math.PI * Math.min(1, x * 1.15)) ** 0.8);
+    if (heavy && x < 0.25) bite = Math.max(bite, 1 - x / 0.25); // a consonant's quick flick at the onset
+  }
+  return { level, bite };
+}
+
 function pickVoice(): SpeechSynthesisVoice | undefined {
   const voices = speechSynthesis.getVoices();
   const prefs = [/Andrew/i, /Ryan/i, /Guy/i, /Brian/i, /Google UK English Male/i, /Daniel/i, /en-GB/i, /en-US/i, /^en/i];
@@ -115,14 +144,12 @@ function playVoice(): void {
   u.pitch = 1.08;
   u.onstart = () => { speakingNow = true; setState('speaking'); };
   u.onboundary = e => {
-    // Stressed-sounding words (long ones, or the first word after punctuation) are the emphasis.
-    const word = LINE.slice(e.charIndex).match(/^[\w']+/)?.[0] ?? '';
+    const text = LINE.slice(e.charIndex).match(/^[\w']+/)?.[0] ?? '';
     const afterPause = /[,.?!]\s*$/.test(LINE.slice(Math.max(0, e.charIndex - 3), e.charIndex));
-    env = word.length >= 6 || afterPause ? 1 : 0.45;
-    swing = afterPause ? 1 : 0;
+    word = { t0: performance.now() / 1000, ...planWord(text, afterPause) };
     lastBoundary = performance.now();
   };
-  u.onend = u.onerror = () => { speakingNow = false; env = 0; shell.setBands([0, 0, 0]); if (state === 'speaking') setState('done'); };
+  u.onend = u.onerror = () => { speakingNow = false; word = null; shell.setBands([0, 0, 0]); if (state === 'speaking') setState('done'); };
   speechSynthesis.speak(u);
   $('#voiceNote').textContent = v ? `Voice: ${v.name}` : '';
 }
@@ -134,14 +161,14 @@ let lastT = performance.now();
   const dt = Math.min(0.1, (now - lastT) / 1000);
   lastT = now;
   if (!speakingNow) return;
-  // No boundary events for a while (some voices don't send them): keep a steady syllable rhythm.
-  // Without word events (some voices), fall back to a gentle steady level: no false emphasis.
-  if (now - lastBoundary > 450) env = Math.max(env, 0.4);
-  syllable += dt * 5.5 * Math.PI * 2;
-  env *= Math.exp(-dt / 0.35);
-  swing *= Math.exp(-dt / 0.12);
-  const s = Math.abs(Math.sin(syllable));
-  shell.setBands([0.3 + 0.35 * env * (0.85 + 0.15 * s), 0.25 + 0.5 * env * (0.85 + 0.15 * s) + 0.15 * swing, 0.12 + 0.3 * swing + 0.12 * env]);
+  // Some voices don't report word timings: fall back to an even syllable rhythm.
+  if (now - lastBoundary > 600) {
+    fallbackT += dt;
+    if (!word || now / 1000 - word.t0 > word.dur) word = { t0: now / 1000, ...planWord(['evening', 'jacket', 'pressed', 'service', 'quiet'][Math.floor(fallbackT) % 5], false) };
+  }
+  const { level, bite } = word ? wordLevel(now / 1000 - word.t0) : { level: 0, bite: 0 };
+  // Map the envelope onto the three bands the app's analyser would report for real speech.
+  shell.setBands([0.18 + 0.4 * level, 0.14 + 0.72 * level, 0.08 + 0.25 * level + 0.45 * bite]);
 })();
 
 // ---- reactions
