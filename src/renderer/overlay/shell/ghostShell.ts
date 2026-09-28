@@ -1,223 +1,269 @@
 import * as THREE from 'three';
 import type { GhostState } from '../../../shared/protocol';
 import type { ThemeColors } from '../../../shared/settings';
+import { createMaterials, studioEnvironment, type GhostMaterials } from './materials';
+import { buildModel, CORE_RADIUS, type GhostModel } from './model';
+import { Curiosity, flourishFor, lookAt, POSES, QUALITY, QualityGovernor, Spring, type Pose, type QualityLevel } from './motion';
+import { ParticleCore } from './particleCore';
+import { PostFx } from './postfx';
 
-// An original "companion shell": two rings of faceted petals around an open centre, where the
-// particle eye (the Voice Orb) shows through. Each state sets targets that the frame loop eases towards.
+export type RenderQuality = 'auto' | QualityLevel;
 
-interface Targets {
-  open: number; // 0 = closed around the eye, 1 = fully spread
-  innerSpin: number; // rad/s of the inner ring
-  outerSpin: number; // rad/s of the outer ring
-  bob: number; // vertical float amplitude
-  scan: number; // side-to-side sweep amplitude (searching)
-  tint: THREE.Color | null; // edge colour override (approval / error)
-  flicker: number;
-}
+const TONES = { amber: new THREE.Color('#ffae42'), red: new THREE.Color('#ff3b4e') };
 
-const STATE_TARGETS: Record<GhostState, Omit<Targets, 'tint'> & { tint?: string }> = {
-  idle: { open: 0.05, innerSpin: 0.08, outerSpin: -0.05, bob: 1, scan: 0, flicker: 0 },
-  listening: { open: 0.22, innerSpin: 0.15, outerSpin: -0.1, bob: 0.6, scan: 0, flicker: 0 },
-  thinking: { open: 0.3, innerSpin: 1.1, outerSpin: -0.7, bob: 0.4, scan: 0, flicker: 0 },
-  searching: { open: 0.85, innerSpin: 0.5, outerSpin: 1.6, bob: 0.3, scan: 1, flicker: 0 },
-  speaking: { open: 0.4, innerSpin: 0.2, outerSpin: -0.12, bob: 0.5, scan: 0, flicker: 0 },
-  done: { open: 0, innerSpin: 0.05, outerSpin: -0.03, bob: 1, scan: 0, flicker: 0 },
-  approval: { open: 0.5, innerSpin: 0.12, outerSpin: -0.08, bob: 0.3, scan: 0, flicker: 0.25, tint: '#ffb347' },
-  error: { open: 0.15, innerSpin: 0.02, outerSpin: 0, bob: 0.2, scan: 0, flicker: 0.9, tint: '#ff4f5e' },
-};
-
-/** A wedge-shaped armour plate; six of them form a faceted ring around the eye. */
-function plateGeometry(inner: number, outer: number, halfAngle: number, depth: number): THREE.BufferGeometry {
-  const a = Math.tan(halfAngle) * inner;
-  const b = Math.tan(halfAngle * 0.9) * outer;
-  const shape = new THREE.Shape();
-  shape.moveTo(-a, inner);
-  shape.lineTo(a, inner);
-  shape.lineTo(b, outer * 0.93);
-  shape.lineTo(b * 0.35, outer);
-  shape.lineTo(-b * 0.35, outer);
-  shape.lineTo(-b, outer * 0.93);
-  shape.closePath();
-  return extrude(shape, depth);
-}
-
-/** A narrow blade that sits in the gaps between plates. */
-function bladeGeometry(inner: number, outer: number, half: number, depth: number): THREE.BufferGeometry {
-  const shape = new THREE.Shape();
-  shape.moveTo(-half, inner);
-  shape.lineTo(half, inner);
-  shape.lineTo(half * 0.8, inner + (outer - inner) * 0.6);
-  shape.lineTo(0, outer);
-  shape.lineTo(-half * 0.8, inner + (outer - inner) * 0.6);
-  shape.closePath();
-  return extrude(shape, depth);
-}
-
-function extrude(shape: THREE.Shape, depth: number): THREE.BufferGeometry {
-  const geo = new THREE.ExtrudeGeometry(shape, {
-    depth, bevelEnabled: true, bevelThickness: depth * 0.5, bevelSize: 0.018, bevelSegments: 1, steps: 1,
-  });
-  geo.translate(0, 0, -depth / 2);
-  return geo;
-}
-
-interface Petal { mesh: THREE.Group; angle: number; baseTilt: number }
-
+/** The 3D Ghost: model + particle core + bloom, animated by springs towards per-state poses. */
 export class GhostShell {
   readonly canvas: HTMLCanvasElement;
   private renderer: THREE.WebGLRenderer;
   private scene = new THREE.Scene();
-  private camera = new THREE.PerspectiveCamera(32, 1, 0.1, 50);
-  private root = new THREE.Group();
-  private inner = new THREE.Group();
-  private outer = new THREE.Group();
-  private petals: { inner: Petal[]; outer: Petal[] } = { inner: [], outer: [] };
-  private bodyMat: THREE.MeshStandardMaterial;
-  private edgeMat: THREE.LineBasicMaterial;
-  private eyeLight: THREE.PointLight;
-  private current: Targets = { open: 0, innerSpin: 0, outerSpin: 0, bob: 1, scan: 0, tint: null, flicker: 0 };
-  private target: Targets = { ...this.current };
+  private camera = new THREE.PerspectiveCamera(28, 1, 0.1, 50);
+  private mats: GhostMaterials;
+  private model: GhostModel;
+  private core: ParticleCore;
+  private fx: PostFx;
+  private governor: QualityGovernor;
+  private curiosity = new Curiosity();
+
   private state: GhostState = 'idle';
+  private pose: Pose = POSES.idle;
+  private themeGlow = new THREE.Color('#7fd4ff');
+  private glowColor = new THREE.Color('#7fd4ff');
+  private bands: [number, number, number] = [0, 0, 0];
+
+  // Springs
+  private yaw = new Spring(0, 0, 38, 0.72);
+  private pitch = new Spring(0, 0, 38, 0.72);
+  private roll = new Spring(0, 0, 30, 0.6);
+  private splits: Spring[] = [];
+  private twist = new Spring(0, 0, 40, 0.8);
+  private frontSpeed = new Spring(0, 0, 8, 1);
+  private rearSpeed = new Spring(0, 0, 8, 1);
+  private sweep = new Spring(0, 0, 10, 1);
+  private bob = new Spring(1, 1, 10, 1);
+  private iris = new Spring(1, 1, 90, 0.55);
+  private glow = new Spring(0.9, 0.9, 20, 1);
+  private eyeW = [new Spring(1, 1, 12), new Spring(0), new Spring(0), new Spring(0)].map(s => { s.stiffness = 12; return s; });
+  private scan = new Spring(0, 0, 12, 1);
+  private flicker = 0;
   private flash = 0;
+  private shake = 0;
+  private frontAngle = 0;
+  private rearAngle = 0;
+
+  // Gaze inputs
+  private cursor: { yaw: number; pitch: number } | null = null;
+  private cursorAt = -1e9;
   private lean = 0;
-  private leanTarget = 0;
-  private edgeBase = new THREE.Color('#7fd4ff');
+  private curiousLook = { yaw: 0, pitch: 0, roll: 0, until: 0 };
+
+  private time = 0;
   private lastFrame = performance.now();
-  private elapsed = 0;
+  private lastRender = 0;
+  private idleSince = 0;
   private frame = 0;
+  private size = { w: 0, h: 0 };
   private reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
   audioLevel: () => number = () => 0;
 
-  constructor(host: HTMLElement, theme: ThemeColors) {
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, premultipliedAlpha: false });
+  constructor(host: HTMLElement, theme: ThemeColors, quality: RenderQuality = 'auto') {
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, premultipliedAlpha: true, powerPreference: 'high-performance' });
     this.renderer.setClearColor(0x000000, 0);
-    this.renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 0.95;
     this.canvas = this.renderer.domElement;
     this.canvas.className = 'shell-canvas';
     host.appendChild(this.canvas);
 
-    this.camera.position.set(0, 0, 6.9);
-    this.scene.add(new THREE.AmbientLight(0xffffff, 0.55));
-    const key = new THREE.DirectionalLight(0xffffff, 1.5);
-    key.position.set(-2.5, 3, 4);
-    this.scene.add(key);
-    const rim = new THREE.DirectionalLight(0x9fb8ff, 0.9);
-    rim.position.set(3, -2, -3);
-    this.scene.add(rim);
-    this.eyeLight = new THREE.PointLight(0x7fd4ff, 6, 4, 1.5);
-    this.eyeLight.position.set(0, 0, 0.6);
-    this.scene.add(this.eyeLight);
+    this.scene.environment = studioEnvironment(this.renderer);
+    const key = new THREE.DirectionalLight('#ffffff', 2.6);
+    key.position.set(-2.5, 3.2, 3.5);
+    const rim = new THREE.DirectionalLight('#8fb4ff', 2.4);
+    rim.position.set(3, 1.5, -3);
+    const fill = new THREE.DirectionalLight('#ffd9b0', 0.3);
+    fill.position.set(0, -3, 2);
+    this.scene.add(key, rim, fill, new THREE.AmbientLight('#ffffff', 0.05));
 
-    this.bodyMat = new THREE.MeshStandardMaterial({ color: theme.shell, metalness: 0.55, roughness: 0.38, flatShading: true });
-    this.edgeMat = new THREE.LineBasicMaterial({ color: theme.edge, transparent: true, opacity: 0.85 });
+    this.mats = createMaterials();
+    this.model = buildModel(this.mats);
+    this.core = new ParticleCore(4200, CORE_RADIUS * 0.42);
+    this.model.particleAnchor.add(this.core.points);
+    this.scene.add(this.model.root);
+    this.splits = this.model.segments.map((s, i) => new Spring(0.04, 0.04, 34 + (s.ring === 'front' ? 0 : 10) + i * 3, 0.62));
 
-    // Sizes are in world units; the eye (the particle orb) fills radius ~0.95 at this camera distance.
-    const plateGeo = plateGeometry(1.0, 1.42, Math.PI / 6 - 0.05, 0.07);
-    const bladeGeo = bladeGeometry(1.08, 1.86, 0.1, 0.05);
-    this.build(this.inner, this.petals.inner, plateGeo, 6, 0, 0.12);
-    this.build(this.outer, this.petals.outer, bladeGeo, 6, Math.PI / 6, 0.3);
-    this.outer.position.z = -0.25;
-    this.root.add(this.outer, this.inner);
-    this.scene.add(this.root);
-
+    this.camera.position.set(0, 0, 7.4);
+    this.fx = new PostFx(this.renderer, this.scene, this.camera);
+    this.governor = new QualityGovernor(quality);
     this.setTheme(theme);
     this.resize();
-    new ResizeObserver(() => this.resize()).observe(host);
+    new ResizeObserver(() => this.resize()).observe(this.canvas);
     this.loop = this.loop.bind(this);
     this.frame = requestAnimationFrame(this.loop);
   }
 
-  private build(group: THREE.Group, list: Petal[], geo: THREE.BufferGeometry, count: number, offset: number, tilt: number): void {
-    const edges = new THREE.EdgesGeometry(geo, 25);
-    for (let i = 0; i < count; i++) {
-      const angle = offset + (i / count) * Math.PI * 2;
-      // pivot (at the centre) spins to the petal's angle and tilts it back; arm slides it outwards.
-      const pivot = new THREE.Group();
-      const arm = new THREE.Group();
-      arm.add(new THREE.Mesh(geo, this.bodyMat), new THREE.LineSegments(edges, this.edgeMat));
-      pivot.add(arm);
-      group.add(pivot);
-      list.push({ mesh: pivot, angle, baseTilt: tilt });
-    }
-  }
+  // ---------------------------------------------------------------- inputs
 
   setTheme(theme: ThemeColors): void {
-    this.bodyMat.color.set(theme.shell);
-    this.edgeBase.set(theme.edge);
-    this.edgeMat.color.set(theme.edge);
-    this.eyeLight.color.set(theme.eye);
+    this.themeGlow.set(theme.edge);
+    // Gunmetal, faintly tinted by the theme's shell colour.
+    this.mats.setMetal('#' + new THREE.Color('#474d57').lerp(new THREE.Color(theme.shell), 0.12).getHexString());
   }
 
   setState(state: GhostState): void {
     if (state === this.state) return;
-    if (state === 'done') this.flash = 1;
+    const f = flourishFor(this.state, state);
     this.state = state;
-    const t = STATE_TARGETS[state];
-    this.target = { ...t, tint: t.tint ? new THREE.Color(t.tint) : null };
+    this.pose = POSES[state];
+    this.frontSpeed.kick(f.spinKick);
+    this.rearSpeed.kick(-f.spinKick * 0.6);
+    for (const s of this.splits) s.kick(f.splitKick);
+    this.pitch.kick(f.nod * 3);
+    this.flash = Math.max(this.flash, f.flash);
+    this.shake = Math.max(this.shake, f.shake);
+    if (state !== 'idle') this.curiosity.reset(this.time);
+    else this.idleSince = this.time;
+  }
+
+  /** Cursor offset from the shell's centre, in CSS px. */
+  setCursor(dx: number, dy: number): void {
+    const next = lookAt(dx, dy);
+    if (!this.cursor || Math.abs(next.yaw - this.cursor.yaw) + Math.abs(next.pitch - this.cursor.pitch) > 0.01) this.cursorAt = this.time;
+    this.cursor = next;
   }
 
   /** Lean towards the input bar while Aaron types (-1 left, +1 right, 0 none). */
-  setLean(direction: number): void { this.leanTarget = direction; }
+  setLean(direction: number): void { this.lean = direction; }
+
+  setBands(b: [number, number, number]): void { this.bands = b; }
+
+  /** Orbit the camera around the drone (the draft lab's drag-to-rotate). */
+  setViewOrbit(yaw: number, pitch: number): void {
+    const r = 7.4;
+    this.camera.position.set(Math.sin(yaw) * Math.cos(pitch) * r, Math.sin(pitch) * r, Math.cos(yaw) * Math.cos(pitch) * r);
+    this.camera.lookAt(0, 0, 0);
+  }
+
+  setQuality(q: RenderQuality): void { this.governor.setMode(q); this.resize(); }
+
+  get qualityLevel(): QualityLevel { return this.governor.level; }
+
+  // ---------------------------------------------------------------- frame
 
   private resize(): void {
-    const { clientWidth: w, clientHeight: h } = this.canvas.parentElement!;
+    const w = this.canvas.clientWidth, h = this.canvas.clientHeight;
     if (!w || !h) return;
-    this.renderer.setSize(w, h, false);
+    this.size = { w, h };
+    const q = QUALITY[this.governor.level];
+    this.fx.setSize(w, h, Math.min(devicePixelRatio || 1, q.dpr), q.bloom);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
+    this.core.setPixelScale(h * Math.min(devicePixelRatio || 1, q.dpr));
   }
 
   private loop(): void {
     this.frame = requestAnimationFrame(this.loop);
     const now = performance.now();
-    const dt = Math.min((now - this.lastFrame) / 1000, 0.05);
+    const idleFor = this.state === 'idle' ? this.time - this.idleSince : 0;
+    if ((now - this.lastRender) / 1000 < this.governor.frameInterval(idleFor) * 0.92) return;
+    const dt = Math.min((now - this.lastFrame) / 1000, 0.1);
     this.lastFrame = now;
-    const t = (this.elapsed += dt);
-    const ease = 1 - Math.exp(-dt * 5);
-    const c = this.current;
-    const g = this.target;
-    c.open += (g.open - c.open) * (this.state === 'done' ? 1 - Math.exp(-dt * 14) : ease);
-    c.innerSpin += (g.innerSpin - c.innerSpin) * ease;
-    c.outerSpin += (g.outerSpin - c.outerSpin) * ease;
-    c.bob += (g.bob - c.bob) * ease;
-    c.scan += (g.scan - c.scan) * ease;
-    c.flicker += (g.flicker - c.flicker) * ease;
-    this.lean += (this.leanTarget - this.lean) * ease;
-    this.flash = Math.max(0, this.flash - dt * 2.2);
+    this.lastRender = now;
+    this.time += dt;
+    this.update(dt);
+    this.fx.render();
+    if (this.governor.sample(dt)) this.resize();
+  }
 
-    const level = this.state === 'speaking' ? this.audioLevel() : 0;
+  private update(dt: number): void {
+    const p = this.pose;
+    const t = this.time;
+    const m = this.model;
     const motion = this.reduced ? 0 : 1;
+    const [low, mid, high] = this.bands[0] + this.bands[1] + this.bands[2] > 0 ? this.bands : [this.audioLevel(), this.audioLevel() * 0.6, 0];
+    const speaking = this.state === 'speaking' ? 1 : 0;
 
-    this.inner.rotation.z += c.innerSpin * dt * motion;
-    this.outer.rotation.z += c.outerSpin * dt * motion;
-    this.root.position.y = Math.sin(t * 1.3) * 0.06 * c.bob * motion;
-    this.root.rotation.y = (Math.sin(t * 2.4) * 0.35 * c.scan + this.lean * 0.32 + Math.sin(t * 0.7) * 0.05) * motion;
-    this.root.rotation.x = (Math.sin(t * 0.9) * 0.05 - c.scan * 0.08) * motion;
+    // ---- gaze: cursor (fresh) > curiosity (idle) > lean (typing) > rest
+    let yawT = 0, pitchT = 0, rollT = 0;
+    const cursorFresh = this.cursor && t - this.cursorAt < 3;
+    if (p.curious && !cursorFresh) {
+      const act = this.curiosity.update(t);
+      if (act?.kind === 'glance') this.curiousLook = { yaw: act.yaw, pitch: act.pitch, roll: act.yaw * -0.25, until: t + act.hold };
+      else if (act?.kind === 'tilt') this.curiousLook = { yaw: 0, pitch: 0, roll: act.roll, until: t + act.hold };
+      else if (act?.kind === 'blink') this.iris.kick(-14);
+      else if (act?.kind === 'spin') this.frontSpeed.kick(14);
+      else if (act?.kind === 'shake') this.shake = 0.6;
+      if (t < this.curiousLook.until) { yawT = this.curiousLook.yaw; pitchT = this.curiousLook.pitch; rollT = this.curiousLook.roll; }
+    }
+    if (this.cursor && (cursorFresh || !p.curious)) { yawT = this.cursor.yaw; pitchT = this.cursor.pitch; rollT = -this.cursor.yaw * 0.15; }
+    if (this.lean) { yawT = this.lean * 0.5; pitchT = -0.12; }
+    if (this.state === 'approval') pitchT = -0.35; // looks up at the confirm card
+    yawT += Math.sin(t * 2.2) * p.sweep;
+    this.yaw.target = yawT; this.pitch.target = pitchT; this.roll.target = rollT;
 
-    const layout = (list: Petal[], spread: number, extraTilt: number) => {
-      for (const p of list) {
-        p.mesh.rotation.set(0, 0, p.angle);
-        p.mesh.rotateX(-(p.baseTilt + extraTilt)); // lean back, away from the camera, like an opening flower
-        p.mesh.children[0].position.y = spread;
-      }
-    };
-    const pulse = level * 0.18;
-    layout(this.petals.inner, c.open * 0.22 + pulse, c.open * 0.45);
-    layout(this.petals.outer, c.open * 0.3 + pulse * 0.6, c.open * 0.35);
+    // ---- springs towards the pose
+    this.twist.target = p.twist;
+    this.frontSpeed.target = p.frontSpin;
+    this.rearSpeed.target = p.rearSpin;
+    this.bob.target = p.bob;
+    this.iris.target = p.iris + speaking * low * 0.25;
+    this.glow.target = p.glow + speaking * (low * 0.6 + mid * 0.3);
+    p.eye.forEach((w, i) => { this.eyeW[i].target = w; });
+    this.scan.target = p.scan;
+    for (const s of [this.yaw, this.pitch, this.roll, this.twist, this.frontSpeed, this.rearSpeed, this.bob, this.iris, this.glow, this.scan, ...this.eyeW]) s.step(dt);
+    this.model.segments.forEach((seg, i) => {
+      const sp = this.splits[i];
+      sp.target = p.split + speaking * low * (seg.ring === 'front' ? 0.25 : 0.15);
+      sp.step(dt);
+    });
 
-    // Edge glow: theme colour, state tint, "done" flash, error flicker.
-    const edge = this.edgeBase.clone();
-    if (g.tint) edge.lerp(g.tint, 0.85);
-    const flick = c.flicker > 0.01 ? (Math.sin(t * 38) > 0.2 ? 1 : 1 - c.flicker * 0.7) : 1;
-    this.edgeMat.color.copy(edge).multiplyScalar(flick * (1 + this.flash * 1.5));
-    this.edgeMat.opacity = 0.65 + this.flash * 0.35 + level * 0.3;
-    this.eyeLight.intensity = (4 + level * 10 + this.flash * 12) * flick;
+    // ---- apply: body
+    this.shake = Math.max(0, this.shake - dt * 1.6);
+    this.flash = Math.max(0, this.flash - dt * 2.4);
+    const shakeYaw = Math.sin(t * 38) * this.shake * 0.12;
+    m.root.rotation.set(this.pitch.value * motion, (this.yaw.value + shakeYaw) * motion, this.roll.value * motion, 'YXZ');
+    m.root.position.y = Math.sin(t * 1.25) * 0.07 * this.bob.value * motion;
+    m.root.position.x = Math.sin(t * 0.7) * 0.02 * this.bob.value * motion;
 
-    this.renderer.render(this.scene, this.camera);
+    // ---- segments: spin sets, split along their axes, twist
+    this.frontAngle += this.frontSpeed.value * dt * motion;
+    this.rearAngle += this.rearSpeed.value * dt * motion;
+    m.front.rotation.z = this.frontAngle;
+    m.rear.rotation.z = this.rearAngle;
+    m.segments.forEach((seg, i) => {
+      const split = Math.max(-0.05, this.splits[i].value);
+      seg.body.position.z = CORE_RADIUS * 0.9 + split * (seg.ring === 'front' ? 0.55 : 0.75);
+      seg.body.rotation.z = this.twist.value * (i % 2 ? 1 : -1);
+      seg.body.rotation.x = split * 0.35 * (seg.ring === 'front' ? 1 : -1);
+    });
+
+    // ---- eye: leads the body slightly, iris dilates/blinks, particle core weights
+    m.eye.rotation.set(this.pitch.value * 0.25 * motion, this.yaw.value * 0.25 * motion, 0);
+    const irisS = Math.max(0.05, this.iris.value);
+    m.iris.scale.set(irisS, Math.max(0.05, irisS * (1 + Math.min(0, this.iris.velocity) * 0.04)), 1);
+    const u = this.core.uniforms;
+    u.time.value = t;
+    u.weights.value.set(...(this.eyeW.map(s => Math.max(0, s.value)) as [number, number, number, number]));
+    u.scan.value = Math.min(1, Math.max(0, this.scan.value));
+    u.bands.value.set(low, mid, high);
+    u.onset.value = speaking * Math.max(0, low - 0.5) * 1.5;
+
+    // ---- colour and glow
+    const target = p.tone === 'theme' ? this.themeGlow : TONES[p.tone];
+    this.glowColor.lerp(target, 1 - Math.exp(-dt * 6));
+    this.flicker += (p.flicker - this.flicker) * (1 - Math.exp(-dt * 6));
+    const flick = this.flicker > 0.02 ? (Math.sin(t * 41) > 0.25 ? 1 : 1 - this.flicker * 0.75) : 1;
+    const intensity = (this.glow.value + this.flash * 1.6) * flick;
+    this.mats.setGlow(this.glowColor, intensity);
+    u.colorA.value.copy(this.glowColor).multiplyScalar(0.55);
+    u.colorB.value.copy(this.glowColor).lerp(new THREE.Color('#ffffff'), 0.55);
+    u.intensity.value = 0.7 + intensity * 0.3;
+    m.eyeLight.color.copy(this.glowColor);
+    m.eyeLight.intensity = 0.8 + intensity * 1.4;
+    this.fx.setStrength(0.3 + intensity * 0.18);
   }
 
   dispose(): void {
     cancelAnimationFrame(this.frame);
+    this.fx.dispose();
     this.renderer.dispose();
     this.canvas.remove();
   }
