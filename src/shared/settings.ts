@@ -53,6 +53,7 @@ export interface Settings {
   edgeVoice: string;
   ghostFilter: number; // 0 - 1 wet mix of the Ghost FX chain
   volume: number; // 0 - 1
+  audioKeepAlive: 'while-talking' | 'always' | 'off'; // keep the output device awake so first words aren't clipped
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -84,6 +85,7 @@ export const DEFAULT_SETTINGS: Settings = {
   edgeVoice: 'en-US-AndrewMultilingualNeural',
   ghostFilter: 0.35,
   volume: 0.9,
+  audioKeepAlive: 'while-talking',
 };
 
 export function mergeSettings(stored: Partial<Settings> | null | undefined): Settings {

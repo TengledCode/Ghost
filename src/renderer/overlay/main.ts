@@ -5,6 +5,8 @@ import { CoreClient } from '../shared/coreClient';
 import { VoicePlayer } from './audio/player';
 import { GhostShell } from './shell/ghostShell';
 import { moodFromMessage } from './shell/motion';
+import { isIdle } from './idle';
+import { Subtitles } from './subtitles';
 
 type VoiceOrbEl = HTMLElement & { state: string; connect(n: AudioNode): Promise<void>; bands?: number[] };
 
@@ -48,7 +50,12 @@ const boot = await bridge.bootstrap();
 settings = boot.settings;
 const core = new CoreClient(boot.url, boot.token);
 const player = new VoicePlayer(settings.ghostFilter, settings.volume);
-player.onFinished = turnId => core.send({ type: 'playback_finished', turnId });
+// While voice is on, the bubble shows the reply in step with the voice (see subtitles.ts).
+const subtitles = new Subtitles(text => showBubble(text));
+player.onChunkStart = (turnId, seq, at, duration) => subtitles.started(turnId, seq, at, duration);
+player.onFinished = turnId => { subtitles.revealAll(turnId); core.send({ type: 'playback_finished', turnId }); };
+(function tickSubtitles() { requestAnimationFrame(tickSubtitles); subtitles.tick(); })();
+if (!inElectron) (window as unknown as { ghostDebug: object }).ghostDebug = { player, subtitles }; // browser preview: inspectable
 await customElements.whenDefined('voice-orb').catch(() => {});
 // The orb taps the processed voice, so the eye pulses with what Aaron actually hears.
 voiceOrb.connect?.(player.master).catch(() => {});
@@ -59,6 +66,9 @@ bridge.onOrientation(c => setOrientation(c));
 bridge.onSummon(() => { touch(); openInput(); });
 // Follow the cursor anywhere on screen: positions arrive relative to this window.
 bridge.onCursor((x, y) => {
+  // The global feed also keeps hover detection honest once the cursor has left the window.
+  lastPoint = { x, y };
+  if (hoveringUi()) touch();
   if (!shell) return;
   const r = shellEl.getBoundingClientRect();
   shell.setCursor(x - (r.left + r.width / 2), y - (r.top + r.height / 2));
@@ -86,6 +96,7 @@ function applySettings(s: Settings): void {
   voiceOrb.style.filter = signalOrb.style.filter = `hue-rotate(${Math.round(hue - 250)}deg)`;
   player.filter.setMix(s.ghostFilter);
   player.setVolume(s.voiceEnabled ? s.volume : 0);
+  player.setKeepAlive(s.voiceEnabled ? s.audioKeepAlive : 'off');
   input.placeholder = `Speak your mind, ${s.userName}…`;
   if (s.skin === 'ghost-shell' && !shell) {
     try {
@@ -126,6 +137,8 @@ const EYE_STATE: Record<GhostState, string> = {
 };
 
 function setState(next: GhostState, detail?: string): void {
+  // Speech is coming: wake the audio output now so the first word isn't swallowed.
+  if (next === 'thinking' && settings.voiceEnabled) player.wake();
   state = next;
   stage.dataset.state = next;
   voiceOrb.state = EYE_STATE[next];
@@ -146,22 +159,30 @@ core.on((m: CoreMessage) => {
     case 'text_delta':
       if (m.turnId !== currentTurn) { currentTurn = m.turnId; replyText = ''; }
       replyText += m.text;
-      showBubble(replyText);
+      // With voice on, the words appear as they're spoken (subtitles); otherwise straight away.
+      if (!settings.voiceEnabled) showBubble(replyText);
       break;
     case 'turn_end':
       bubbleMeta.textContent = m.model ? `${m.provider} · ${m.model}` : '';
+      // No voice came for this reply at all (voice unavailable): show the text now.
+      if (settings.voiceEnabled && subtitles.activeTurn !== m.turnId) setTimeout(() => { if (subtitles.activeTurn !== m.turnId) showBubble(m.text); }, 600);
       history.push({ who: 'ghost', text: m.text });
       renderHistory();
       if (thankedThisTurn) { shell?.express('happy'); thankedThisTurn = false; }
       break;
     case 'audio':
+      if (!m.last && m.display !== undefined) subtitles.add(m.turnId, m.seq, m.display, !!m.data);
       player.push(m.turnId, m.seq, m.data, m.last);
       break;
-    case 'reminder':
-      showBubble(m.text);
+    case 'reminder': {
+      // Spoken reminders appear with their voice; if no voice follows, show the text anyway.
+      const turnId = `reminder-${m.id}`;
+      if (!settings.voiceEnabled) showBubble(m.text);
+      else setTimeout(() => { if (subtitles.activeTurn !== turnId) showBubble(m.text); }, 3000);
       history.push({ who: 'ghost', text: m.text });
       renderHistory();
       break;
+    }
     case 'approval_request': showConfirm(m.id, m.summary); break;
     case 'approval_resolved': if (pendingApproval === m.id) hideConfirm(); break;
     case 'notice': showNotice(m.text, m.level); break;
@@ -286,7 +307,7 @@ input.addEventListener('input', () => {
 
 input.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
-    if (state === 'thinking' || state === 'searching' || state === 'speaking') { core.send({ type: 'cancel' }); player.stop(); }
+    if (state === 'thinking' || state === 'searching' || state === 'speaking') { core.send({ type: 'cancel' }); player.stop(); subtitles.revealAll(); }
     else closeInput();
   }
 });
@@ -367,14 +388,19 @@ function busy(): boolean {
 
 function updateIdle(): void {
   const quiet = performance.now() - lastActive;
-  const idle = !busy() && !hoveringUi() && quiet > ACTIVE_HOLD_MS;
+  const idle = isIdle({ busy: busy(), hovering: hoveringUi(), quietMs: quiet, holdMs: ACTIVE_HOLD_MS });
   if (idle) stage.dataset.idle = ''; else delete stage.dataset.idle;
   // A long-idle, empty input bar tucks itself away; the hotkey or a click brings it back.
   if (idle && quiet > HIDE_INPUT_MS && !form.hidden && !input.value) closeInput();
 }
 
 setInterval(updateIdle, 250);
-window.addEventListener('blur', () => { lastActive = 0; updateIdle(); });
+// Clicking away counts as done with Ghost: the window losing focus, or (even when Ghost never had
+// focus) another app coming to the front, reported by the main process.
+const clickedAway = () => { lastActive = 0; updateIdle(); };
+window.addEventListener('blur', clickedAway);
+bridge.onElsewhere(clickedAway);
+document.addEventListener('mouseleave', () => { lastPoint = { x: -1, y: -1 }; });
 input.addEventListener('focus', touch);
 input.addEventListener('keydown', touch);
 window.addEventListener('keydown', e => { if (e.key === 'Alt') { altDown = true; refreshInteractivity(); } });

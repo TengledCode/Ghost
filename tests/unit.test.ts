@@ -21,21 +21,30 @@ const tmp = () => mkdtempSync(join(tmpdir(), 'ghost-'));
 const lines = (f: string) => readFileSync(join(__dirname, 'fixtures', f), 'utf8').trim().split('\n');
 
 describe('SentenceSplitter', () => {
+  const speech = (segs: { speech: string }[]) => segs.map(x => x.speech);
   it('emits complete sentences as text streams in', () => {
     const s = new SentenceSplitter();
     const out = [...s.push('Very good, Aaron. I have opened'), ...s.push(' Spotify for you! Anything else'), ...s.push('?')];
-    expect(out).toEqual(['Very good, Aaron.', 'I have opened Spotify for you!']);
-    expect(s.flush()).toEqual(['Anything else?']);
+    expect(speech(out)).toEqual(['Very good, Aaron.', 'I have opened Spotify for you!']);
+    expect(speech(s.flush())).toEqual(['Anything else?']);
   });
   it('does not split on abbreviations or decimals', () => {
     const s = new SentenceSplitter();
-    expect(s.push('Dr. Smith says pi is 3.14 roughly, e.g. close enough. Next')).toEqual(['Dr. Smith says pi is 3.14 roughly, e.g. close enough.']);
+    expect(speech(s.push('Dr. Smith says pi is 3.14 roughly, e.g. close enough. Next'))).toEqual(['Dr. Smith says pi is 3.14 roughly, e.g. close enough.']);
   });
-  it('strips markdown and replaces code blocks', () => {
+  it('strips markdown and replaces code blocks in speech, but keeps the text exactly for display', () => {
     const s = new SentenceSplitter();
-    const out = [...s.push('Here is **the** script:\n```ps1\nGet-Process\n```\nRun it with `pwsh`. '), ...s.flush()];
-    expect(out.join(' ')).toContain('the code is in the transcript');
-    expect(out.join(' ')).not.toMatch(/[*`]/);
+    const text = 'Here is **the** script:\n```ps1\nGet-Process\n```\nRun it with `pwsh`. ';
+    const out = [...s.push(text), ...s.flush()];
+    expect(speech(out).join(' ')).toContain('the code is in the transcript');
+    expect(speech(out).join(' ')).not.toMatch(/[*`]/);
+    expect(out.map(x => x.display).join('').trimEnd()).toBe(text.trimEnd()); // only trailing whitespace is dropped
+  });
+  it('keeps a code-only segment in order with nothing to say', () => {
+    const s = new SentenceSplitter();
+    const out = [...s.push('Right then, here it is.\n\n'), ...s.push('```\nx = 1\n```\n\n'), ...s.push('That should do it. '), ...s.flush()];
+    expect(out.map(x => x.display.trim())).toEqual(['Right then, here it is.', '```\nx = 1\n```', 'That should do it.']);
+    expect(out[1].speech).toBe('(the code is in the transcript)');
   });
 });
 

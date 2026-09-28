@@ -1,4 +1,4 @@
-import { app, globalShortcut, ipcMain, Menu, nativeImage, shell, Tray } from 'electron';
+import { app, BrowserWindow, globalShortcut, ipcMain, Menu, nativeImage, shell, Tray } from 'electron';
 import { join } from 'node:path';
 import { GhostCore } from '../core/ghostCore';
 import { ClaudeCliProvider } from '../core/providers/claude';
@@ -8,6 +8,7 @@ import { EdgeTts } from '../core/tts/edge';
 import { ElevenLabsTts } from '../core/tts/elevenlabs';
 import { TtsService } from '../core/tts/service';
 import type { Settings } from '../shared/settings';
+import { ForegroundWatcher, hwndOf } from './foregroundWatcher';
 import { FullscreenWatcher } from './fullscreenWatcher';
 import { OverlayWindow } from './overlayWindow';
 import { SettingsStore } from './settingsStore';
@@ -84,6 +85,13 @@ app.whenReady().then(async () => {
   applyLogin(settings().launchAtLogin);
   const fullscreen = new FullscreenWatcher(isFull => overlay.setFullscreenHidden(isFull));
   if (settings().hideOnFullscreen) fullscreen.start();
+  // Clicking into another app sends Ghost to its idle look straight away.
+  const foreground = new ForegroundWatcher(
+    () => BrowserWindow.getAllWindows().filter(w => !w.isDestroyed()).map(w => hwndOf(w.getNativeWindowHandle())),
+    () => { if (!overlay.win.isDestroyed()) overlay.win.webContents.send('ghost:elsewhere'); },
+  );
+  foreground.start();
+  app.on('will-quit', () => foreground.stop());
 
   store.on('change', (next: Settings, prev: Settings) => {
     if (next.hotkey !== prev.hotkey || next.quitHotkey !== prev.quitHotkey || next.liveScreenHotkey !== prev.liveScreenHotkey) bindHotkeys(next);

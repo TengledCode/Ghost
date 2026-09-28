@@ -21,6 +21,8 @@ const api = {
   onOrientation: (cb: (c: Corner) => void): void => { ipcRenderer.on('ghost:orientation', (_e, c) => cb(c)); },
   /** Cursor position relative to the overlay window, anywhere on screen. */
   onCursor: (cb: (x: number, y: number) => void): void => { ipcRenderer.on('ghost:cursor', (_e, x, y) => cb(x, y)); },
+  /** Another app came to the front (Aaron clicked away from Ghost). */
+  onElsewhere: (cb: () => void): void => { ipcRenderer.on('ghost:elsewhere', () => cb()); },
 };
 
 export type GhostApi = typeof api;

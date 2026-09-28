@@ -83,6 +83,14 @@
       <div class="voices"><h3>Edge voices (fallback)</h3><div id="edgeVoices"></div></div>
       <label>Ghost filter <input type="range" min="0" max="1" step="0.05" data-key="ghostFilter" data-num /><output></output></label>
       <label>Volume <input type="range" min="0" max="1" step="0.05" data-key="volume" data-num /><output></output></label>
+      <label>Keep audio awake
+        <select id="audioKeepAlive" data-key="audioKeepAlive">
+          <option value="while-talking">While Ghost is talking (recommended)</option>
+          <option value="always">Always, for outputs that are slow to wake</option>
+          <option value="off">Off</option>
+        </select>
+      </label>
+      <p class="hint">Some headsets and speakers doze off in silence and miss the first word. Ghost plays an inaudible signal to keep them awake.</p>
     </section>
 
     <section>

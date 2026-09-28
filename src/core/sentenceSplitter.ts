@@ -3,31 +3,31 @@
 const ABBREVIATIONS = /\b(?:Mr|Mrs|Ms|Dr|Prof|Sr|Jr|St|vs|etc|e\.g|i\.e|approx|No)\.$/i;
 const MIN_CHARS = 12; // merge very short fragments ("Right.") into the next sentence
 
+/** One piece of the reply: the text exactly as written, and how it should be spoken (may be empty). */
+export interface Segment { display: string; speech: string }
+
 export class SentenceSplitter {
   private buffer = '';
-  private inCodeBlock = false;
 
-  /** Feed a delta; returns zero or more complete sentences ready to speak. */
-  push(delta: string): string[] {
+  /** Feed a delta; returns zero or more complete segments. Concatenated displays reproduce the text exactly. */
+  push(delta: string): Segment[] {
     this.buffer += delta;
-    const out: string[] = [];
+    const out: Segment[] = [];
     for (;;) {
       const cut = this.findBoundary();
       if (cut < 0) break;
-      const sentence = this.buffer.slice(0, cut);
+      const display = this.buffer.slice(0, cut);
       this.buffer = this.buffer.slice(cut);
-      const spoken = this.toSpeech(sentence);
-      if (spoken) out.push(spoken);
+      if (display.trim()) out.push({ display, speech: this.toSpeech(display) });
     }
     return out;
   }
 
   /** Flush whatever is left at the end of the turn. */
-  flush(): string[] {
-    const rest = this.toSpeech(this.buffer);
+  flush(): Segment[] {
+    const display = this.buffer;
     this.buffer = '';
-    this.inCodeBlock = false;
-    return rest ? [rest] : [];
+    return display.trim() ? [{ display, speech: this.toSpeech(display) }] : [];
   }
 
   private findBoundary(): number {

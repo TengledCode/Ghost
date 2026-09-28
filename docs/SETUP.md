@@ -89,4 +89,7 @@ The ElevenLabs free tier gives about 20 minutes of speech a month. When it runs 
 - [ ] Live screen view: Ctrl+Alt+V (or type "watch my screen") shows a red LIVE tag and a magenta eye; ask "what's this error?" and it describes the monitor under your cursor; Ghost itself isn't in what it sees; "stop watching" turns it off
 - [ ] Live view auto-off: enable it in Settings → Live screen view, set a short time, and check it switches off (and says so) after that long without a message
 - [ ] No grey shadow or box around the text boxes on a light wallpaper
+- [ ] Replies appear word by word as they're spoken, not ahead of the voice
+- [ ] After 10+ s of silence, the first word of a reply is heard in full (if not, set Settings → Voice → Keep audio awake to "Always")
+- [ ] Clicking into another app fades Ghost and its text box straight away; moving the cursor off it fades them after a few seconds
 - [ ] Provider switch: if Claude hits its limit, Ghost says so once, answers with Gemini, and shows an amber "on Gemini · Claude limit reached" chip until Claude is back

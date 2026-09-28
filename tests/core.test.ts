@@ -79,6 +79,9 @@ describe('GhostCore', () => {
     expect(audio.map(a => a.seq)).toEqual(audio.map((_, i) => i));
     expect(last.seq).toBe(audio.length);
     expect(Buffer.from(audio[0].data, 'base64').toString()).toMatch(/^mp3:Understood, Aaron\./);
+    // Each chunk carries the text it speaks, so the overlay can reveal words in step with the voice.
+    const end0 = await ui.waitFor(m => m.type === 'turn_end') as Extract<CoreMessage, { type: 'turn_end' }>;
+    expect(audio.map(a => a.display ?? '').join('').trimEnd()).toBe(end0.text.trimEnd());
     const end = await ui.waitFor(m => m.type === 'turn_end') as Extract<CoreMessage, { type: 'turn_end' }>;
     expect(end.text).toContain('search the news please');
     ui.send({ type: 'playback_finished', turnId: last.turnId });

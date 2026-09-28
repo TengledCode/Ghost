@@ -14,7 +14,7 @@ import { buildPersona, buildTurnPrompt } from './persona';
 import type { Provider, ProviderEvent } from './providers/types';
 import { ReminderScheduler } from './reminders/scheduler';
 import { modelFor, routeTier } from './router';
-import { SentenceSplitter } from './sentenceSplitter';
+import { SentenceSplitter, type Segment } from './sentenceSplitter';
 import { TOOL_DEFS, type ToolName } from './tools/definitions';
 import { CLAUDE_BUILTIN_TOOLS } from './providers/claude';
 import { ToolExecutor, type Host } from './tools/executor';
@@ -290,14 +290,14 @@ export class GhostCore {
             reply += ev.text;
             this.broadcast({ type: 'text_delta', turnId: turn.id, text: ev.text });
             if (this.state === 'searching') this.setState('thinking');
-            for (const sentence of splitter.push(ev.text)) this.queueSpeech(turn, sentence);
+            for (const seg of splitter.push(ev.text)) this.queueSpeech(turn, seg);
           } else if (ev.type === 'tool_start') {
             this.setState('searching', TOOL_LABEL[ev.name] ?? prettyTool(ev.name));
           } else if (ev.type === 'tool_end') {
             if (this.state === 'searching') this.setState('thinking');
           } else if (ev.type === 'done') {
             if (ev.sessionId && pid === 'claude') this.setSession(ev.sessionId);
-            if (!reply && ev.text) { reply = ev.text; this.broadcast({ type: 'text_delta', turnId: turn.id, text: ev.text }); splitter.push(ev.text); }
+            if (!reply && ev.text) { reply = ev.text; this.broadcast({ type: 'text_delta', turnId: turn.id, text: ev.text }); for (const seg of splitter.push(ev.text)) this.queueSpeech(turn, seg); }
           } else if (ev.type === 'error') {
             failed = ev;
           }
@@ -312,7 +312,7 @@ export class GhostCore {
           this.broadcast({ type: 'provider', active: pid, primary: s.provider, reason: null });
           this.broadcast({ type: 'notice', level: 'info', text: `Back on ${brainName(pid)}.` });
         }
-        for (const sentence of splitter.flush()) this.queueSpeech(turn, sentence);
+        for (const seg of splitter.flush()) this.queueSpeech(turn, seg);
         this.log.append('user', message);
         this.log.append('assistant', reply, { provider: pid, model: model || 'default' });
         this.broadcast({ type: 'turn_end', turnId: turn.id, text: reply, provider: pid, model: model || 'default' });
@@ -334,7 +334,7 @@ export class GhostCore {
         this.fallback = { reason, retryAt: Date.now() + PRIMARY_RETRY_MS, active: next };
         this.broadcast({ type: 'provider', active: next, primary: pid, reason });
         // Say it once per outage, before the fallback's answer (speech is queued in order).
-        if (firstTime) this.queueSpeech(turn, switchLine(pid, next, reason, s.userName));
+        if (firstTime) { const line = switchLine(pid, next, reason, s.userName); this.queueSpeech(turn, { display: `${line}\n\n`, speech: line }); }
       }
     }
   }
@@ -352,15 +352,21 @@ export class GhostCore {
     this.broadcast({ type: 'notice', level: 'error', text: err.message.slice(0, 400) });
     turn.textDone = true;
     this.setState('error');
-    this.queueSpeech(turn, line);
+    this.queueSpeech(turn, { display: line, speech: line });
   }
 
-  private queueSpeech(turn: Turn, sentence: string): void {
+  /**
+   * Queue one segment of the reply. Its audio and its display text travel together, so the overlay
+   * can reveal the words as they are spoken. Segments with nothing to say (a code block) still take
+   * their place in the order, with empty audio.
+   */
+  private queueSpeech(turn: Turn, seg: Segment): void {
     const s = this.o.settings();
     if (!s.voiceEnabled) return;
     const seq = turn.spoken++;
-    const synth = this.o.tts
-      .speak(sentence, { engine: s.ttsEngine, elevenLabsVoiceId: s.elevenLabsVoiceId, edgeVoice: s.edgeVoice }, turn.abort.signal)
+    const display = seg.display;
+    const synth = !seg.speech ? Promise.resolve(null) : this.o.tts
+      .speak(seg.speech, { engine: s.ttsEngine, elevenLabsVoiceId: s.elevenLabsVoiceId, edgeVoice: s.edgeVoice }, turn.abort.signal)
       .catch(e => { this.broadcast({ type: 'notice', level: 'warn', text: `Voice unavailable: ${String(e.message ?? e)}` }); return null; });
     // Synthesis runs in parallel, but delivery keeps sentence order.
     this.speechQueue = this.speechQueue.then(async () => {
@@ -369,10 +375,10 @@ export class GhostCore {
       if (audio) {
         if (this.state !== 'speaking' && this.state !== 'error') this.setState('speaking');
         turn.audioSent++;
-        this.broadcast({ type: 'audio', turnId: turn.id, seq, mime: audio.mime, data: audio.audio.toString('base64'), engine: audio.engine, last: false });
+        this.broadcast({ type: 'audio', turnId: turn.id, seq, mime: audio.mime, data: audio.audio.toString('base64'), engine: audio.engine, last: false, display });
       } else {
         // Keep the sequence contiguous so the player doesn't wait for a sentence that will never come.
-        this.broadcast({ type: 'audio', turnId: turn.id, seq, mime: 'audio/mpeg', data: '', engine: 'none', last: false });
+        this.broadcast({ type: 'audio', turnId: turn.id, seq, mime: 'audio/mpeg', data: '', engine: 'none', last: false, display });
       }
       if (seq === turn.spoken - 1 && turn.textDone) this.maybeFinish(turn);
     });
@@ -507,7 +513,7 @@ export class GhostCore {
     try {
       const audio = await this.o.tts.speak(text, choice ?? { engine: s.ttsEngine, elevenLabsVoiceId: s.elevenLabsVoiceId, edgeVoice: s.edgeVoice });
       this.setState('speaking');
-      this.broadcast({ type: 'audio', turnId, seq: 0, mime: audio.mime, data: audio.audio.toString('base64'), engine: audio.engine, last: false });
+      this.broadcast({ type: 'audio', turnId, seq: 0, mime: audio.mime, data: audio.audio.toString('base64'), engine: audio.engine, last: false, display: text });
       this.broadcast({ type: 'audio', turnId, seq: 1, mime: audio.mime, data: '', engine: 'none', last: true });
     } catch (e) {
       this.broadcast({ type: 'notice', level: 'warn', text: `Voice unavailable: ${String((e as Error).message ?? e)}` });
