@@ -46,6 +46,7 @@ export interface Settings {
   provider: ProviderId;
   fallbackProvider: ProviderId | null;
   modelTier: ModelTier;
+  showTimings: boolean; // show how long each reply took under the bubble
   // Voice
   voiceEnabled: boolean;
   ttsEngine: Exclude<TtsEngineId, 'none'>;
@@ -54,6 +55,7 @@ export interface Settings {
   ghostFilter: number; // 0 - 1 wet mix of the Ghost FX chain
   volume: number; // 0 - 1
   audioKeepAlive: 'while-talking' | 'always' | 'off'; // keep the output device awake so first words aren't clipped
+  acknowledgements: boolean; // a quick "Noted." when a reply will take a moment
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -79,6 +81,7 @@ export const DEFAULT_SETTINGS: Settings = {
   provider: 'claude',
   fallbackProvider: 'gemini',
   modelTier: 'auto',
+  showTimings: false,
   voiceEnabled: true,
   ttsEngine: 'elevenlabs',
   elevenLabsVoiceId: 'TX3LPaxmHKxFdv7VOQHJ', // Liam; change in settings after auditioning
@@ -86,6 +89,7 @@ export const DEFAULT_SETTINGS: Settings = {
   ghostFilter: 0.35,
   volume: 0.9,
   audioKeepAlive: 'while-talking',
+  acknowledgements: true,
 };
 
 export function mergeSettings(stored: Partial<Settings> | null | undefined): Settings {

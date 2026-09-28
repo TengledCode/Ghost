@@ -42,6 +42,47 @@ export function runCli(cmd: string, args: string[], opts: { stdin: string; cwd: 
   return { lines: createInterface({ input: child.stdout, crlfDelay: Infinity }), stderr: () => err, exit };
 }
 
+export interface LiveCli {
+  lines: AsyncIterable<string> & NodeJS.EventEmitter;
+  write(obj: unknown): boolean;
+  stderr: () => string;
+  exit: Promise<number | null>;
+  alive: () => boolean;
+  kill: () => void;
+}
+
+/** A long-running CLI process that takes JSON lines on stdin (used to keep Claude warm between messages). */
+export function spawnLive(cmd: string, args: string[], opts: { cwd: string; env?: NodeJS.ProcessEnv }): LiveCli {
+  const child = spawn(isWin ? [cmd, ...args].map(quoteWin).join(' ') : cmd, isWin ? [] : args, {
+    cwd: opts.cwd,
+    env: { ...process.env, ...opts.env },
+    shell: isWin,
+    windowsHide: true,
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  let err = '';
+  let running = true;
+  child.stderr.setEncoding('utf8');
+  child.stderr.on('data', (d: string) => { err = (err + d).slice(-8000); });
+  const exit = new Promise<number | null>(resolve => {
+    child.on('error', e => { err += String(e); running = false; resolve(-1); });
+    child.on('close', code => { running = false; resolve(code); });
+  });
+  child.stdin.on('error', () => { running = false; });
+  return {
+    lines: createInterface({ input: child.stdout, crlfDelay: Infinity }),
+    write: obj => running && child.stdin.write(JSON.stringify(obj) + '\n'),
+    stderr: () => err,
+    exit,
+    alive: () => running,
+    kill: () => {
+      running = false;
+      if (isWin && child.pid) spawn('taskkill', ['/pid', String(child.pid), '/t', '/f'], { windowsHide: true });
+      else child.kill('SIGTERM');
+    },
+  };
+}
+
 export async function commandExists(cmd: string): Promise<boolean> {
   return new Promise(resolve => {
     const probe = spawn(isWin ? 'where' : 'which', [cmd], { windowsHide: true });

@@ -86,6 +86,7 @@ export class GhostShell {
   private curiousLook = { yaw: 0, pitch: 0, roll: 0, until: 0 };
   private mood: { kind: Mood; until: number } | null = null;
   private dozing = false;
+  private materialiseAt: number | null = null; // start time of the startup assembly, while it runs
   private live = false; // live screen view: the eye takes a distinct red-magenta cast
   private liveMix = 0;
 
@@ -153,6 +154,22 @@ export class GhostShell {
   setTheme(theme: ThemeColors): void {
     this.themeGlow.set(theme.edge);
     this.mats.setMetal('#' + new THREE.Color('#767d88').lerp(new THREE.Color(theme.shell), 0.12).getHexString());
+  }
+
+  /** Startup: the shards fly in from far out and lock around the eye as the light comes up (~1.3 s). */
+  materialise(): void {
+    if (this.reduced) return;
+    this.materialiseAt = this.time;
+  }
+
+  /** How scattered shard `i` still is (1 = far out, 0 = locked), and how far the light has come up. */
+  private assembly(i: number): { scatter: number; light: number } {
+    if (this.materialiseAt === null) return { scatter: 0, light: 1 };
+    const e = this.time - this.materialiseAt;
+    const p = Math.min(1, Math.max(0, (e - 0.15 - i * 0.045) / 0.9));
+    // Ease out with a slight overshoot, so each shard snaps into place.
+    const c = 1.9, q = p - 1;
+    return { scatter: 1 - (1 + (c + 1) * q * q * q + c * q * q), light: Math.min(1, Math.max(0, (e - 0.35) / 0.9)) };
   }
 
   setState(state: GhostState): void {
@@ -361,11 +378,18 @@ export class GhostShell {
     this.glowColor.lerp(toneTarget, 1 - Math.exp(-dt * 6));
     this.flicker += (p.flicker - this.flicker) * (1 - Math.exp(-dt * 6));
     const flick = this.flicker > 0.02 ? (Math.sin(t * 41) > 0.25 ? 1 : 1 - this.flicker * 0.75) : 1;
-    const intensity = (this.glow.value + this.flash * 1.6) * flick;
+    // Startup assembly: dark until the shards arrive, then a flash as they lock.
+    const intro = this.assembly(this.shards.length);
+    if (this.materialiseAt !== null && t - this.materialiseAt > 1.25 + this.shards.length * 0.045) {
+      this.materialiseAt = null;
+      this.flash = Math.max(this.flash, 0.7);
+      for (const sh of this.shards) sh.lift.kick(1.5);
+    }
+    const intensity = (this.glow.value + this.flash * 1.6) * flick * intro.light;
     this.mats.setGlow(this.glowColor, intensity);
     u.colorA.value.copy(this.glowColor).multiplyScalar(0.9);
     u.colorB.value.copy(this.glowColor).lerp(new THREE.Color('#ffffff'), 0.35);
-    u.intensity.value = (0.7 + intensity * 0.3) * (1 - this.blink * 0.7);
+    u.intensity.value = (0.7 + intensity * 0.3) * (1 - this.blink * 0.7) * intro.light;
     m.eyeLight.color.copy(this.glowColor);
     m.eyeLight.intensity = 0.12 + intensity * 0.16; // a gentle tint on nearby metal, never a hotspot
     this.fx.setStrength(0.3 + intensity * 0.18);
@@ -396,18 +420,20 @@ export class GhostShell {
       a.lagY.target = -this.yaw.velocity * 0.05;
       for (const s of [a.lift, a.twist, a.lagX, a.lagY]) s.step(dt);
       const lift = Math.max(-0.04, a.lift.value) + float + open * 0.24; // the mouth offset is applied directly, so it never lags
-      seg.body.position.z = SHARD_REST + lift * (seg.ring === 'front' ? 0.55 : 0.75);
+      const { scatter } = this.assembly(i);
+      seg.body.position.z = SHARD_REST + lift * (seg.ring === 'front' ? 0.55 : 0.75) + scatter * 2.6;
       seg.body.rotation.set(
-        lift * 0.3 * (seg.ring === 'front' ? 1 : -1) + a.lagX.value + Math.sin(t * 1.1 + seg.phase) * 0.03 * motion,
-        a.lagY.value + Math.cos(t * 0.8 + seg.phase) * 0.03 * motion,
-        this.twist.value * (i % 2 ? 1 : -1) + a.twist.value,
+        lift * 0.3 * (seg.ring === 'front' ? 1 : -1) + a.lagX.value + Math.sin(t * 1.1 + seg.phase) * 0.03 * motion + scatter * 1.4,
+        a.lagY.value + Math.cos(t * 0.8 + seg.phase) * 0.03 * motion - scatter * 0.9,
+        this.twist.value * (i % 2 ? 1 : -1) + a.twist.value + scatter * 3 * (i % 2 ? 1 : -1),
       );
+      seg.body.visible = scatter < 0.98;
       // The magnetic light pool brightens and spreads as the shard lifts.
       // The magnetic pool is strongest with a small gap and fades as the shard moves far away,
       // so a fully unfolded Ghost doesn't wash its core in light.
       const g = Math.max(0, lift);
       seg.pool.scale.setScalar(0.7 + Math.min(g, 0.4) * 1.2);
-      a.poolMat.opacity = this.mats.pool.opacity * (0.4 + g * 2.4) * Math.exp(-g * 2.2);
+      a.poolMat.opacity = this.mats.pool.opacity * (0.4 + g * 2.4) * Math.exp(-g * 2.2) * intro.light;
       a.poolMat.color.copy(this.mats.pool.color);
       // The underside only shows the glow it reflects from the pool: stronger as it lifts off.
       // Brighter field as it lifts, but further from the pool: the reflection peaks at a small gap and fades with distance.

@@ -78,7 +78,14 @@ describe('GhostCore', () => {
     const audio = ui.inbox.filter((m): m is Extract<CoreMessage, { type: 'audio' }> => m.type === 'audio' && !m.last);
     expect(audio.map(a => a.seq)).toEqual(audio.map((_, i) => i));
     expect(last.seq).toBe(audio.length);
-    expect(Buffer.from(audio[0].data, 'base64').toString()).toMatch(/^mp3:Understood, Aaron\./);
+    // A web search started before any text, so Ghost acknowledged it first (no bubble text for it).
+    expect(Buffer.from(audio[0].data, 'base64').toString()).toMatch(/^mp3:(Looking into it|Allow me to check|I'll find out|Let me look that up)\./);
+    expect(audio[0].display).toBe('');
+    expect(Buffer.from(audio[1].data, 'base64').toString()).toMatch(/^mp3:Understood, Aaron\./);
+    const timing = await ui.waitFor(m => m.type === 'timing') as Extract<CoreMessage, { type: 'timing' }>;
+    expect(timing).toMatchObject({ turnId: last.turnId, acked: true });
+    expect(timing.firstTextMs).toBeGreaterThanOrEqual(0);
+    expect(timing.firstAudioMs).toBeGreaterThanOrEqual(timing.firstTextMs!);
     // Each chunk carries the text it speaks, so the overlay can reveal words in step with the voice.
     const end0 = await ui.waitFor(m => m.type === 'turn_end') as Extract<CoreMessage, { type: 'turn_end' }>;
     expect(audio.map(a => a.display ?? '').join('').trimEnd()).toBe(end0.text.trimEnd());
@@ -203,4 +210,77 @@ describe('conversation memory across restarts', () => {
     expect(core.log.current.claudeSessionId).toBe('mock-session');
     expect(core.log.lines().map(l => l.text)[0]).toBe('remember the blue tie for Saturday');
   }, 20_000);
+});
+
+describe('acknowledgements and greeting', () => {
+  // A brain that waits `delay` ms before answering "Here you are, Aaron."
+  const slowBrain = (delay: number) => ({
+    id: 'mock' as const,
+    isAvailable: async () => true,
+    async *send() {
+      await new Promise(r => setTimeout(r, delay));
+      yield { type: 'text_delta' as const, text: 'Here you are, Aaron.' };
+      yield { type: 'done' as const, text: 'Here you are, Aaron.' };
+    },
+  });
+
+  async function start(delay: number, extra: Record<string, unknown> = {}) {
+    const dir = mkdtempSync(join(tmpdir(), 'ghost-ack-'));
+    core = new GhostCore({
+      dataDir: dir, personaPath: join(__dirname, '../config/persona.md'), mcpServerPath: '/x.js', nodeExecPath: process.execPath,
+      providers: { claude: slowBrain(delay) as never }, tts: new TtsService(fakeTts, fakeTts),
+      host: { openExternal: async () => {}, openPath: async () => '', trash: async () => {} },
+      settings: () => mergeSettings({ provider: 'claude', fallbackProvider: null }), port: 0, ackDelayMs: 150, ...extra,
+    });
+    await core.start();
+    const ui = client(core.url, core.token, 'ui');
+    await ui.ready;
+    await ui.waitFor(m => m.type === 'welcome');
+    return { ui, dir };
+  }
+  const spoken = (ui: ReturnType<typeof client>) => ui.inbox
+    .filter((m): m is Extract<CoreMessage, { type: 'audio' }> => m.type === 'audio' && !m.last)
+    .map(a => Buffer.from(a.data, 'base64').toString().replace(/^mp3:/, ''));
+
+  it('says a quick acknowledgement first when the reply is slow', async () => {
+    const { ui } = await start(600);
+    ui.send({ type: 'user_message', text: 'what is the capital of France?' });
+    await ui.waitFor(m => m.type === 'audio' && m.last);
+    const lines = spoken(ui);
+    expect(lines).toHaveLength(2);
+    expect(['Noted.', 'A fair question. One moment.', 'Let me see.', 'Good question, Aaron. One moment.', 'Allow me a moment.']).toContain(lines[0]);
+    expect(lines[1]).toBe('Here you are, Aaron.');
+    // Still thinking while the acknowledgement plays; speaking only once the reply's voice arrives.
+    const states = ui.inbox.filter(m => m.type === 'state').map(m => (m as { state: string }).state);
+    expect(states.filter(s => s === 'speaking')).toHaveLength(1);
+  });
+
+  it('stays quiet when the reply comes quickly', async () => {
+    const { ui } = await start(10);
+    ui.send({ type: 'user_message', text: 'open notepad' });
+    await ui.waitFor(m => m.type === 'audio' && m.last);
+    expect(spoken(ui)).toEqual(['Here you are, Aaron.']);
+    expect(await ui.waitFor(m => m.type === 'timing')).toMatchObject({ acked: false });
+  });
+
+  it('acknowledges deep questions straight away', async () => {
+    const { ui } = await start(10);
+    ui.send({ type: 'user_message', text: 'think carefully about the trade-offs of renting versus buying' });
+    await ui.waitFor(m => m.type === 'audio' && m.last);
+    expect(['That deserves some thought.', 'Allow me to think this through.', 'Give me a moment with this one.']).toContain(spoken(ui)[0]);
+  });
+
+  it('greets once when the overlay first connects, and remembers the line', async () => {
+    const { ui, dir } = await start(10, { greetOnStart: true });
+    const end = await ui.waitFor(m => m.type === 'turn_end', 4000) as Extract<CoreMessage, { type: 'turn_end' }>;
+    expect(end.provider).toBe('ghost');
+    expect(end.text).toMatch(/Aaron|Ghost/);
+    const presence = JSON.parse(readFileSync(join(dir, 'presence.json'), 'utf8'));
+    expect(presence.lastGreeting).toBe(end.text);
+    const second = client(core!.url, core!.token, 'ui');
+    await second.ready;
+    await new Promise(r => setTimeout(r, 1700));
+    expect(second.inbox.some(m => m.type === 'turn_end')).toBe(false);
+    second.ws.close();
+  });
 });

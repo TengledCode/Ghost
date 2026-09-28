@@ -2,12 +2,17 @@
 
 const ABBREVIATIONS = /\b(?:Mr|Mrs|Ms|Dr|Prof|Sr|Jr|St|vs|etc|e\.g|i\.e|approx|No)\.$/i;
 const MIN_CHARS = 12; // merge very short fragments ("Right.") into the next sentence
+const FIRST_CLAUSE_CHARS = 18; // the opening clause may be spoken on its own once it's this long
 
 /** One piece of the reply: the text exactly as written, and how it should be spoken (may be empty). */
 export interface Segment { display: string; speech: string }
 
 export class SentenceSplitter {
   private buffer = '';
+  private first = true;
+
+  /** `firstClause`: the reply's opening segment may end at a comma or semicolon, so the voice starts sooner. */
+  constructor(private readonly firstClause = false) {}
 
   /** Feed a delta; returns zero or more complete segments. Concatenated displays reproduce the text exactly. */
   push(delta: string): Segment[] {
@@ -18,7 +23,7 @@ export class SentenceSplitter {
       if (cut < 0) break;
       const display = this.buffer.slice(0, cut);
       this.buffer = this.buffer.slice(cut);
-      if (display.trim()) out.push({ display, speech: this.toSpeech(display) });
+      if (display.trim()) { out.push({ display, speech: this.toSpeech(display) }); this.first = false; }
     }
     return out;
   }
@@ -41,6 +46,10 @@ export class SentenceSplitter {
       }
       const ch = text[i];
       if (ch === '\n' && text[i + 1] === '\n' && i >= 1) return i + 2;
+      if (this.firstClause && this.first && (ch === ',' || ch === ';' || ch === '—') && /\s/.test(text[i + 1] ?? '')) {
+        const head = text.slice(0, i + 1).trim();
+        if (head.length >= FIRST_CLAUSE_CHARS && head.split(/\s+/).length >= 3 && !head.includes('`')) return i + 1;
+      }
       if (ch !== '.' && ch !== '!' && ch !== '?' && ch !== '…') continue;
       const next = text[i + 1];
       if (next === undefined) return -1; // could be "3." of "3.14"; wait for more

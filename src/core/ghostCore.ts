@@ -6,11 +6,14 @@ import { WebSocketServer, WebSocket } from 'ws';
 import type { ClientMessage, ClientRole, CoreMessage, GhostState } from '../shared/protocol';
 import { parseMessage } from '../shared/protocol';
 import type { ProviderId, Settings } from '../shared/settings';
+import { AckPicker, allAckLines, classifyAck, withName, type AckPool } from '../shared/acks';
 import { classify, describe } from './approvals/classify';
+import { pickGreeting } from './greeting';
 import { isPureCommand, parseScreenCommand } from './liveScreen';
 import { ConversationLog } from './memory/conversations';
 import { MemoryStore } from './memory/store';
 import { buildPersona, buildTurnPrompt } from './persona';
+import { PresenceStore } from './presence';
 import type { Provider, ProviderEvent } from './providers/types';
 import { ReminderScheduler } from './reminders/scheduler';
 import { modelFor, routeTier } from './router';
@@ -18,6 +21,7 @@ import { SentenceSplitter, type Segment } from './sentenceSplitter';
 import { TOOL_DEFS, type ToolName } from './tools/definitions';
 import { CLAUDE_BUILTIN_TOOLS } from './providers/claude';
 import { ToolExecutor, type Host } from './tools/executor';
+import { AckAudioCache } from './tts/ackCache';
 import type { TtsService } from './tts/service';
 
 export interface CoreOptions {
@@ -35,10 +39,17 @@ export interface CoreOptions {
   captureScreen?: () => Promise<{ path: string; width: number; height: number; takenAt: string }>;
   /** Told when live screen view switches (e.g. to update the tray tooltip). */
   onLiveScreen?: (on: boolean) => void;
+  /** Speak a short greeting when the overlay first connects (off in tests). */
+  greetOnStart?: boolean;
+  /** How long a reply may keep Aaron waiting before Ghost acknowledges it (ms). */
+  ackDelayMs?: number;
 }
 
 interface Client { ws: WebSocket; role: ClientRole | null }
-interface Turn { id: string; abort: AbortController; spoken: number; audioSent: number; audioDone: boolean; textDone: boolean }
+interface Turn {
+  id: string; abort: AbortController; spoken: number; audioSent: number; audioDone: boolean; textDone: boolean;
+  startedAt: number; firstText?: number; firstAudio?: number; acked: boolean; ackTimer?: NodeJS.Timeout;
+}
 
 const PRIMARY_RETRY_MS = 15 * 60_000; // while fallen back, try the primary again at most this often
 const SESSION_IDLE_MS = 2 * 3600_000; // start a fresh conversation after 2h of quiet to keep context (and usage) small
@@ -66,6 +77,12 @@ export class GhostCore {
   private workspace: string;
   private personaFile: string;
   private mcpConfigPath: string;
+  private presence: PresenceStore;
+  private acks = new AckPicker();
+  private ackAudio: AckAudioCache;
+  private greeted = false;
+  private presenceTimer: NodeJS.Timeout | null = null;
+  private prewarmTimer: NodeJS.Timeout | null = null;
 
   constructor(private readonly o: CoreOptions) {
     this.workspace = join(o.dataDir, 'workspace');
@@ -77,6 +94,8 @@ export class GhostCore {
     this.log = new ConversationLog(o.dataDir);
     this.sessionId = this.log.current.claudeSessionId; // resume the Claude conversation after a restart
     this.executor = new ToolExecutor(o.host, this.memory, this.reminders, this.log);
+    this.presence = new PresenceStore(join(o.dataDir, 'presence.json'));
+    this.ackAudio = new AckAudioCache(join(o.dataDir, 'ack-cache'), o.tts);
     o.tts.onFallback = reason => this.broadcast({ type: 'notice', level: 'info', text: `Voice switched to Edge (${reason}).` });
   }
 
@@ -96,10 +115,36 @@ export class GhostCore {
     // Pick up where we left off, or file away a conversation that went quiet while Ghost was closed.
     if (this.log.isStale(SESSION_IDLE_MS)) this.rotateConversation();
     else this.seedGemini();
+    this.warmClaude();
+    this.presenceTimer = setInterval(() => this.presence.update({ lastSeen: Date.now() }), 5 * 60_000);
+    this.presenceTimer.unref?.();
+    const s = this.o.settings();
+    // Record the acknowledgements once per voice, in the background, so they play instantly.
+    if (s.voiceEnabled && s.acknowledgements && this.o.greetOnStart) this.prewarmTimer = setTimeout(() => void this.ackAudio.prewarm(allAckLines(s.userName), this.voiceChoice()), 8000);
+  }
+
+  /** Start the Claude session now, so the first message doesn't wait for the CLI to boot. */
+  private warmClaude(): void {
+    const s = this.o.settings();
+    const claude = this.o.providers.claude as { warm?: (r: object) => void } | undefined;
+    if (s.provider !== 'claude' && s.fallbackProvider !== 'claude') return;
+    claude?.warm?.({
+      model: modelFor('claude', s.modelTier === 'auto' ? 'balanced' : s.modelTier), personaFile: this.personaFile,
+      mcpConfigPath: this.mcpConfigPath, workspace: this.workspace, sessionId: this.sessionId,
+    });
+  }
+
+  private voiceChoice() {
+    const s = this.o.settings();
+    return { engine: s.ttsEngine, elevenLabsVoiceId: s.elevenLabsVoiceId, edgeVoice: s.edgeVoice };
   }
 
   stop(): void {
     this.clearLiveTimer();
+    if (this.presenceTimer) clearInterval(this.presenceTimer);
+    if (this.prewarmTimer) clearTimeout(this.prewarmTimer);
+    this.presence.update({ lastSeen: Date.now() });
+    (this.o.providers.claude as { stop?: () => void } | undefined)?.stop?.();
     this.turn?.abort.abort();
     this.reminders.stop();
     for (const c of this.clients) c.ws.close();
@@ -127,6 +172,8 @@ export class GhostCore {
     }, null, 2));
     // Claude Code: keep this folder free of project instructions.
     writeFileSync(join(this.workspace, 'README.txt'), 'Ghost working folder for the Claude/Gemini CLIs. Safe to leave empty.\n');
+    // A running Claude session read the old persona; the next message restarts it (same conversation).
+    (this.o.providers.claude as { stop?: () => void } | undefined)?.stop?.();
   }
 
   // ---------------------------------------------------------------- connections
@@ -149,6 +196,7 @@ export class GhostCore {
           this.send(client, { type: 'state', state: this.state });
           this.send(client, { type: 'live_screen', on: this.liveScreen, offAt: this.liveOffAt });
           if (this.fallback) this.send(client, { type: 'provider', active: this.fallback.active, primary: s.provider, reason: this.fallback.reason });
+          if (this.o.greetOnStart && !this.greeted) { this.greeted = true; setTimeout(() => this.greet(), 1400); }
         }
         return;
       }
@@ -204,6 +252,7 @@ export class GhostCore {
   // ---------------------------------------------------------------- turns
 
   cancel(): void {
+    if (this.turn?.ackTimer) clearTimeout(this.turn.ackTimer);
     this.turn?.abort.abort();
     this.turn = null;
     this.speechQueue = Promise.resolve();
@@ -251,9 +300,10 @@ export class GhostCore {
     if (screenCmd === 'on' && !this.liveScreen) this.setLiveScreen(true, false);
     if (this.liveScreen) this.armLiveTimer(); // the auto-off timer counts quiet time, so a message resets it
 
-    const turn: Turn = { id: randomUUID(), abort: new AbortController(), spoken: 0, audioSent: 0, audioDone: false, textDone: false };
+    const turn: Turn = { id: randomUUID(), abort: new AbortController(), spoken: 0, audioSent: 0, audioDone: false, textDone: false, startedAt: Date.now(), acked: false };
     this.turn = turn;
     this.setState('thinking');
+    this.presence.update({ lastSeen: Date.now() });
 
     // Live view, or a one-off "what's on my screen?": snapshot the monitor under the cursor first.
     let screen: { path: string } | { error: string } | undefined;
@@ -266,11 +316,16 @@ export class GhostCore {
     }
     let tier = routeTier(message, s.modelTier);
     if (screen && 'path' in screen && tier === 'fast' && s.modelTier === 'auto') tier = 'balanced'; // reading a screen deserves more than the quick tier
+    // A quick "Noted." when the reply will take a moment: straight away for deep thinking or a screen
+    // read, otherwise only if nothing has arrived after a short wait.
+    const ackPool = classifyAck(message, tier, !!screen && 'path' in screen);
+    if (ackPool === 'deep' || ackPool === 'screen') this.acknowledge(turn, ackPool);
+    else turn.ackTimer = setTimeout(() => this.acknowledge(turn, ackPool), this.o.ackDelayMs ?? 1200);
     const prompt = buildTurnPrompt(message, { now: new Date(), memories: this.memory.contextFor(message), userName: s.userName, screen });
     let order = [s.provider, s.fallbackProvider].filter((p, i, a): p is ProviderId => !!p && a.indexOf(p) === i);
     // While fallen back, don't pay for a failing call to the primary on every message.
     if (this.fallback && Date.now() < this.fallback.retryAt && order.length > 1) order = order.slice(1);
-    const splitter = new SentenceSplitter();
+    const splitter = new SentenceSplitter(true);
     let reply = '';
 
     for (const [attempt, pid] of order.entries()) {
@@ -288,16 +343,18 @@ export class GhostCore {
           if (ev.type === 'session' && pid === 'claude') this.setSession(ev.sessionId);
           else if (ev.type === 'text_delta') {
             reply += ev.text;
+            this.markText(turn);
             this.broadcast({ type: 'text_delta', turnId: turn.id, text: ev.text });
             if (this.state === 'searching') this.setState('thinking');
             for (const seg of splitter.push(ev.text)) this.queueSpeech(turn, seg);
           } else if (ev.type === 'tool_start') {
+            if (turn.firstText === undefined) this.acknowledge(turn, 'search');
             this.setState('searching', TOOL_LABEL[ev.name] ?? prettyTool(ev.name));
           } else if (ev.type === 'tool_end') {
             if (this.state === 'searching') this.setState('thinking');
           } else if (ev.type === 'done') {
             if (ev.sessionId && pid === 'claude') this.setSession(ev.sessionId);
-            if (!reply && ev.text) { reply = ev.text; this.broadcast({ type: 'text_delta', turnId: turn.id, text: ev.text }); for (const seg of splitter.push(ev.text)) this.queueSpeech(turn, seg); }
+            if (!reply && ev.text) { reply = ev.text; this.markText(turn); this.broadcast({ type: 'text_delta', turnId: turn.id, text: ev.text }); for (const seg of splitter.push(ev.text)) this.queueSpeech(turn, seg); }
           } else if (ev.type === 'error') {
             failed = ev;
           }
@@ -317,6 +374,7 @@ export class GhostCore {
         this.log.append('assistant', reply, { provider: pid, model: model || 'default' });
         this.broadcast({ type: 'turn_end', turnId: turn.id, text: reply, provider: pid, model: model || 'default' });
         turn.textDone = true;
+        this.markText(turn);
         this.maybeFinish(turn);
         return;
       }
@@ -351,6 +409,7 @@ export class GhostCore {
     this.broadcast({ type: 'turn_end', turnId: turn.id, text: line, provider: pid, model: '' });
     this.broadcast({ type: 'notice', level: 'error', text: err.message.slice(0, 400) });
     turn.textDone = true;
+    this.markText(turn);
     this.setState('error');
     this.queueSpeech(turn, { display: line, speech: line });
   }
@@ -360,20 +419,22 @@ export class GhostCore {
    * can reveal the words as they are spoken. Segments with nothing to say (a code block) still take
    * their place in the order, with empty audio.
    */
-  private queueSpeech(turn: Turn, seg: Segment): void {
+  private queueSpeech(turn: Turn, seg: Segment, ack = false): void {
     const s = this.o.settings();
     if (!s.voiceEnabled) return;
     const seq = turn.spoken++;
     const display = seg.display;
-    const synth = !seg.speech ? Promise.resolve(null) : this.o.tts
-      .speak(seg.speech, { engine: s.ttsEngine, elevenLabsVoiceId: s.elevenLabsVoiceId, edgeVoice: s.edgeVoice }, turn.abort.signal)
-      .catch(e => { this.broadcast({ type: 'notice', level: 'warn', text: `Voice unavailable: ${String(e.message ?? e)}` }); return null; });
+    const synth = !seg.speech ? Promise.resolve(null) : (ack ? this.ackAudio.get(seg.speech, this.voiceChoice()) : this.o.tts
+      .speak(seg.speech, this.voiceChoice(), turn.abort.signal))
+      .catch(e => { if (!ack) this.broadcast({ type: 'notice', level: 'warn', text: `Voice unavailable: ${String(e.message ?? e)}` }); return null; });
     // Synthesis runs in parallel, but delivery keeps sentence order.
     this.speechQueue = this.speechQueue.then(async () => {
       const audio = await synth;
       if (this.turn !== turn || turn.abort.signal.aborted) return;
       if (audio) {
-        if (this.state !== 'speaking' && this.state !== 'error') this.setState('speaking');
+        // An acknowledgement plays while Ghost is still thinking; the reply itself switches to speaking.
+        if (!ack && this.state !== 'speaking' && this.state !== 'error') this.setState('speaking');
+        if (!ack && turn.firstAudio === undefined) turn.firstAudio = Date.now() - turn.startedAt;
         turn.audioSent++;
         this.broadcast({ type: 'audio', turnId: turn.id, seq, mime: audio.mime, data: audio.audio.toString('base64'), engine: audio.engine, last: false, display });
       } else {
@@ -384,12 +445,29 @@ export class GhostCore {
     });
   }
 
+  /** The reply has started: an acknowledgement would only get in its way now. */
+  private markText(turn: Turn): void {
+    if (turn.firstText === undefined) turn.firstText = Date.now() - turn.startedAt;
+    if (turn.ackTimer) { clearTimeout(turn.ackTimer); turn.ackTimer = undefined; }
+  }
+
+  /** Speak one acknowledgement for this turn, if the reply hasn't started and voice is on. */
+  private acknowledge(turn: Turn, pool: AckPool): void {
+    if (turn.ackTimer) { clearTimeout(turn.ackTimer); turn.ackTimer = undefined; }
+    const s = this.o.settings();
+    if (turn.acked || turn.firstText !== undefined || turn.spoken > 0 || this.turn !== turn || !s.voiceEnabled || !s.acknowledgements) return;
+    turn.acked = true;
+    // No display text: the bubble keeps its "…" until the reply itself is spoken.
+    this.queueSpeech(turn, { display: '', speech: withName(this.acks.next(pool), s.userName) }, true);
+  }
+
   /** When all text is in and every sentence is synthesised, tell clients the last chunk has gone. */
   private maybeFinish(turn: Turn): void {
     void this.speechQueue.then(() => {
       if (this.turn !== turn || turn.audioDone) return;
       if (!turn.textDone) return;
       turn.audioDone = true;
+      this.broadcast({ type: 'timing', turnId: turn.id, firstTextMs: turn.firstText, firstAudioMs: turn.firstAudio, acked: turn.acked });
       if (turn.audioSent === 0) { if (this.state !== 'error') this.setState('done'); return; }
       this.broadcast({ type: 'audio', turnId: turn.id, seq: turn.spoken, mime: 'audio/mpeg', data: '', engine: 'none', last: true });
     });
@@ -520,6 +598,19 @@ export class GhostCore {
     }
   }
 
+  /** Let Aaron know Ghost is around, once per launch, as the overlay finishes materialising. */
+  private greet(): void {
+    const s = this.o.settings();
+    const p = this.presence.get();
+    const line = pickGreeting({
+      now: new Date(), lastSeen: p.lastSeen, lastGreeting: p.lastGreeting,
+      facts: this.memory.list().map(f => f.text), userName: s.userName, assistantName: s.assistantName,
+    });
+    this.presence.update({ lastGreeting: line, lastSeen: Date.now() });
+    if (this.turn) return; // Aaron is already talking to Ghost
+    this.say(line);
+  }
+
   /** Condense a finished conversation into a short episode for long-term memory, using the cheapest tier. */
   private async archiveConversation(conversationId: string): Promise<void> {
     const s = this.o.settings();
@@ -532,7 +623,7 @@ export class GhostCore {
       for await (const ev of provider.send({
         prompt: `Summarise this conversation in 2-3 sentences for your long-term memory. Note decisions, plans and facts about ${s.userName}. Reply with the summary only.\n\n${lines.join('\n').slice(-12_000)}`,
         model: modelFor(s.provider, 'fast'), persona: '', personaFile: this.personaFile, mcpConfigPath: this.mcpConfigPath,
-        workspace: this.workspace, signal: new AbortController().signal,
+        workspace: this.workspace, signal: new AbortController().signal, oneShot: true,
       })) if (ev.type === 'done') summary = ev.text;
     } catch { /* memory is best effort */ }
     if (summary.trim()) this.memory.addEpisode(summary);

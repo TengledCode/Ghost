@@ -44,6 +44,20 @@ let bubbleTimer = 0;
 let pendingApproval: string | null = null;
 let orientation: Corner = 'bottom-right';
 let thankedThisTurn = false;
+let materialised = false;
+// Reply timings (Settings → Brain → Show reply timings), measured from when Aaron pressed Enter.
+let sentAt = 0;
+let timing: { text?: number; voice?: number; heard?: number; acked?: boolean } = {};
+let modelLabel = '';
+const standalone = (turnId: string) => /^(say|reminder|preview)-/.test(turnId);
+function renderMeta(): void {
+  const sec = (ms?: number) => (ms === undefined ? '–' : `${(ms / 1000).toFixed(1)}s`);
+  const parts = [modelLabel];
+  if (settings.showTimings && timing.text !== undefined) {
+    parts.push(`text ${sec(timing.text)} · voice ${sec(timing.voice)} · heard ${sec(timing.heard)}${timing.acked ? ' (ack)' : ''}`);
+  }
+  bubbleMeta.textContent = parts.filter(Boolean).join(' · ');
+}
 const history: { who: 'user' | 'ghost'; text: string }[] = [];
 
 const boot = await bridge.bootstrap();
@@ -52,7 +66,10 @@ const core = new CoreClient(boot.url, boot.token);
 const player = new VoicePlayer(settings.ghostFilter, settings.volume);
 // While voice is on, the bubble shows the reply in step with the voice (see subtitles.ts).
 const subtitles = new Subtitles(text => showBubble(text));
-player.onChunkStart = (turnId, seq, at, duration) => subtitles.started(turnId, seq, at, duration);
+player.onChunkStart = (turnId, seq, at, duration) => {
+  subtitles.started(turnId, seq, at, duration);
+  if (sentAt && !standalone(turnId) && timing.heard === undefined) { timing.heard = at * 1000 - sentAt; renderMeta(); }
+};
 player.onFinished = turnId => { subtitles.revealAll(turnId); core.send({ type: 'playback_finished', turnId }); };
 (function tickSubtitles() { requestAnimationFrame(tickSubtitles); subtitles.tick(); })();
 if (!inElectron) (window as unknown as { ghostDebug: object }).ghostDebug = { player, subtitles }; // browser preview: inspectable
@@ -101,6 +118,7 @@ function applySettings(s: Settings): void {
   if (s.skin === 'ghost-shell' && !shell) {
     try {
       shell = new GhostShell(shellEl, theme, s.renderQuality);
+      if (!materialised) { materialised = true; shell.materialise(); } // the startup entrance, once
       shell.setState(state);
       shell.setLiveScreen(!liveTag.hidden); // a skin switch keeps the live tint
       if (!inElectron) (window as unknown as { ghostShell: GhostShell }).ghostShell = shell; // browser preview: inspectable
@@ -163,7 +181,9 @@ core.on((m: CoreMessage) => {
       if (!settings.voiceEnabled) showBubble(replyText);
       break;
     case 'turn_end':
-      bubbleMeta.textContent = m.model ? `${m.provider} · ${m.model}` : '';
+      modelLabel = m.model ? `${m.provider} · ${m.model}` : '';
+      if (standalone(m.turnId)) { timing = {}; sentAt = 0; }
+      renderMeta();
       // No voice came for this reply at all (voice unavailable): show the text now.
       if (settings.voiceEnabled && subtitles.activeTurn !== m.turnId) setTimeout(() => { if (subtitles.activeTurn !== m.turnId) showBubble(m.text); }, 600);
       history.push({ who: 'ghost', text: m.text });
@@ -183,6 +203,10 @@ core.on((m: CoreMessage) => {
       renderHistory();
       break;
     }
+    case 'timing':
+      timing = { ...timing, text: m.firstTextMs, voice: m.firstAudioMs, acked: m.acked };
+      renderMeta();
+      break;
     case 'approval_request': showConfirm(m.id, m.summary); break;
     case 'approval_resolved': if (pendingApproval === m.id) hideConfirm(); break;
     case 'notice': showNotice(m.text, m.level); break;
@@ -294,7 +318,10 @@ form.addEventListener('submit', e => {
   shell?.setLean(0);
   replyText = '';
   showBubble('…');
-  bubbleMeta.textContent = '';
+  sentAt = performance.now();
+  timing = {};
+  modelLabel = '';
+  renderMeta();
 });
 
 let typingTimer = 0;

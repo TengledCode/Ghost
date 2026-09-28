@@ -1,7 +1,7 @@
 import { app, BrowserWindow, globalShortcut, ipcMain, Menu, nativeImage, shell, Tray } from 'electron';
 import { join } from 'node:path';
 import { GhostCore } from '../core/ghostCore';
-import { ClaudeCliProvider } from '../core/providers/claude';
+import { ClaudeLiveProvider } from '../core/providers/claudeLive';
 import { GeminiCliProvider } from '../core/providers/gemini';
 import { MockProvider } from '../core/providers/mock';
 import { EdgeTts } from '../core/tts/edge';
@@ -34,7 +34,7 @@ app.whenReady().then(async () => {
     nodeExecPath: process.execPath,
     providers: mock
       ? { mock: new MockProvider(), claude: new MockProvider() as never, gemini: new MockProvider() as never }
-      : { claude: new ClaudeCliProvider(), gemini: new GeminiCliProvider() },
+      : { claude: new ClaudeLiveProvider(), gemini: new GeminiCliProvider() },
     tts: new TtsService(new ElevenLabsTts(() => store.getSecret('elevenlabs')), new EdgeTts()),
     host: {
       openExternal: url => shell.openExternal(url),
@@ -45,6 +45,7 @@ app.whenReady().then(async () => {
     // Snapshots land in the CLIs' working folder, where the model's file-reading tool can open them.
     captureScreen: () => captureScreen(join(app.getPath('userData'), 'data', 'workspace', 'screens'), overlay.win),
     onLiveScreen: on => tray?.setToolTip(on ? 'Ghost: watching screen' : 'Ghost'),
+    greetOnStart: true,
   });
   await core.start();
 

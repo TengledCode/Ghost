@@ -15,6 +15,7 @@ export interface SendRequest {
   mcpConfigPath: string;
   workspace: string; // cwd for the CLI, so it never picks up an unrelated project's CLAUDE.md
   signal: AbortSignal;
+  oneShot?: boolean; // a standalone run outside the ongoing conversation (e.g. summarising an old chat)
 }
 
 export interface Provider {

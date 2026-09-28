@@ -47,6 +47,7 @@ const core = new GhostCore({
   host: { openExternal: async () => {}, openPath: async () => '', trash: async () => {} },
   settings: () => mergeSettings({ provider: 'mock', fallbackProvider: null, ttsEngine: 'edge' }),
   port: Number(process.env.GHOST_PREVIEW_PORT ?? 0),
+  greetOnStart: true,
 });
 await core.start();
 console.log(JSON.stringify({ url: core.url, token: core.token }));

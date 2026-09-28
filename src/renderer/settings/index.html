@@ -64,6 +64,8 @@
           <option value="fast">Always fast (Haiku / Flash)</option><option value="balanced">Always balanced (Sonnet)</option><option value="deep">Always deep (Opus / Pro)</option>
         </select>
       </label>
+      <label class="check"><input type="checkbox" data-key="showTimings" /> Show reply timings under the bubble</label>
+      <p class="hint">Text: when the first words arrived. Voice: when the first sentence was ready. Heard: when you first heard Ghost, including a quick "Noted.".</p>
       <div class="row-buttons">
         <button type="button" id="newConversation">Start a new conversation</button>
         <button type="button" id="clearHistory" class="danger">Clear conversation history</button>
@@ -90,6 +92,7 @@
           <option value="off">Off</option>
         </select>
       </label>
+      <label class="check"><input type="checkbox" data-key="acknowledgements" /> Say a quick "Noted." when a reply will take a moment</label>
       <p class="hint">Some headsets and speakers doze off in silence and miss the first word. Ghost plays an inaudible signal to keep them awake.</p>
     </section>
 
