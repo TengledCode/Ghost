@@ -14,6 +14,7 @@ import { BLOOM_LAYER, PostFx } from './postfx';
 export type RenderQuality = 'auto' | QualityLevel;
 
 const TONES = { amber: new THREE.Color('#ffae42'), red: new THREE.Color('#ff3b4e') };
+const LIVE_TINT = new THREE.Color('#ff3d8b');
 const CAMERA_DISTANCE = 7.4;
 const LOOK_PLANE_Z = 1.5; // where cursor targets are projected in front of Ghost
 const NEAR_PX = 170; // cursor this close (px from centre) makes Ghost lean in
@@ -85,6 +86,8 @@ export class GhostShell {
   private curiousLook = { yaw: 0, pitch: 0, roll: 0, until: 0 };
   private mood: { kind: Mood; until: number } | null = null;
   private dozing = false;
+  private live = false; // live screen view: the eye takes a distinct red-magenta cast
+  private liveMix = 0;
 
   private time = 0;
   private lastFrame = performance.now();
@@ -184,6 +187,9 @@ export class GhostShell {
   setLean(direction: number): void { this.lean = direction; }
 
   setBands(b: [number, number, number]): void { this.bands = b; }
+
+  /** Live screen view on/off: tints the eye and adds a scanning sweep to the holo-iris. */
+  setLiveScreen(on: boolean): void { this.live = on; }
 
   setQuality(q: RenderQuality): void { this.governor.setMode(q); this.resize(); }
 
@@ -349,7 +355,9 @@ export class GhostShell {
 
     // ---- colour and glow (computed first: shards and eye both use it)
     const u = this.core.uniforms;
-    const toneTarget = p.tone === 'theme' ? this.themeGlow : TONES[p.tone];
+    this.liveMix += ((this.live ? 1 : 0) - this.liveMix) * (1 - Math.exp(-dt * 4));
+    // Live view blends the theme colour halfway to red-magenta, so state tones (amber, red) still read.
+    const toneTarget = (p.tone === 'theme' ? this.themeGlow : TONES[p.tone]).clone().lerp(LIVE_TINT, this.liveMix * 0.55);
     this.glowColor.lerp(toneTarget, 1 - Math.exp(-dt * 6));
     this.flicker += (p.flicker - this.flicker) * (1 - Math.exp(-dt * 6));
     const flick = this.flicker > 0.02 ? (Math.sin(t * 41) > 0.25 ? 1 : 1 - this.flicker * 0.75) : 1;
@@ -424,7 +432,7 @@ export class GhostShell {
     );
     this.holo.update(t, dt, {
       color: this.glowColor, intensity, look,
-      irisOn: this.dozing ? 0.15 : 1, blink: this.blink,
+      irisOn: this.dozing ? 0.15 : 1, blink: this.blink, live: this.liveMix,
     });
   }
 

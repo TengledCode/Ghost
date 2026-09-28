@@ -94,6 +94,14 @@
       <label class="check"><input type="checkbox" data-key="hideOnFullscreen" /> Hide over fullscreen games and apps (voice and reminders keep working)</label>
       <button type="button" id="quit" class="danger">Quit Ghost</button>
     </section>
+
+    <section>
+      <h2>Live screen view</h2>
+      <p class="hint">While live view is on, each message includes a snapshot of the monitor under your cursor, so you can just ask "what's this error?". Ghost leaves itself out of the picture, and a red LIVE tag shows whenever it's on. You can also type "watch my screen" or "stop watching".</p>
+      <label>Toggle hotkey <input id="liveScreenHotkey" data-hotkey="liveScreenHotkey" readonly /></label>
+      <label class="check"><input type="checkbox" id="liveScreenAutoOff" data-key="liveScreenAutoOff" /> Switch off automatically</label>
+      <label>After <span class="inline-num"><input type="number" id="liveScreenAutoOffMinutes" min="5" max="240" step="5" data-key="liveScreenAutoOffMinutes" data-num /> minutes without a message</span></label>
+    </section>
   </main>
   <script type="module" src="./main.ts"></script>
 </body>

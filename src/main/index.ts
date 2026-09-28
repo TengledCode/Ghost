@@ -11,6 +11,7 @@ import type { Settings } from '../shared/settings';
 import { FullscreenWatcher } from './fullscreenWatcher';
 import { OverlayWindow } from './overlayWindow';
 import { SettingsStore } from './settingsStore';
+import { captureScreen } from './screenCapture';
 import { openSettingsWindow } from './settingsWindow';
 
 if (!app.requestSingleInstanceLock()) app.quit();
@@ -40,6 +41,9 @@ app.whenReady().then(async () => {
       trash: path => shell.trashItem(path),
     },
     settings,
+    // Snapshots land in the CLIs' working folder, where the model's file-reading tool can open them.
+    captureScreen: () => captureScreen(join(app.getPath('userData'), 'data', 'workspace', 'screens'), overlay.win),
+    onLiveScreen: on => tray?.setToolTip(on ? 'Ghost: watching screen' : 'Ghost'),
   });
   await core.start();
 
@@ -66,6 +70,7 @@ app.whenReady().then(async () => {
     const pairs: [string, string, () => void][] = [
       [s.hotkey, 'Summon', () => overlay.summon()],
       [s.quitHotkey, 'Quit', () => app.quit()],
+      [s.liveScreenHotkey, 'Live screen', () => core.setLiveScreen(!core.isLiveScreen, true)],
     ];
     for (const [accelerator, label, action] of pairs) {
       if (!accelerator) continue;
@@ -81,7 +86,8 @@ app.whenReady().then(async () => {
   if (settings().hideOnFullscreen) fullscreen.start();
 
   store.on('change', (next: Settings, prev: Settings) => {
-    if (next.hotkey !== prev.hotkey || next.quitHotkey !== prev.quitHotkey) bindHotkeys(next);
+    if (next.hotkey !== prev.hotkey || next.quitHotkey !== prev.quitHotkey || next.liveScreenHotkey !== prev.liveScreenHotkey) bindHotkeys(next);
+    if (next.liveScreenAutoOff !== prev.liveScreenAutoOff || next.liveScreenAutoOffMinutes !== prev.liveScreenAutoOffMinutes) core.settingsChanged();
     if (next.launchAtLogin !== prev.launchAtLogin) applyLogin(next.launchAtLogin);
     if (next.hideOnFullscreen !== prev.hideOnFullscreen) { fullscreen.stop(); overlay.setFullscreenHidden(false); if (next.hideOnFullscreen) fullscreen.start(); }
     if (next.size !== prev.size || next.corner !== prev.corner || next.cornerDisplayId !== prev.cornerDisplayId || next.customPosition !== prev.customPosition) overlay.place();

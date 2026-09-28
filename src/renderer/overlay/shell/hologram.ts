@@ -14,13 +14,15 @@ const HOLO_VERT = /* glsl */ `
 const HOLO_FRAG = /* glsl */ `
   uniform sampler2D map;
   uniform vec3 color;
-  uniform float opacity, time, useMap;
+  uniform float opacity, time, useMap, live;
   varying vec2 vUv;
   void main() {
     float a = useMap > 0.5 ? texture2D(map, vUv).a : 1.0;
     float scan = 0.72 + 0.28 * sin(vUv.y * 90.0 - time * 6.0);
     float flicker = 0.92 + 0.08 * sin(time * 53.0) * sin(time * 17.0);
-    float alpha = a * scan * flicker * opacity;
+    // Live screen view: a bright band sweeps down the iris, like a scanner reading the screen.
+    float sweep = live * 1.6 * smoothstep(0.09, 0.0, abs(fract(time * 0.45) - (1.0 - vUv.y)));
+    float alpha = a * (scan + sweep) * flicker * opacity;
     gl_FragColor = vec4(color * alpha, min(1.0, alpha));
   }`;
 
@@ -28,7 +30,7 @@ function holoMaterial(map: THREE.Texture | null): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     uniforms: {
       map: { value: map }, color: { value: new THREE.Color('#7fd4ff') }, opacity: { value: 0 },
-      time: { value: 0 }, useMap: { value: map ? 1 : 0 },
+      time: { value: 0 }, useMap: { value: map ? 1 : 0 }, live: { value: 0 },
     },
     vertexShader: HOLO_VERT, fragmentShader: HOLO_FRAG,
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, toneMapped: false,
@@ -69,7 +71,8 @@ export class Hologram {
   }
 
   /** @param look normalised gaze offset (-1..1) for sliding the holo-iris */
-  update(t: number, dt: number, o: { color: THREE.Color; intensity: number; look: THREE.Vector2; irisOn: number; blink: number }): void {
+  update(t: number, dt: number, o: { color: THREE.Color; intensity: number; look: THREE.Vector2; irisOn: number; blink: number; live?: number }): void {
+    this.irisMat.uniforms.live.value = o.live ?? 0;
     this.irisMat.uniforms.time.value = t;
     this.irisMat.uniforms.color.value.copy(o.color);
     // Slides towards the gaze, rotates slowly, squashes on blink.

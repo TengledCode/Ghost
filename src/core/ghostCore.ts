@@ -7,6 +7,7 @@ import type { ClientMessage, ClientRole, CoreMessage, GhostState } from '../shar
 import { parseMessage } from '../shared/protocol';
 import type { ProviderId, Settings } from '../shared/settings';
 import { classify, describe } from './approvals/classify';
+import { isPureCommand, parseScreenCommand } from './liveScreen';
 import { ConversationLog } from './memory/conversations';
 import { MemoryStore } from './memory/store';
 import { buildPersona, buildTurnPrompt } from './persona';
@@ -30,6 +31,10 @@ export interface CoreOptions {
   settings: () => Settings;
   port?: number;
   approvalTimeoutMs?: number;
+  /** Snapshot of the monitor under the cursor (Electron desktopCapturer); absent in tests or browsers. */
+  captureScreen?: () => Promise<{ path: string; width: number; height: number; takenAt: string }>;
+  /** Told when live screen view switches (e.g. to update the tray tooltip). */
+  onLiveScreen?: (on: boolean) => void;
 }
 
 interface Client { ws: WebSocket; role: ClientRole | null }
@@ -50,6 +55,9 @@ export class GhostCore {
   readonly log: ConversationLog;
   private approvals = new Map<string, (ok: boolean) => void>();
   private idleTimer: NodeJS.Timeout | null = null;
+  private liveScreen = false; // always off at start: never silently watching after a restart
+  private liveTimer: NodeJS.Timeout | null = null;
+  private liveOffAt: number | undefined;
   private fallback: { reason: 'limit' | 'auth' | 'missing' | 'other'; retryAt: number; active: ProviderId } | null = null;
   private speechQueue: Promise<void> = Promise.resolve();
   readonly memory: MemoryStore;
@@ -91,6 +99,7 @@ export class GhostCore {
   }
 
   stop(): void {
+    this.clearLiveTimer();
     this.turn?.abort.abort();
     this.reminders.stop();
     for (const c of this.clients) c.ws.close();
@@ -138,6 +147,7 @@ export class GhostCore {
           const s = this.o.settings();
           this.send(client, { type: 'welcome', name: s.assistantName, userName: s.userName });
           this.send(client, { type: 'state', state: this.state });
+          this.send(client, { type: 'live_screen', on: this.liveScreen, offAt: this.liveOffAt });
           if (this.fallback) this.send(client, { type: 'provider', active: this.fallback.active, primary: s.provider, reason: this.fallback.reason });
         }
         return;
@@ -156,9 +166,10 @@ export class GhostCore {
       case 'cancel': return this.cancel();
       case 'approval_response': this.approvals.get(msg.id)?.(msg.approved); return;
       case 'playback_finished':
-        if (this.turn?.id === msg.turnId || msg.turnId.startsWith('reminder-') || msg.turnId.startsWith('preview-')) this.finishSpeaking(msg.turnId);
+        if (this.turn?.id === msg.turnId || msg.turnId.startsWith('reminder-') || msg.turnId.startsWith('preview-') || msg.turnId.startsWith('say-')) this.finishSpeaking(msg.turnId);
         return;
       case 'new_conversation': return this.newConversation();
+      case 'toggle_live_screen': return this.setLiveScreen(!this.liveScreen, true);
       case 'clear_history':
         this.cancel();
         this.log.clear();
@@ -232,16 +243,30 @@ export class GhostCore {
     const message = text.trim();
     if (!message) return;
     if (/^\/(new|reset)$/i.test(message)) return this.newConversation();
+    const screenCmd = parseScreenCommand(message);
+    if (isPureCommand(message, screenCmd)) return this.setLiveScreen(screenCmd === 'on', true);
     this.cancel();
     const s = this.o.settings();
     if (this.log.isStale(SESSION_IDLE_MS)) this.rotateConversation();
+    if (screenCmd === 'on' && !this.liveScreen) this.setLiveScreen(true, false);
+    if (this.liveScreen) this.armLiveTimer(); // the auto-off timer counts quiet time, so a message resets it
 
     const turn: Turn = { id: randomUUID(), abort: new AbortController(), spoken: 0, audioSent: 0, audioDone: false, textDone: false };
     this.turn = turn;
     this.setState('thinking');
 
-    const tier = routeTier(message, s.modelTier);
-    const prompt = buildTurnPrompt(message, { now: new Date(), memories: this.memory.contextFor(message), userName: s.userName });
+    // Live view, or a one-off "what's on my screen?": snapshot the monitor under the cursor first.
+    let screen: { path: string } | { error: string } | undefined;
+    if ((this.liveScreen || screenCmd === 'once') && this.o.captureScreen) {
+      try { screen = { path: (await this.o.captureScreen()).path }; } catch (e) {
+        screen = { error: String((e as Error).message ?? e).slice(0, 120) };
+        this.broadcast({ type: 'notice', level: 'warn', text: `Couldn't capture the screen: ${screen.error}` });
+      }
+      if (this.turn !== turn) return;
+    }
+    let tier = routeTier(message, s.modelTier);
+    if (screen && 'path' in screen && tier === 'fast' && s.modelTier === 'auto') tier = 'balanced'; // reading a screen deserves more than the quick tier
+    const prompt = buildTurnPrompt(message, { now: new Date(), memories: this.memory.contextFor(message), userName: s.userName, screen });
     let order = [s.provider, s.fallbackProvider].filter((p, i, a): p is ProviderId => !!p && a.indexOf(p) === i);
     // While fallen back, don't pay for a failing call to the primary on every message.
     if (this.fallback && Date.now() < this.fallback.retryAt && order.length > 1) order = order.slice(1);
@@ -424,6 +449,56 @@ export class GhostCore {
       elevenLabsVoiceId: engine === 'elevenlabs' ? voice : s.elevenLabsVoiceId,
       edgeVoice: engine === 'edge' ? voice : s.edgeVoice,
     });
+  }
+
+  // ---------------------------------------------------------------- live screen view
+
+  /** Switch live view; `announce` speaks and shows a short confirmation. */
+  setLiveScreen(on: boolean, announce: boolean): void {
+    const s = this.o.settings();
+    const changed = on !== this.liveScreen;
+    this.liveScreen = on;
+    if (on) this.armLiveTimer(); else this.clearLiveTimer();
+    this.broadcast({ type: 'live_screen', on, offAt: this.liveOffAt });
+    if (changed) this.o.onLiveScreen?.(on);
+    if (!announce) return;
+    const line = on
+      ? (changed ? `Very well, ${s.userName}. I'm watching your screen.` : `I'm already watching your screen, ${s.userName}.`)
+      : (changed ? `Understood. I've stopped watching your screen.` : `I wasn't watching your screen, ${s.userName}.`);
+    this.say(line);
+  }
+
+  /** Settings changed: restart or clear the auto-off timer to match. */
+  settingsChanged(): void { if (this.liveScreen) { this.armLiveTimer(); this.broadcast({ type: 'live_screen', on: true, offAt: this.liveOffAt }); } }
+
+  get isLiveScreen(): boolean { return this.liveScreen; }
+
+  private armLiveTimer(): void {
+    this.clearLiveTimer();
+    const s = this.o.settings();
+    if (!s.liveScreenAutoOff) return;
+    const ms = s.liveScreenAutoOffMinutes * 60_000;
+    this.liveOffAt = Date.now() + ms;
+    this.liveTimer = setTimeout(() => {
+      this.liveTimer = null;
+      this.setLiveScreen(false, false);
+      this.broadcast({ type: 'notice', level: 'info', text: `Live screen view switched off after ${s.liveScreenAutoOffMinutes} quiet minutes.` });
+      this.say(`I've stopped watching your screen, ${this.o.settings().userName}.`);
+    }, ms);
+  }
+
+  private clearLiveTimer(): void {
+    if (this.liveTimer) clearTimeout(this.liveTimer);
+    this.liveTimer = null;
+    this.liveOffAt = undefined;
+  }
+
+  /** A short line from Ghost itself (no model call): shown in the bubble and spoken. */
+  private say(text: string): void {
+    const turnId = `say-${randomUUID()}`;
+    this.broadcast({ type: 'text_delta', turnId, text });
+    this.broadcast({ type: 'turn_end', turnId, text, provider: 'ghost', model: '' });
+    void this.speakStandalone(turnId, text);
   }
 
   private async speakStandalone(turnId: string, text: string, choice?: Parameters<TtsService['speak']>[1]): Promise<void> {

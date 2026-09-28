@@ -18,6 +18,15 @@ const bubble = $('#bubble');
 const bubbleText = $('#bubble .bubble-text');
 const bubbleMeta = $('#bubble .meta-label');
 const providerChip = $('#bubble .provider-chip');
+const liveTag = $('#shell .live-tag');
+const liveLeft = $('#shell .live-left');
+let liveOffAt: number | undefined;
+
+/** "LIVE · 24m" while the auto-off timer runs; just "LIVE" without one. */
+function renderLiveTag(): void {
+  liveLeft.textContent = liveOffAt ? `${Math.max(1, Math.ceil((liveOffAt - Date.now()) / 60_000))}m` : '';
+}
+setInterval(() => { if (!liveTag.hidden) renderLiveTag(); }, 15_000);
 const historyEl = $('#history');
 const form = $('#input') as HTMLFormElement;
 const input = form.querySelector('input')!;
@@ -82,6 +91,7 @@ function applySettings(s: Settings): void {
     try {
       shell = new GhostShell(shellEl, theme, s.renderQuality);
       shell.setState(state);
+      shell.setLiveScreen(!liveTag.hidden); // a skin switch keeps the live tint
       if (!inElectron) (window as unknown as { ghostShell: GhostShell }).ghostShell = shell; // browser preview: inspectable
     } catch (e) {
       console.warn('WebGL shell unavailable, using the classic orb', e);
@@ -155,6 +165,12 @@ core.on((m: CoreMessage) => {
     case 'approval_request': showConfirm(m.id, m.summary); break;
     case 'approval_resolved': if (pendingApproval === m.id) hideConfirm(); break;
     case 'notice': showNotice(m.text, m.level); break;
+    case 'live_screen':
+      liveTag.hidden = !m.on;
+      liveOffAt = m.on ? m.offAt : undefined;
+      renderLiveTag();
+      shell?.setLiveScreen(m.on);
+      break;
     case 'provider': {
       // Stays visible for as long as Ghost is running on its fallback brain.
       const name = (id: string) => id.charAt(0).toUpperCase() + id.slice(1);

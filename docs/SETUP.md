@@ -86,4 +86,7 @@ The ElevenLabs free tier gives about 20 minutes of speech a month. When it runs 
 - [ ] Quit: Settings → Behaviour → Quit Ghost, or Ctrl+Alt+Q (changeable), or the tray menu
 - [ ] Idle: leave Ghost untouched a few seconds (or click elsewhere) and Ghost plus its text boxes fade to the Idle opacity setting; hovering or Ctrl+Space brings them straight back
 - [ ] Memory: have a short chat, quit, start Ghost again and ask a follow-up; it still knows the context. Ask "what did we talk about yesterday?" a day later
+- [ ] Live screen view: Ctrl+Alt+V (or type "watch my screen") shows a red LIVE tag and a magenta eye; ask "what's this error?" and it describes the monitor under your cursor; Ghost itself isn't in what it sees; "stop watching" turns it off
+- [ ] Live view auto-off: enable it in Settings → Live screen view, set a short time, and check it switches off (and says so) after that long without a message
+- [ ] No grey shadow or box around the text boxes on a light wallpaper
 - [ ] Provider switch: if Claude hits its limit, Ghost says so once, answers with Gemini, and shows an amber "on Gemini · Claude limit reached" chip until Claude is back

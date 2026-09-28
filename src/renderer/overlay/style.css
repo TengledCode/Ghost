@@ -28,9 +28,18 @@ html, body { margin: 0; height: 100%; background: transparent; overflow: hidden;
 #shell:active { cursor: grabbing; }
 /* True idle (untouched for a while, or clicked away): Ghost and its panels drop to the Idle opacity
    setting, and the panels lose their fill so only faint glass remains. Any activity snaps back fast. */
-#shell, #stack .panel { transition: opacity .15s ease, background-color .15s ease, box-shadow .15s ease, backdrop-filter .15s ease; }
-#stage[data-idle] #shell, #stage[data-idle] #stack .panel { opacity: var(--idle-opacity); transition-duration: .8s; }
-#stage[data-idle] #stack .panel { background-color: rgba(12, 14, 20, 0.12); box-shadow: none; backdrop-filter: none; }
+#shell, #stack .panel { transition: opacity .15s ease, background-color .15s ease; }
+#shell > *, #stack .panel { transition: opacity .15s ease, background-color .15s ease; }
+/* The LIVE tag is exempt: when Ghost can see the screen, that must always be obvious. */
+#stage[data-idle] #shell > :not(.live-tag), #stage[data-idle] #stack .panel { opacity: var(--idle-opacity); transition-duration: .8s; }
+#shell .live-tag { position: absolute; left: 50%; top: -6%; transform: translateX(-50%); display: flex; align-items: center; gap: 5px;
+  padding: 2px 8px; border-radius: 999px; font: 600 10px/1.4 "Segoe UI", system-ui, sans-serif; letter-spacing: .12em; color: #fff;
+  background: rgba(200, 24, 72, .92); border: 1px solid rgba(255, 140, 170, .6); pointer-events: none; white-space: nowrap; }
+#shell .live-tag i { width: 6px; height: 6px; border-radius: 50%; background: #fff; animation: live-pulse 1.6s ease-in-out infinite; }
+#shell .live-tag .live-left:not(:empty)::before { content: "· "; opacity: .75; }
+#shell .live-tag .live-left { letter-spacing: .02em; font-weight: 500; }
+@keyframes live-pulse { 50% { opacity: .25; } }
+#stage[data-idle] #stack .panel { background-color: rgba(12, 14, 20, 0.12); }
 #shell .eye { position: absolute; inset: 17%; border-radius: 50%; }
 #shell[data-skin="classic-orb"] .eye { inset: 0; }
 #shell .eye > * { position: absolute; inset: 0; width: 100%; transition: opacity .5s ease; }
@@ -48,7 +57,8 @@ html, body { margin: 0; height: 100%; background: transparent; overflow: hidden;
 #stage[data-state="error"] .eye { filter: sepia(1) saturate(4) hue-rotate(-50deg); }
 
 /* ---- panels ---- */
-.panel { background: var(--panel); border: 1px solid var(--panel-border); border-radius: 14px; box-shadow: 0 8px 28px rgba(0,0,0,.45); backdrop-filter: blur(14px); animation: rise .18s ease-out; }
+/* No drop shadow or backdrop blur: over a transparent desktop window both draw a faint box around the panel. */
+.panel { background: var(--panel); border: 1px solid var(--panel-border); border-radius: 14px; animation: rise .18s ease-out; }
 @keyframes rise { from { opacity: 0; transform: translateY(6px); } }
 [hidden] { display: none !important; }
 

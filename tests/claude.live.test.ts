@@ -1,6 +1,6 @@
-import { existsSync, mkdtempSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { GhostCore } from '../src/core/ghostCore';
 import { ClaudeCliProvider } from '../src/core/providers/claude';
@@ -39,6 +39,37 @@ describe.skipIf(!process.env.GHOST_LIVE || !existsSync(bridge))('Claude CLI (liv
     expect(end.provider).toBe('claude');
     expect(core.reminders.list().map(r => r.text.toLowerCase()).join()).toMatch(/water/);
     ws.close();
+    core.stop();
+  }, 180_000);
+
+  it('reads the live screen snapshot with its Read tool', async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), 'ghost-live-screen-'));
+    const shot = join(dataDir, 'workspace', 'screens', 'screen-test.png');
+    const core = new GhostCore({
+      dataDir, personaPath: join(__dirname, '../config/persona.md'),
+      mcpServerPath: bridge, nodeExecPath: process.execPath, providers: { claude: new ClaudeCliProvider() },
+      tts: new TtsService(tts, tts), host: { openExternal: async () => {}, openPath: async () => '', trash: async () => {} },
+      settings: () => mergeSettings({ provider: 'claude', fallbackProvider: null, voiceEnabled: false }), port: 0,
+      // Stands in for the Electron capture: the fixture is a dialog with a known reference code.
+      captureScreen: async () => {
+        mkdirSync(dirname(shot), { recursive: true });
+        copyFileSync(join(__dirname, 'fixtures', 'screen-error.png'), shot);
+        return { path: shot, width: 800, height: 450, takenAt: new Date().toISOString() };
+      },
+    });
+    await core.start();
+    const ended = new Promise<string>((resolve, reject) => {
+      const ws = new WebSocket(core.url);
+      ws.on('open', () => {
+        ws.send(JSON.stringify({ type: 'hello', token: core.token, role: 'ui' }));
+        ws.send(JSON.stringify({ type: 'user_message', text: "What's the reference code in the error on my screen?" }));
+      });
+      ws.on('message', r => { const m = JSON.parse(String(r)) as CoreMessage; if (m.type === 'turn_end') { ws.close(); resolve(m.text); } });
+      setTimeout(() => reject(new Error('no reply')), 150_000);
+    });
+    const text = await ended;
+    console.log('Reply:', text);
+    expect(text).toMatch(/GHOST-?4217/i);
     core.stop();
   }, 180_000);
 });

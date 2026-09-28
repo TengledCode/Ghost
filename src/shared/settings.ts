@@ -37,6 +37,9 @@ export interface Settings {
   // Behaviour
   hotkey: string;
   quitHotkey: string;
+  liveScreenHotkey: string;
+  liveScreenAutoOff: boolean; // switch live screen view off after a quiet spell
+  liveScreenAutoOffMinutes: number;
   launchAtLogin: boolean;
   hideOnFullscreen: boolean;
   // Brain
@@ -67,6 +70,9 @@ export const DEFAULT_SETTINGS: Settings = {
   renderQuality: 'auto',
   hotkey: 'Control+Space',
   quitHotkey: 'Control+Alt+Q',
+  liveScreenHotkey: 'Control+Alt+V',
+  liveScreenAutoOff: false,
+  liveScreenAutoOffMinutes: 30,
   launchAtLogin: true,
   hideOnFullscreen: true,
   provider: 'claude',
@@ -86,6 +92,7 @@ export function mergeSettings(stored: Partial<Settings> | null | undefined): Set
   merged.idleOpacity = clamp(merged.idleOpacity, 0.2, 1);
   merged.ghostFilter = clamp(merged.ghostFilter, 0, 1);
   merged.volume = clamp(merged.volume, 0, 1);
+  merged.liveScreenAutoOffMinutes = Math.round(clamp(merged.liveScreenAutoOffMinutes, 5, 240));
   return merged;
 }
 

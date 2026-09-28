@@ -17,6 +17,7 @@ It runs on **your existing subscriptions, not API keys.** Ghost drives the offic
   - **Reactions:** a boop when clicked, a happy spin when thanked, a curious tilt on questions and a droop on errors.
   - **Looks:** every state has its own choreography, with five colour themes plus a custom one and a "classic orb" skin.
   - **Performance:** adaptive render quality.
+- **Sees your screen when you want it to.** Live screen view (Ctrl+Alt+V, or "watch my screen") attaches a snapshot of the monitor under your cursor to each message, with Ghost left out of the picture and a LIVE tag while it's on. There's an optional auto-off timer. "What's on my screen?" takes a one-off look.
 - **Remembers.** Conversations survive restarts (it resumes the same Claude session), and past chats stay searchable on your PC, so you can ask what you decided last week. Settings can clear the history while keeping the facts it has learned.
 - **Stays out of the way.** Click-through when idle, corner snap or free drag across monitors, size and opacity sliders, auto-hide over fullscreen games (voice and reminders keep working), a `Ctrl+Space` summon hotkey, and start at login.
 - **Safe by default.** Opening apps, URLs, searching, reminders and memory run instantly. Running commands, writing, deleting or closing apps shows a confirm card (auto-denied after 60 s).

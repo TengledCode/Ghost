@@ -18,6 +18,9 @@ button.danger { justify-self: start; border-color: #5a2a31; color: #ffb3bb; }
 button.danger:hover { border-color: #ff6b7a; }
 output { min-width: 42px; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
 .row-buttons { display: flex; gap: 8px; flex-wrap: wrap; }
+.inline-num { display: flex; align-items: center; gap: 8px; color: var(--muted); }
+.inline-num input { width: 76px; }
+input:disabled { opacity: .45; }
 .hint { margin: -4px 0 0; color: var(--muted); font-size: 12.5px; }
 .themes { display: flex; flex-wrap: wrap; gap: 8px; }
 .swatch { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 10px; border: 1px solid var(--line); background: #0f1219; cursor: pointer; }

@@ -23,6 +23,7 @@ export type ClientMessage =
   | { type: 'voice_preview'; engine: TtsEngineId; voice: string; text?: string }
   | { type: 'new_conversation' }
   | { type: 'clear_history' }
+  | { type: 'toggle_live_screen' }
   // Sent by the MCP bridge process on behalf of the model.
   | { type: 'tool_call'; id: string; tool: string; args: Record<string, unknown> };
 
@@ -36,6 +37,8 @@ export type CoreMessage =
   | { type: 'approval_resolved'; id: string; approved: boolean }
   | { type: 'reminder'; id: string; text: string }
   | { type: 'notice'; level: 'info' | 'warn' | 'error'; text: string }
+  // Live screen view: while on, every message carries a snapshot of the monitor under the cursor.
+  | { type: 'live_screen'; on: boolean; offAt?: number }
   // Which brain is answering. `reason` is set while Ghost has fallen back from the primary.
   | { type: 'provider'; active: string; primary: string; reason: 'limit' | 'auth' | 'missing' | 'other' | null }
   | { type: 'tool_result'; id: string; ok: boolean; result: string };
