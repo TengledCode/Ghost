@@ -15,6 +15,12 @@ html, body { margin: 0; height: 100%; background: transparent; overflow: hidden;
 #stage[data-orient$="left"] { align-items: flex-start; }
 #stage[data-orient^="top"] { flex-direction: column-reverse; justify-content: flex-end; }
 #stack { display: flex; flex-direction: column; gap: 8px; width: min(360px, 100%); align-items: stretch; }
+/* The 3D shell keeps a glow margin inside the window, and that margin may hang off-screen when Ghost is
+   snapped to an edge. Line the chat stack up with the shell itself, never with the window edge, so the
+   input bar and its buttons always stay on-screen. */
+#stage:has(#shell[data-skin="ghost-shell"]) #stack { width: min(360px, calc(100% - var(--shell) * 0.3)); }
+#stage[data-orient$="right"]:has(#shell[data-skin="ghost-shell"]) #stack { margin-right: calc(var(--shell) * 0.3); }
+#stage[data-orient$="left"]:has(#shell[data-skin="ghost-shell"]) #stack { margin-left: calc(var(--shell) * 0.3); }
 #stage[data-orient^="top"] #stack { flex-direction: column-reverse; }
 
 /* ---- the shell ---- */

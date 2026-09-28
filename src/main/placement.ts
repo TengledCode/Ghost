@@ -11,7 +11,8 @@ export const SHELL_PAD = 0.3;
 /** Overlay window size: the padded shell plus room for the reply bubble and the input bar. */
 export function windowSize(shell: number): { width: number; height: number } {
   const padded = Math.round(shell * (1 + SHELL_PAD * 2));
-  return { width: Math.max(padded + 16, 380), height: padded + 290 };
+  // Wide enough for the 360 px chat stack beside the shell's glow margin.
+  return { width: Math.max(padded + 16, 376 + Math.round(shell * SHELL_PAD)), height: padded + 290 };
 }
 
 export function cornerPosition(corner: Corner, work: Rect, size: { width: number; height: number }): { x: number; y: number } {
