@@ -75,7 +75,7 @@ export interface GhostMaterials {
   armourDark: THREE.MeshStandardMaterial;
   core: THREE.MeshStandardMaterial;
   cavity: THREE.MeshStandardMaterial;
-  underGlow: THREE.MeshBasicMaterial; // underside of each shard: light leaking out when it lifts
+  underside: THREE.MeshStandardMaterial; // plain metal; each shard clones it to catch the magnetic glow below
   pool: THREE.MeshBasicMaterial; // magnetic light pool on the core beneath each shard
   lens: THREE.MeshPhysicalMaterial;
   iris: THREE.MeshBasicMaterial;
@@ -88,16 +88,17 @@ export function createMaterials(): GhostMaterials {
   brushed.repeat.set(2, 2);
   const panels = panelTexture();
   const armour = new THREE.MeshStandardMaterial({
-    color: '#5b616b', metalness: 0.88, roughness: 0.34, roughnessMap: brushed, flatShading: true, envMapIntensity: 0.55,
+    color: '#7a818c', metalness: 0.86, roughness: 0.34, roughnessMap: brushed, flatShading: true, envMapIntensity: 0.68,
   });
   const armourDark = armour.clone();
-  armourDark.color.set('#2a2e35');
+  armourDark.color.set('#6a717c');
   // Engraved, not lit: panel lines are cut into the metal and catch light, with no glow of their own.
   const core = new THREE.MeshStandardMaterial({
     color: '#2b3038', metalness: 0.85, roughness: 0.42, bumpMap: panels, bumpScale: -1.4, envMapIntensity: 0.5, roughnessMap: brushed,
   });
   const cavity = new THREE.MeshStandardMaterial({ color: '#07090c', metalness: 0.3, roughness: 0.9, side: THREE.BackSide });
-  const underGlow = new THREE.MeshBasicMaterial({ color: '#7fd4ff', toneMapped: false, side: THREE.DoubleSide, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false });
+  // No colour of its own: the glow it shows is reflected light from the pool beneath (set per shard).
+  const underside = new THREE.MeshStandardMaterial({ color: '#3a3f47', metalness: 0.9, roughness: 0.3, flatShading: true, envMapIntensity: 0.5, emissive: new THREE.Color('#000000') });
   const pool = new THREE.MeshBasicMaterial({
     color: '#7fd4ff', map: radialTexture(), transparent: true, opacity: 0.5, toneMapped: false, depthWrite: false, blending: THREE.AdditiveBlending,
   });
@@ -108,16 +109,16 @@ export function createMaterials(): GhostMaterials {
   const iris = new THREE.MeshBasicMaterial({ color: '#7fd4ff', toneMapped: false, transparent: true, side: THREE.DoubleSide });
 
   return {
-    armour, armourDark, core, cavity, underGlow, pool, lens, iris,
+    armour, armourDark, core, cavity, underside, pool, lens, iris,
     setGlow(color, intensity) {
-      underGlow.color.copy(color).multiplyScalar(0.04 + intensity * 0.08);
       pool.color.copy(color);
       pool.opacity = Math.min(0.7, 0.06 + intensity * 0.1);
       iris.color.copy(color).multiplyScalar(0.7 + intensity * 0.6);
     },
     setMetal(hex) {
       armour.color.set(hex);
-      armourDark.color.set(hex).multiplyScalar(0.6);
+      armourDark.color.set(hex).multiplyScalar(0.8);
+      underside.color.set(hex).multiplyScalar(0.5);
     },
   };
 }

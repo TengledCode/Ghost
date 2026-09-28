@@ -54,7 +54,8 @@ export class GhostShell {
   private roll = new Spring(0, 0, 45, 0.6);
   private eyeYaw = new Spring(0, 0, 260, 0.85); // the eye gets there before the body
   private eyePitch = new Spring(0, 0, 260, 0.85);
-  private squash = new Spring(1, 1, 180, 0.35); // boop / perk
+  private recoil = new Spring(0, 0, 90, 0.5); // boop: the body is pushed back, then settles (no deformation)
+  private approach = new Spring(0, 0, 25, 1); // lean-in: drifts towards you
   private hop = new Spring(0, 0, 70, 0.45);
   private shards: ShardAnim[] = [];
   private twist = new Spring(0, 0, 40, 0.8);
@@ -122,7 +123,7 @@ export class GhostShell {
     this.model.particleAnchor.add(this.core.points);
     this.holo = new Hologram(this.model.eyeFront.z + 0.14);
     this.model.eye.add(this.holo.iris);
-    this.scene.add(this.model.root, this.holo.beam, this.holo.reticle);
+    this.scene.add(this.model.root, this.holo.beam);
     this.shards = this.model.segments.map((s, i) => {
       const poolMat = this.mats.pool.clone();
       s.pool.material = poolMat;
@@ -149,7 +150,7 @@ export class GhostShell {
 
   setTheme(theme: ThemeColors): void {
     this.themeGlow.set(theme.edge);
-    this.mats.setMetal('#' + new THREE.Color('#474d57').lerp(new THREE.Color(theme.shell), 0.12).getHexString());
+    this.mats.setMetal('#' + new THREE.Color('#767d88').lerp(new THREE.Color(theme.shell), 0.12).getHexString());
   }
 
   setState(state: GhostState): void {
@@ -205,8 +206,8 @@ export class GhostShell {
       case 'sad': // droop and dim
         this.mood = { kind: mood, until: t + 2.8 };
         break;
-      case 'boop': // flinch: squash, shards jump off, wobble
-        this.squash.kick(-6); this.shards.forEach(s => s.lift.kick(5)); this.roll.kick(4); this.blinkQueue.push(t, t + 0.18);
+      case 'boop': // flinch: the field repels the shards outwards and the body recoils; the metal never deforms
+        this.recoil.kick(-5); this.shards.forEach((s, i) => s.lift.kick(6 + (i % 3))); this.roll.kick(4); this.pitch.kick(-2); this.blinkQueue.push(t, t + 0.18);
         this.mood = { kind: mood, until: t + 0.8 };
         break;
       case 'perk': // "oh, you're typing": a quick hop and bright eye
@@ -293,10 +294,10 @@ export class GhostShell {
     let rollT = 0;
     if (this.state === 'approval') { target.set(0, 1.4, 1.2); beamWanted = 1; }
     else if (this.state === 'searching') { target.set(Math.sin(t * 2.2) * 1.4, Math.sin(t * 1.3) * 0.35, LOOK_PLANE_Z); beamWanted = 1; }
-    else if (this.lean) { target.set(this.lean * 0.9, 1.1, 1.3); beamWanted = 0.8; }
+    else if (this.lean) { target.set(this.lean * 0.9, 1.1, 1.3); beamWanted = 0.7; }
     else if (cursorFresh && !this.dozing) {
       this.cursorPoint(this.cursorPx!.dx, this.cursorPx!.dy, target);
-      beamWanted = t - this.cursorAt < 1.2 ? 1 : 0;
+      beamWanted = t - this.cursorAt < 1.2 ? 0.8 : 0;
       rollT = -Math.atan2(target.x, 3) * 0.2;
     } else if (p.curious && !this.dozing) {
       const act = this.curiosity.update(t);
@@ -362,8 +363,23 @@ export class GhostShell {
     this.glow.target = (p.glow + speaking * (low * 0.5 + mid * 0.25) + this.near.value * 0.2 - (mood === 'sad' ? 0.35 : 0)) * dozeDim;
     p.eye.forEach((w, i) => { this.eyeW[i].target = w; });
     this.scan.target = p.scan;
-    for (const s of [this.yaw, this.pitch, this.roll, this.eyeYaw, this.eyePitch, this.squash, this.hop, this.twist, this.frontSpeed,
+    for (const s of [this.yaw, this.pitch, this.roll, this.eyeYaw, this.eyePitch, this.recoil, this.approach, this.hop, this.twist, this.frontSpeed,
       this.rearSpeed, this.bob, this.iris, this.glow, this.scan, this.beamOn, this.near, this.sacX, this.sacY, ...this.eyeW]) s.step(dt);
+
+    // ---- colour and glow (computed first: shards and eye both use it)
+    const u = this.core.uniforms;
+    const toneTarget = p.tone === 'theme' ? this.themeGlow : TONES[p.tone];
+    this.glowColor.lerp(toneTarget, 1 - Math.exp(-dt * 6));
+    this.flicker += (p.flicker - this.flicker) * (1 - Math.exp(-dt * 6));
+    const flick = this.flicker > 0.02 ? (Math.sin(t * 41) > 0.25 ? 1 : 1 - this.flicker * 0.75) : 1;
+    const intensity = (this.glow.value + this.flash * 1.6) * flick;
+    this.mats.setGlow(this.glowColor, intensity);
+    u.colorA.value.copy(this.glowColor).multiplyScalar(0.9);
+    u.colorB.value.copy(this.glowColor).lerp(new THREE.Color('#ffffff'), 0.35);
+    u.intensity.value = (0.7 + intensity * 0.3) * (1 - this.blink * 0.7);
+    m.eyeLight.color.copy(this.glowColor);
+    m.eyeLight.intensity = 0.6 + intensity * 1.0;
+    this.fx.setStrength(0.3 + intensity * 0.18);
 
     // ---- body
     this.shake = Math.max(0, this.shake - dt * 1.6);
@@ -373,9 +389,8 @@ export class GhostShell {
     // Lazy figure-8 hover with a hop on top.
     const bobA = this.bob.value * motion;
     m.root.position.set(Math.sin(t * 0.62) * 0.05 * bobA, Math.sin(t * 1.24) * 0.07 * bobA + this.hop.value * 0.18 - (this.dozing ? 0.12 : 0), 0);
-    const sq = this.squash.value;
-    const lean = 1 + this.near.value * 0.05;
-    m.root.scale.set((2 - sq) * lean, sq * lean, (2 - sq) * lean);
+    this.approach.target = this.near.value * 0.35;
+    m.root.position.z = this.recoil.value * 0.12 + this.approach.value;
 
     // ---- shards: magnetic float, lift/split, secondary lag, calibrating twist
     this.frontAngle += this.frontSpeed.value * dt * motion;
@@ -402,32 +417,21 @@ export class GhostShell {
       seg.pool.scale.setScalar(0.7 + Math.max(0, lift) * 1.6);
       a.poolMat.opacity = this.mats.pool.opacity * (0.45 + Math.max(0, lift) * 2.2);
       a.poolMat.color.copy(this.mats.pool.color);
+      // The underside only shows the glow it reflects from the pool: stronger as it lifts off.
+      // Brighter field as it lifts, but further from the pool: the reflection peaks at a small gap and fades with distance.
+      const gap = Math.max(0, lift);
+      (seg.under.material as THREE.MeshStandardMaterial).emissive.copy(this.glowColor).multiplyScalar(0.3 * Math.min(1.5, intensity) * (0.3 + gap) * Math.exp(-gap * 2.6));
     });
 
     // ---- eye: leads the body, saccades, dilation, blinks
     m.eye.rotation.set((this.eyePitch.value + this.sacY.value * 0.12) * motion, (this.eyeYaw.value + this.sacX.value * 0.12) * motion, 0);
     const irisS = Math.max(0.05, this.iris.value);
     m.iris.scale.set(irisS, Math.max(0.04, irisS * (1 - this.blink * 0.95)), 1);
-    const u = this.core.uniforms;
     u.time.value = t;
     u.weights.value.set(...(this.eyeW.map(s => Math.max(0, s.value)) as [number, number, number, number]));
     u.scan.value = THREE.MathUtils.clamp(this.scan.value, 0, 1);
     u.bands.value.set(low, mid, high);
     u.onset.value = speaking * Math.max(0, low - 0.5) * 1.5;
-
-    // ---- colour and glow
-    const toneTarget = p.tone === 'theme' ? this.themeGlow : TONES[p.tone];
-    this.glowColor.lerp(toneTarget, 1 - Math.exp(-dt * 6));
-    this.flicker += (p.flicker - this.flicker) * (1 - Math.exp(-dt * 6));
-    const flick = this.flicker > 0.02 ? (Math.sin(t * 41) > 0.25 ? 1 : 1 - this.flicker * 0.75) : 1;
-    const intensity = (this.glow.value + this.flash * 1.6) * flick;
-    this.mats.setGlow(this.glowColor, intensity);
-    u.colorA.value.copy(this.glowColor).multiplyScalar(0.9);
-    u.colorB.value.copy(this.glowColor).lerp(new THREE.Color('#ffffff'), 0.35);
-    u.intensity.value = (0.7 + intensity * 0.3) * (1 - this.blink * 0.7);
-    m.eyeLight.color.copy(this.glowColor);
-    m.eyeLight.intensity = 0.8 + intensity * 1.4;
-    this.fx.setStrength(0.3 + intensity * 0.18);
 
     // ---- hologram
     m.root.updateMatrixWorld();
@@ -438,7 +442,7 @@ export class GhostShell {
     );
     this.holo.update(t, dt, {
       color: this.glowColor, intensity, look, from, to: target.clone(), beamOn: THREE.MathUtils.clamp(this.beamOn.value, 0, 1),
-      irisOn: this.dozing ? 0.15 : 1, blink: this.blink, camera: this.camera,
+      irisOn: this.dozing ? 0.15 : 1, blink: this.blink,
     });
   }
 

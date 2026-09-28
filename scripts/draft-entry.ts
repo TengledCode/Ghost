@@ -12,7 +12,7 @@ const shell = new GhostShell(host, THEMES[themeName]);
 
 // ---- states
 const DESCRIPTIONS: Record<GhostState, string> = {
-  idle: 'Shards float on their magnetic field. Glances, blinks and follows your cursor. Click it for a boop.',
+  idle: 'Shards float on their magnetic field. Glances, blinks and follows your cursor. Click it: the field repels the shards.',
   listening: 'You are typing. Turns to the input bar, plates ease open, iris widens.',
   thinking: 'Plates unlock with a twist and the two sets counter-rotate. Amber core.',
   searching: 'Fully unfolded, rear set orbits, body sweeps; the core becomes scan rings.',

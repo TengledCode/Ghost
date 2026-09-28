@@ -10,6 +10,7 @@ export interface Segment {
   pivot: THREE.Group; // at the core centre, oriented along the segment's axis
   body: THREE.Group; // slides along the axis (lift/split), twists and wobbles
   pool: THREE.Mesh; // magnetic light pool on the core under the shard
+  under: THREE.Mesh; // the shard's underside, which reflects the pool's glow
   axis: THREE.Vector3;
   ring: 'front' | 'rear';
   index: number;
@@ -113,13 +114,14 @@ export function buildModel(m: GhostMaterials): GhostModel {
     const geo = ring === 'front' ? frontGeo : rearGeo;
     const body = new THREE.Group();
     body.position.z = SHARD_REST;
-    body.add(new THREE.Mesh(geo.shell, ring === 'front' ? m.armour : m.armourDark), new THREE.Mesh(geo.under, m.underGlow));
+    const under = new THREE.Mesh(geo.under, m.underside.clone());
+    body.add(new THREE.Mesh(geo.shell, ring === 'front' ? m.armour : m.armourDark), under);
     const pool = new THREE.Mesh(poolGeo, m.pool);
     pool.position.z = CORE_RADIUS * 1.004;
     pool.renderOrder = 2;
     pivot.add(body, pool);
     (ring === 'front' ? front : rear).add(pivot);
-    segments.push({ pivot, body, pool, axis, ring, index, phase: index * 1.618 + (ring === 'rear' ? 0.9 : 0) });
+    segments.push({ pivot, body, pool, under, axis, ring, index, phase: index * 1.618 + (ring === 'rear' ? 0.9 : 0) });
   };
 
   for (let i = 0; i < 4; i++) {

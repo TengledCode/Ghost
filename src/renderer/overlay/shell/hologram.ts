@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 
 // Ghost's holographic projection: a holo-iris disc hovering in front of the lens that slides towards
-// where it looks, plus a gaze beam and target reticle when it is actively looking at something.
+// where it looks, plus a short, soft directing beam from the eye when it is actively looking at something.
 
 const HOLO_VERT = /* glsl */ `
   varying vec2 vUv;
@@ -66,41 +66,18 @@ function drawIris(size = 256): THREE.CanvasTexture {
   return new THREE.CanvasTexture(c);
 }
 
-function drawReticle(size = 256): THREE.CanvasTexture {
-  const c = document.createElement('canvas');
-  c.width = c.height = size;
-  const g = c.getContext('2d')!;
-  const m = size / 2;
-  g.strokeStyle = '#fff';
-  g.lineWidth = 4;
-  const b = m * 0.62, l = m * 0.28; // corner brackets
-  for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
-    g.beginPath();
-    g.moveTo(m + sx * b, m + sy * (b - l)); g.lineTo(m + sx * b, m + sy * b); g.lineTo(m + sx * (b - l), m + sy * b);
-    g.stroke();
-  }
-  g.lineWidth = 2;
-  g.beginPath(); g.arc(m, m, m * 0.3, 0.3, Math.PI - 0.3); g.stroke();
-  g.beginPath(); g.arc(m, m, m * 0.3, Math.PI + 0.3, Math.PI * 2 - 0.3); g.stroke();
-  g.beginPath(); g.arc(m, m, m * 0.05, 0, Math.PI * 2); g.fillStyle = '#fff'; g.fill();
-  return new THREE.CanvasTexture(c);
-}
-
 export class Hologram {
   readonly iris: THREE.Mesh; // child of the eye group
   readonly beam: THREE.Mesh; // world space
-  readonly reticle: THREE.Mesh; // world space, billboarded
   private irisMat = holoMaterial(drawIris());
   private beamMat = holoMaterial(null, true);
-  private reticleMat = holoMaterial(drawReticle());
-  private spin = 0;
 
   constructor(private readonly irisZ: number) {
     this.iris = new THREE.Mesh(new THREE.PlaneGeometry(0.58, 0.58), this.irisMat);
     this.iris.position.z = irisZ;
     this.iris.renderOrder = 5;
     // Unit-length cone along +Y from the tip (0) to the base (1); stretched to the target each frame.
-    const cone = new THREE.CylinderGeometry(0.34, 0.05, 1, 32, 1, true);
+    const cone = new THREE.CylinderGeometry(0.2, 0.07, 1, 32, 1, true);
     cone.translate(0, 0.5, 0);
     cone.rotateX(Math.PI / 2); // along +Z
     // Flip UVs so v = 0 at the eye and 1 at the target.
@@ -109,40 +86,28 @@ export class Hologram {
     this.beam = new THREE.Mesh(cone, this.beamMat);
     this.beam.renderOrder = 4;
     this.beam.frustumCulled = false;
-    this.reticle = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.6), this.reticleMat);
-    this.reticle.renderOrder = 6;
   }
 
   /**
    * @param look normalised gaze offset (-1..1) for sliding the holo-iris
    * @param from beam origin (world), to beam target (world)
-   * @param beamOn 0..1 visibility of the beam and reticle
+   * @param beamOn 0..1 visibility of the beam
    */
-  update(t: number, dt: number, o: { color: THREE.Color; intensity: number; look: THREE.Vector2; from: THREE.Vector3; to: THREE.Vector3; beamOn: number; irisOn: number; blink: number; camera: THREE.Camera }): void {
-    for (const m of [this.irisMat, this.beamMat, this.reticleMat]) { m.uniforms.time.value = t; m.uniforms.color.value.copy(o.color); }
+  update(t: number, dt: number, o: { color: THREE.Color; intensity: number; look: THREE.Vector2; from: THREE.Vector3; to: THREE.Vector3; beamOn: number; irisOn: number; blink: number }): void {
+    for (const m of [this.irisMat, this.beamMat]) { m.uniforms.time.value = t; m.uniforms.color.value.copy(o.color); }
     // Holo-iris: slides towards the gaze, rotates slowly, squashes on blink.
     this.iris.position.set(o.look.x * 0.09, o.look.y * 0.09, this.irisZ);
     this.iris.rotation.z += dt * 0.35;
     this.iris.scale.set(1, Math.max(0.05, 1 - o.blink), 1);
     this.irisMat.uniforms.opacity.value = o.irisOn * (1.1 + o.intensity * 0.5); // above 1 so the bloom catches it
 
-    // Beam: a cone from the lens to the target.
+    // Beam: a short, soft cone from the lens pointing towards the target (it never reaches it).
     const dir = new THREE.Vector3().subVectors(o.to, o.from);
-    const len = Math.max(0.01, dir.length());
+    const len = Math.min(0.9, dir.length());
     this.beam.position.copy(o.from);
     this.beam.lookAt(o.to);
-    this.beam.scale.set(Math.min(1, len * 0.45), Math.min(1, len * 0.45), len);
-    this.beamMat.uniforms.opacity.value = o.beamOn * 0.55;
+    this.beam.scale.set(1, 1, len);
+    this.beamMat.uniforms.opacity.value = o.beamOn * 0.22;
     this.beam.visible = o.beamOn > 0.01;
-
-    // Reticle: faces the camera, spins, and "locks on" with a small scale pulse.
-    this.spin += dt * (0.8 + (1 - o.beamOn) * 4);
-    this.reticle.position.copy(o.to);
-    this.reticle.quaternion.copy(o.camera.quaternion);
-    this.reticle.rotateZ(this.spin);
-    const lock = 1 + (1 - o.beamOn) * 0.8 + Math.sin(t * 5) * 0.04;
-    this.reticle.scale.setScalar(lock * (0.55 + len * 0.12));
-    this.reticleMat.uniforms.opacity.value = o.beamOn * 1.3;
-    this.reticle.visible = o.beamOn > 0.01;
   }
 }
