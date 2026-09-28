@@ -97,9 +97,9 @@ function radialTexture(size = 128): THREE.CanvasTexture {
 }
 
 export interface GhostMaterials {
-  armour: THREE.MeshStandardMaterial;
-  armourDark: THREE.MeshStandardMaterial;
-  core: THREE.MeshStandardMaterial;
+  armour: THREE.MeshPhysicalMaterial;
+  armourDark: THREE.MeshPhysicalMaterial;
+  core: THREE.MeshPhysicalMaterial;
   cavity: THREE.MeshStandardMaterial;
   underside: THREE.MeshStandardMaterial; // plain metal; each shard clones it to catch the magnetic glow below
   pool: THREE.MeshBasicMaterial; // magnetic light pool on the core beneath each shard
@@ -113,14 +113,17 @@ export function createMaterials(): GhostMaterials {
   const brushed = brushedTexture();
   brushed.repeat.set(2, 2);
   const panels = panelTexture();
-  const armour = new THREE.MeshStandardMaterial({
-    color: '#959ca7', metalness: 0.8, roughness: 0.42, roughnessMap: brushed, flatShading: true, envMapIntensity: 1.45,
+  // Lacquered gunmetal: glossy metal under a clear coat, so facets carry crisp reflections of the soft studio.
+  const armour = new THREE.MeshPhysicalMaterial({
+    color: '#8f96a1', metalness: 0.88, roughness: 0.22, roughnessMap: brushed, flatShading: true, envMapIntensity: 1.5,
+    clearcoat: 0.7, clearcoatRoughness: 0.08,
   });
   const armourDark = armour.clone();
   armourDark.color.set('#6a717c');
   // Engraved, not lit: panel lines are cut into the metal and catch light, with no glow of their own.
-  const core = new THREE.MeshStandardMaterial({
-    color: '#3a4049', metalness: 0.85, roughness: 0.42, bumpMap: panels, bumpScale: -1.4, envMapIntensity: 1.0, roughnessMap: brushed,
+  const core = new THREE.MeshPhysicalMaterial({
+    color: '#3a4049', metalness: 0.88, roughness: 0.26, bumpMap: panels, bumpScale: -1.4, envMapIntensity: 1.3, roughnessMap: brushed,
+    clearcoat: 0.8, clearcoatRoughness: 0.1,
   });
   const cavity = new THREE.MeshStandardMaterial({ color: '#07090c', metalness: 0.3, roughness: 0.9, side: THREE.BackSide });
   // No colour of its own: the glow it shows is reflected light from the pool beneath (set per shard).
@@ -129,8 +132,8 @@ export function createMaterials(): GhostMaterials {
     color: '#7fd4ff', map: radialTexture(), transparent: true, opacity: 0.5, toneMapped: false, depthWrite: false, blending: THREE.AdditiveBlending,
   });
   const lens = new THREE.MeshPhysicalMaterial({
-    color: '#0b1a22', metalness: 0, roughness: 0.22, clearcoat: 1, clearcoatRoughness: 0.28,
-    transparent: true, opacity: 0.16, envMapIntensity: 0.55, depthWrite: false,
+    color: '#0b1a22', metalness: 0, roughness: 0.18, clearcoat: 0.6, clearcoatRoughness: 0.2, specularIntensity: 0.35,
+    transparent: true, opacity: 0.16, envMapIntensity: 0.45, depthWrite: false,
   });
   const iris = new THREE.MeshBasicMaterial({ color: '#7fd4ff', toneMapped: false, transparent: true, side: THREE.DoubleSide });
 

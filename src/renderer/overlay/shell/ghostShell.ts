@@ -5,11 +5,11 @@ import { Hologram } from './hologram';
 import { createMaterials, studioEnvironment, type GhostMaterials } from './materials';
 import { buildModel, CORE_RADIUS, SHARD_REST, type GhostModel } from './model';
 import {
-  Articulator, Curiosity, DOZE_AFTER, EmphasisDetector, flourishFor, MicroLife, POSES, QUALITY, QualityGovernor, Spring,
+  Articulator, Curiosity, lookAt, DOZE_AFTER, EmphasisDetector, flourishFor, MicroLife, POSES, QUALITY, QualityGovernor, Spring,
   type Mood, type Pose, type QualityLevel,
 } from './motion';
 import { ParticleCore } from './particleCore';
-import { PostFx } from './postfx';
+import { BLOOM_LAYER, PostFx } from './postfx';
 
 export type RenderQuality = 'auto' | QualityLevel;
 
@@ -95,15 +95,12 @@ export class GhostShell {
   private size = { w: 1, h: 1 };
   private reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
   private target = new THREE.Vector3();
-  private raycaster = new THREE.Raycaster();
-  private lookPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), -LOOK_PLANE_Z);
   audioLevel: () => number = () => 0;
 
   constructor(host: HTMLElement, theme: ThemeColors, quality: RenderQuality = 'auto') {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, premultipliedAlpha: true, powerPreference: 'high-performance' });
     this.renderer.setClearColor(0x000000, 0);
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 0.95;
+    // Tone mapping and sRGB encoding happen in PostFx's final pass (alpha-correct for the desktop).
     this.canvas = this.renderer.domElement;
     this.canvas.className = 'shell-canvas';
     host.appendChild(this.canvas);
@@ -138,6 +135,9 @@ export class GhostShell {
 
     this.camera.position.set(0, 0, CAMERA_DISTANCE);
     this.fx = new PostFx(this.renderer, this.scene, this.camera);
+    this.fx.setExposure(0.95);
+    // Only light sources glow: the iris ring, particle core, hologram and magnetic pools.
+    for (const o of [this.model.iris, this.core.points, this.holo.iris, this.holo.beam, ...this.model.segments.map(s => s.pool)]) o.layers.enable(BLOOM_LAYER);
     this.governor = new QualityGovernor(quality);
     this.setTheme(theme);
     this.resize();
@@ -265,16 +265,6 @@ export class GhostShell {
     if (this.governor.sample(dt)) this.resize();
   }
 
-  /** World-space point for a cursor offset (px from the shell centre), on a plane in front of Ghost. */
-  private cursorPoint(dx: number, dy: number, out: THREE.Vector3): THREE.Vector3 {
-    const ndc = new THREE.Vector2(
-      THREE.MathUtils.clamp(dx / (this.size.w / 2), -0.9, 0.9),
-      THREE.MathUtils.clamp(-dy / (this.size.h / 2), -0.9, 0.9),
-    );
-    this.raycaster.setFromCamera(ndc, this.camera);
-    return this.raycaster.ray.intersectPlane(this.lookPlane, out) ?? out.set(ndc.x * 2, ndc.y * 2, LOOK_PLANE_Z);
-  }
-
   private update(dt: number): void {
     const t = this.time;
     const m = this.model;
@@ -296,7 +286,10 @@ export class GhostShell {
     else if (this.state === 'searching') { target.set(Math.sin(t * 2.2) * 1.4, Math.sin(t * 1.3) * 0.35, LOOK_PLANE_Z); beamWanted = 1; }
     else if (this.lean) { target.set(this.lean * 0.9, 1.1, 1.3); beamWanted = 0.7; }
     else if (cursorFresh && !this.dozing) {
-      this.cursorPoint(this.cursorPx!.dx, this.cursorPx!.dy, target);
+      // A direction across the whole screen (not clamped to this small canvas), so every part of
+      // the screen maps to a distinct gaze.
+      const g = lookAt(this.cursorPx!.dx, this.cursorPx!.dy);
+      target.set(Math.sin(g.yaw) * Math.cos(g.pitch), -Math.sin(g.pitch), Math.cos(g.yaw) * Math.cos(g.pitch)).multiplyScalar(1.6);
       beamWanted = t - this.cursorAt < 1.2 ? 0.8 : 0;
       rollT = -Math.atan2(target.x, 3) * 0.2;
     } else if (p.curious && !this.dozing) {
@@ -311,7 +304,7 @@ export class GhostShell {
       rollT = c.roll;
     } else { target.set(0, 0, 2); lookingAtSomething = false; }
 
-    const maxTurn = 0.62;
+    const maxTurn = 1.15; // it may turn well to the side to follow a cursor at the far edge of the screen
     let yawT = THREE.MathUtils.clamp(Math.atan2(target.x, Math.max(0.3, target.z)), -maxTurn, maxTurn);
     let pitchT = THREE.MathUtils.clamp(-Math.atan2(target.y, Math.max(0.3, Math.hypot(target.x, target.z))), -maxTurn, maxTurn);
     // Moods and dozing bend the pose.
@@ -406,8 +399,11 @@ export class GhostShell {
         this.twist.value * (i % 2 ? 1 : -1) + a.twist.value,
       );
       // The magnetic light pool brightens and spreads as the shard lifts.
-      seg.pool.scale.setScalar(0.7 + Math.max(0, lift) * 1.6);
-      a.poolMat.opacity = this.mats.pool.opacity * (0.45 + Math.max(0, lift) * 2.2);
+      // The magnetic pool is strongest with a small gap and fades as the shard moves far away,
+      // so a fully unfolded Ghost doesn't wash its core in light.
+      const g = Math.max(0, lift);
+      seg.pool.scale.setScalar(0.7 + Math.min(g, 0.4) * 1.2);
+      a.poolMat.opacity = this.mats.pool.opacity * (0.4 + g * 2.4) * Math.exp(-g * 2.2);
       a.poolMat.color.copy(this.mats.pool.color);
       // The underside only shows the glow it reflects from the pool: stronger as it lifts off.
       // Brighter field as it lifts, but further from the pool: the reflection peaks at a small gap and fades with distance.

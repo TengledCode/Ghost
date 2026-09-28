@@ -60,7 +60,14 @@ describe('lookAt', () => {
   it('turns towards the cursor and saturates', () => {
     expect(lookAt(300, 0).yaw).toBeGreaterThan(0);
     expect(lookAt(0, 300).pitch).toBeGreaterThan(0);
-    expect(Math.abs(lookAt(-5000, 0).yaw)).toBeLessThanOrEqual(0.6);
+    expect(Math.abs(lookAt(-5000, 0).yaw)).toBeLessThanOrEqual(1.15);
+  });
+  it('has no blind spot: positions across a large screen give clearly different gazes', () => {
+    const yaws = [150, 400, 800, 1300, 1900].map(dx => lookAt(-dx, 0).yaw);
+    for (let i = 1; i < yaws.length; i++) expect(yaws[i - 1] - yaws[i]).toBeGreaterThan(0.04);
+    // Direction is preserved: far left and slightly up still reads as mostly left.
+    const g = lookAt(-1500, -200);
+    expect(Math.abs(g.yaw)).toBeGreaterThan(Math.abs(g.pitch) * 3);
   });
 });
 

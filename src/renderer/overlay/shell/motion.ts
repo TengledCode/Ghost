@@ -114,11 +114,15 @@ export class Curiosity {
 
 // ---------------------------------------------------------------- cursor
 
-/** Converts a cursor offset from the shell centre (px) into a clamped look direction (rad). */
-export function lookAt(dx: number, dy: number, maxAngle = 0.6): { yaw: number; pitch: number } {
-  // Reaches most of the range within ~600 px, then saturates smoothly.
-  const soft = (v: number) => Math.tanh(v / 600) * maxAngle;
-  return { yaw: soft(dx), pitch: soft(dy) };
+/**
+ * Converts a cursor offset from the shell centre (px) into a look direction (rad), treating the
+ * screen as a flat plane `distance` px in front of Ghost. The angle keeps changing all the way
+ * across a large monitor (no blind spot), and the vertical angle is measured over the true
+ * distance, so a far-left point slightly above still reads as "left".
+ */
+export function lookAt(dx: number, dy: number, maxAngle = 1.15, distance = 900): { yaw: number; pitch: number } {
+  const clamp = (v: number) => Math.max(-maxAngle, Math.min(maxAngle, v));
+  return { yaw: clamp(Math.atan2(dx, distance)), pitch: clamp(Math.atan2(dy, Math.hypot(dx, distance))) };
 }
 
 // ---------------------------------------------------------------- adaptive quality
