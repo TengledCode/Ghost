@@ -10,7 +10,13 @@ It runs on **your existing subscriptions, not API keys.** Ghost drives the offic
 
 - **Subscription-powered brain.** Claude is the primary backend and Gemini the fallback, with automatic model routing: Haiku for quick things, Sonnet by default, Opus when you say "think hard". Conversations continue across messages, and a fresh one starts after 2 hours of quiet.
 - **A voice with a Ghost feel.** It uses the ElevenLabs free tier and falls back automatically to free Edge neural voices. A soundalike stock voice goes through an adjustable *Ghost filter* (metallic resonance, shimmer, chorus). No voice cloning.
-- **Original companion shell.** Faceted plates and blades (Three.js) surround the particle eye. The eye is [Voice Orb / Signal Orb](https://github.com/aqualang89/shipnotes-components) (MIT) and pulses with the voice. There are states for idle, typing, thinking, searching, speaking, done, awaiting approval and error, five colour themes plus a custom one, and a "classic orb" skin.
+- **A 3D companion drone.** An original gunmetal drone (Three.js): eight armour shards float magnetically around a machined core, and a lens eye holds a living particle core (adapted from the MIT [Voice Orb](https://github.com/aqualang89/shipnotes-components)) plus a holographic iris.
+  - **Speech:** the shards open and close with the voice like a mouth.
+  - **Attention:** it follows your cursor anywhere on screen, and a soft beam points from its eye.
+  - **Idle life:** it glances around, blinks, calibrates its shards and dozes off after 5 minutes.
+  - **Reactions:** a boop when clicked, a happy spin when thanked, a curious tilt on questions and a droop on errors.
+  - **Looks:** every state has its own choreography, with five colour themes plus a custom one and a "classic orb" skin.
+  - **Performance:** adaptive render quality.
 - **Stays out of the way.** Click-through when idle, corner snap or free drag across monitors, size and opacity sliders, auto-hide over fullscreen games (voice and reminders keep working), a `Ctrl+Space` summon hotkey, and start at login.
 - **Safe by default.** Opening apps, URLs, searching, reminders and memory run instantly. Running commands, writing, deleting or closing apps shows a confirm card (auto-denied after 60 s).
 - **Ready for a phone later.** The brain (core) and the UI talk over a token-protected local WebSocket, so a phone client can later speak the same protocol (see `src/shared/protocol.ts`).
@@ -51,7 +57,8 @@ Every side effect goes through Ghost's own MCP tools (`src/core/tools`), never t
 | `npm test` | Unit and integration tests (vitest) |
 | `npm run typecheck` | TypeScript |
 | `npm run build` | Bundle into `out/` |
-| `npm run preview:ui` | Run the overlay in a normal browser against an offline mock core |
+| `npm run preview:ui` | Run the overlay in a normal browser against an offline mock core (`GHOST_PREVIEW_TTS=synth` for a stand-in voice that moves the shards) |
+| `node scripts/build-draft.mjs` | Build the standalone Ghost Shell Lab page (states, reactions, voice sample) into `out/draft/` |
 | `GHOST_PROVIDER=mock npm run dev` | Full app with the mock brain (no subscription usage) |
 | `GHOST_LIVE=1 npx vitest run tests/claude.live.test.ts` | One real Claude round trip through the MCP bridge (after `npm run build`) |
 
@@ -59,4 +66,4 @@ The persona lives in `config/persona.md`. Edit it freely: `{{user}}` and `{{assi
 
 ## Credits
 
-Voice Orb and Signal Orb by [Ship Notes](https://github.com/aqualang89/shipnotes-components), MIT licensed (`vendor/shipnotes/LICENSE`). The shell design is original; it is inspired by, but not copied from, any game asset.
+Voice Orb and Signal Orb by [Ship Notes](https://github.com/aqualang89/shipnotes-components), MIT licensed (`vendor/shipnotes/LICENSE`). The particle core's motion is adapted from the Voice Orb shader (`src/renderer/overlay/shell/particleCore.ts`). The drone model is original and procedural; it is inspired by the companion-drone archetype, not copied from any game asset.

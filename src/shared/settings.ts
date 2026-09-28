@@ -4,6 +4,7 @@ export type Corner = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
 export type ProviderId = 'claude' | 'gemini' | 'mock';
 export type ModelTier = 'auto' | 'fast' | 'balanced' | 'deep';
 export type Skin = 'ghost-shell' | 'classic-orb';
+export type RenderQuality = 'auto' | 'high' | 'medium' | 'low';
 
 export interface ThemeColors {
   shell: string; // shard base colour
@@ -31,6 +32,7 @@ export interface Settings {
   theme: string; // key of THEMES or 'custom'
   customTheme: ThemeColors;
   skin: Skin;
+  renderQuality: RenderQuality;
   // Behaviour
   hotkey: string;
   launchAtLogin: boolean;
@@ -59,6 +61,7 @@ export const DEFAULT_SETTINGS: Settings = {
   theme: 'classic',
   customTheme: THEMES.classic,
   skin: 'ghost-shell',
+  renderQuality: 'auto',
   hotkey: 'Control+Space',
   launchAtLogin: true,
   hideOnFullscreen: true,

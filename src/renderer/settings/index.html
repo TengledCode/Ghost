@@ -33,7 +33,13 @@
     <section>
       <h2>Look</h2>
       <label>Skin
-        <select data-key="skin"><option value="ghost-shell">Ghost shell</option><option value="classic-orb">Classic orb</option></select>
+        <select data-key="skin"><option value="ghost-shell">Ghost shell (3D)</option><option value="classic-orb">Classic orb</option></select>
+      </label>
+      <label>Render quality
+        <select data-key="renderQuality">
+          <option value="auto">Adaptive: full effects, steps down if frames slow</option>
+          <option value="high">High</option><option value="medium">Medium</option><option value="low">Low: no glow effects, 30 fps</option>
+        </select>
       </label>
       <div class="themes" id="themes"></div>
       <div class="custom-theme" id="customTheme">

@@ -141,11 +141,25 @@ describe('Articulator', () => {
     for (let i = 0; i < 12; i++) a.update([0.15, 0.12, 0.05], dt, true);
     expect(a.value).toBeLessThan(0.15);
   });
-  it('follows level: louder vowels open wider than quiet ones', () => {
-    const loud = new Articulator(), quiet = new Articulator();
-    for (let i = 0; i < 20; i++) { loud.update([0.6, 0.85, 0.3], dt, true); quiet.update([0.3, 0.4, 0.1], dt, true); }
-    expect(loud.value).toBeGreaterThan(quiet.value + 0.3);
-    expect(quiet.value).toBeGreaterThan(0.1);
+  it('follows level within the voice: stressed syllables open wider than unstressed', () => {
+    const a = new Articulator();
+    let loud = 0, quiet = 0;
+    for (let k = 0; k < 12; k++) {
+      const stressed = k % 2 === 0;
+      for (let i = 0; i < 9; i++) { a.update(stressed ? [0.6, 0.85, 0.3] : [0.4, 0.55, 0.15], dt, true); if (k > 3) stressed ? (loud = Math.max(loud, a.value)) : (quiet = Math.max(quiet, a.value)); }
+      for (let i = 0; i < 6; i++) a.update([0.15, 0.1, 0.05], dt, true);
+    }
+    expect(loud).toBeGreaterThan(quiet + 0.2);
+    expect(quiet).toBeGreaterThan(0.2);
+  });
+  it('adapts to overall loudness: a quiet voice still articulates', () => {
+    const a = new Articulator();
+    let peak = 0;
+    for (let k = 0; k < 20; k++) {
+      for (let i = 0; i < 9; i++) peak = Math.max(peak, k > 10 ? a.update([0.3, 0.42, 0.12], dt, true) : (a.update([0.3, 0.42, 0.12], dt, true), 0));
+      for (let i = 0; i < 6; i++) a.update([0.12, 0.08, 0.04], dt, true);
+    }
+    expect(peak).toBeGreaterThan(0.5);
   });
   it('stays shut when not speaking', () => {
     const a = new Articulator();

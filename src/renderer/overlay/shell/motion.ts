@@ -196,10 +196,15 @@ export class EmphasisDetector {
  */
 export class Articulator {
   value = 0;
+  private peak = 0.5; // recent loudness ceiling, so quiet and loud voices both articulate fully
 
   update(bands: [number, number, number], dt: number, speaking: boolean): number {
     const [low, mid, high] = bands;
-    const raw = speaking ? (mid * 0.9 + low * 0.35 + high * 0.3 - 0.16) * 1.7 : 0;
+    const energy = mid * 0.9 + low * 0.35 + high * 0.3;
+    const floor = 0.16;
+    // Automatic gain: the ceiling jumps up to new peaks and relaxes slowly (~2 s).
+    this.peak = Math.max(energy, this.peak + (Math.max(energy, 0.4) - this.peak) * (1 - Math.exp(-dt / 2)));
+    const raw = speaking ? ((energy - floor) / Math.max(0.2, this.peak - floor)) * 0.92 : 0;
     const target = Math.min(1, Math.max(0, raw));
     const tau = target > this.value ? 0.028 : 0.09; // open fast, close a bit slower
     this.value += (target - this.value) * (1 - Math.exp(-dt / tau));

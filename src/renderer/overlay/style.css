@@ -27,9 +27,12 @@ html, body { margin: 0; height: 100%; background: transparent; overflow: hidden;
 #shell signal-orb { opacity: 0; }
 #stage[data-state="searching"] #shell voice-orb, #stage[data-state="done"] #shell voice-orb { opacity: 0; }
 #stage[data-state="searching"] #shell signal-orb, #stage[data-state="done"] #shell signal-orb { opacity: 1; }
-#shell .shell-canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+/* The 3D shell draws into a canvas larger than the hit area, so unfolded shards and glow are never clipped. */
+#shell[data-skin="ghost-shell"] { margin: calc(var(--shell) * 0.3); }
+#shell .shell-canvas { position: absolute; inset: -30%; width: 160%; height: 160%; pointer-events: none; }
+#shell[data-skin="ghost-shell"] .eye { display: none; }
 #shell[data-skin="classic-orb"] .shell-canvas { display: none; }
-#shell .label { position: absolute; left: 0; right: 0; bottom: -2px; text-align: center; font-size: 11px; letter-spacing: .06em; color: var(--muted); text-shadow: 0 1px 3px #000; opacity: 0; transition: opacity .3s; pointer-events: none; }
+#shell .label { position: absolute; left: 0; right: 0; bottom: -14%; text-align: center; font-size: 11px; letter-spacing: .06em; color: var(--muted); text-shadow: 0 1px 3px #000; opacity: 0; transition: opacity .3s; pointer-events: none; }
 #stage:not([data-state="idle"]) #shell .label:not(:empty) { opacity: 1; }
 #stage[data-state="approval"] .eye { filter: sepia(1) saturate(3) hue-rotate(-15deg); }
 #stage[data-state="error"] .eye { filter: sepia(1) saturate(4) hue-rotate(-50deg); }

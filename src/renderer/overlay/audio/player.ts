@@ -1,3 +1,4 @@
+import { BandMeter } from './bands';
 import { GhostFilter } from './ghostFilter';
 
 /** Plays the core's sentence-by-sentence audio gaplessly, in order, through the Ghost filter. */
@@ -5,6 +6,7 @@ export class VoicePlayer {
   readonly ctx = new AudioContext();
   readonly filter: GhostFilter;
   readonly master: GainNode;
+  private meter: BandMeter;
   private playhead = 0;
   private turnId = '';
   private pending = new Map<number, AudioBuffer | null>();
@@ -20,7 +22,14 @@ export class VoicePlayer {
     this.master = this.ctx.createGain();
     this.master.gain.value = volume;
     this.filter.output.connect(this.master).connect(this.ctx.destination);
+    // The shell's mouth movement reads the voice exactly as Aaron hears it (after the Ghost filter).
+    const analyser = this.ctx.createAnalyser();
+    this.master.connect(analyser);
+    this.meter = new BandMeter(analyser);
   }
+
+  /** Smoothed [low, mid, high] levels of the voice right now; zeros when nothing is playing. */
+  bands(): [number, number, number] { return this.sources.size ? this.meter.read() : [0, 0, 0]; }
 
   setVolume(v: number): void { this.master.gain.setTargetAtTime(v, this.ctx.currentTime, 0.05); }
 

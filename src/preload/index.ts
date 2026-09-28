@@ -15,6 +15,8 @@ const api = {
   onSettings: (cb: (s: Settings) => void): void => { ipcRenderer.on('ghost:settings', (_e, s) => cb(s)); },
   onSummon: (cb: () => void): void => { ipcRenderer.on('ghost:summon', () => cb()); },
   onOrientation: (cb: (c: Corner) => void): void => { ipcRenderer.on('ghost:orientation', (_e, c) => cb(c)); },
+  /** Cursor position relative to the overlay window, anywhere on screen. */
+  onCursor: (cb: (x: number, y: number) => void): void => { ipcRenderer.on('ghost:cursor', (_e, x, y) => cb(x, y)); },
 };
 
 export type GhostApi = typeof api;

@@ -4,6 +4,7 @@ import { bridge, inElectron } from '../shared/bridge';
 import { CoreClient } from '../shared/coreClient';
 import { VoicePlayer } from './audio/player';
 import { GhostShell } from './shell/ghostShell';
+import { moodFromMessage } from './shell/motion';
 
 type VoiceOrbEl = HTMLElement & { state: string; connect(n: AudioNode): Promise<void>; bands?: number[] };
 
@@ -23,13 +24,14 @@ const confirmEl = $('#confirm');
 const noticeEl = $('#notice');
 
 let settings: Settings;
-let shell: GhostShell | null = null;
+let shell = null as GhostShell | null; // (declared this way so TS does not narrow it to null inside callbacks)
 let state: GhostState = 'idle';
 let currentTurn = '';
 let replyText = '';
 let bubbleTimer = 0;
 let pendingApproval: string | null = null;
 let orientation: Corner = 'bottom-right';
+let thankedThisTurn = false;
 const history: { who: 'user' | 'ghost'; text: string }[] = [];
 
 const boot = await bridge.bootstrap();
@@ -45,6 +47,17 @@ applySettings(settings);
 bridge.onSettings(s => applySettings(s));
 bridge.onOrientation(c => setOrientation(c));
 bridge.onSummon(() => openInput());
+// Follow the cursor anywhere on screen: positions arrive relative to this window.
+bridge.onCursor((x, y) => {
+  if (!shell) return;
+  const r = shellEl.getBoundingClientRect();
+  shell.setCursor(x - (r.left + r.width / 2), y - (r.top + r.height / 2));
+});
+// The shell's mouth movement follows the voice as it plays.
+(function feedVoice() {
+  requestAnimationFrame(feedVoice);
+  shell?.setBands(player.bands());
+})();
 if (!inElectron) setOrientation((new URLSearchParams(location.search).get('orient') as Corner) ?? 'bottom-right');
 
 // ------------------------------------------------------------------ settings & look
@@ -66,9 +79,9 @@ function applySettings(s: Settings): void {
   input.placeholder = `Speak your mind, ${s.userName}…`;
   if (s.skin === 'ghost-shell' && !shell) {
     try {
-      shell = new GhostShell(shellEl, theme);
-      shell.audioLevel = () => { const b = voiceOrb.bands; return b ? Math.min(1, b[0] * 0.7 + b[1] * 0.5) : 0; };
+      shell = new GhostShell(shellEl, theme, s.renderQuality);
       shell.setState(state);
+      if (!inElectron) (window as unknown as { ghostShell: GhostShell }).ghostShell = shell; // browser preview: inspectable
     } catch (e) {
       console.warn('WebGL shell unavailable, using the classic orb', e);
       shellEl.dataset.skin = 'classic-orb';
@@ -78,6 +91,7 @@ function applySettings(s: Settings): void {
     shell = null;
   }
   shell?.setTheme(theme);
+  shell?.setQuality(s.renderQuality);
 }
 
 function hueOf(hex: string): number {
@@ -125,6 +139,7 @@ core.on((m: CoreMessage) => {
       bubbleMeta.textContent = m.model ? `${m.provider} · ${m.model}` : '';
       history.push({ who: 'ghost', text: m.text });
       renderHistory();
+      if (thankedThisTurn) { shell?.express('happy'); thankedThisTurn = false; }
       break;
     case 'audio':
       player.push(m.turnId, m.seq, m.data, m.last);
@@ -220,6 +235,10 @@ form.addEventListener('submit', e => {
   if (!text) return;
   history.push({ who: 'user', text });
   renderHistory();
+  // A small reaction while Ghost works on it: a curious tilt for questions, a happy spin after thanks.
+  const mood = moodFromMessage(text);
+  if (mood === 'curious') shell?.express('curious');
+  thankedThisTurn = mood === 'happy';
   core.send({ type: 'user_message', text });
   input.value = '';
   shell?.setLean(0);
@@ -315,7 +334,7 @@ shellEl.addEventListener('pointermove', e => {
 });
 shellEl.addEventListener('pointerup', () => {
   if (dragging) bridge.dragEnd();
-  else if (form.hidden) openInput();
+  else if (form.hidden) { shell?.boop(); openInput(); }
   else closeInput();
   dragging = false;
   dragStart = null;

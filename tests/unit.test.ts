@@ -14,7 +14,7 @@ import { modelFor, routeTier } from '../src/core/router';
 import { SentenceSplitter } from '../src/core/sentenceSplitter';
 import { TtsService } from '../src/core/tts/service';
 import { TtsError, type TtsEngine } from '../src/core/tts/types';
-import { cornerPosition, nearestCorner, windowSize } from '../src/main/placement';
+import { cornerPosition, MARGIN, nearestCorner, windowSize } from '../src/main/placement';
 import { mergeSettings } from '../src/shared/settings';
 
 const tmp = () => mkdtempSync(join(tmpdir(), 'ghost-'));
@@ -185,12 +185,20 @@ describe('placement', () => {
   it('places and snaps to corners', () => {
     const size = windowSize(180);
     const br = cornerPosition('bottom-right', work, size);
-    expect(br.x + size.width).toBe(1920 - 16);
+    expect(br.x + size.width).toBe(1920 - MARGIN);
     expect(nearestCorner(br.x - 30, br.y - 20, work, size)).toEqual({ corner: 'bottom-right', snap: true });
     expect(nearestCorner(800, 300, work, size).snap).toBe(false);
   });
   it('clamps settings', () => {
     expect(mergeSettings({ size: 5000, idleOpacity: 0 }).size).toBe(420);
     expect(mergeSettings({ idleOpacity: 0 }).idleOpacity).toBe(0.2);
+  });
+});
+
+describe('overlay window sizing', () => {
+  it('leaves room around the shell for unfolded shards and glow', () => {
+    const { width, height } = windowSize(200);
+    expect(width).toBeGreaterThanOrEqual(200 * 1.6);
+    expect(height).toBeGreaterThanOrEqual(200 * 1.6 + 250); // plus bubble and input bar
   });
 });

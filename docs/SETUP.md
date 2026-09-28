@@ -71,7 +71,11 @@ The ElevenLabs free tier gives about 20 minutes of speech a month. When it runs 
 
 - [ ] Installed app starts at login, with the tray icon present
 - [ ] Ctrl+Space opens the input bar with focus, and Esc closes it
-- [ ] Reply is spoken through the Ghost filter, and the eye and shell pulse with the voice
+- [ ] Reply is spoken through the Ghost filter, and the shards open and close with the voice like a mouth
+- [ ] Ghost turns to follow the cursor anywhere on screen (including other monitors), with a short soft beam from its eye
+- [ ] The glow and unfolded shards are never clipped at the window edge, and the glow blends over your wallpaper with no dark box
+- [ ] Clicking the shell gives a little boop and opens the input; saying thanks gets a happy spin; after 5 minutes idle it dozes, and moving the cursor near wakes it
+- [ ] Task Manager → GPU: Ghost stays light while idle (it caps itself at 30 fps after 30 s); settings → Look → Render quality lowers it further
 - [ ] Idle shell is click-through; a brief hover or Alt makes it grabbable; drag and snap to each corner; free position is remembered after a restart
 - [ ] `open notepad` runs without asking; `delete C:\temp\x.txt` shows the confirm card
 - [ ] A reminder fires while Destiny 2 is fullscreen: the shell stays hidden and the voice is heard

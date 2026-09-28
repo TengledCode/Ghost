@@ -7,6 +7,8 @@ export class OverlayWindow {
   readonly win: BrowserWindow;
   private hiddenForFullscreen = false;
   private summoned = false;
+  private cursorTimer: NodeJS.Timeout | null = null;
+  private lastCursor = { x: NaN, y: NaN };
 
   constructor(private settings: () => Settings, private save: (p: Partial<Settings>) => void) {
     const size = windowSize(settings().size);
@@ -36,6 +38,25 @@ export class OverlayWindow {
     screen.on('display-metrics-changed', () => this.place());
     screen.on('display-removed', () => this.place());
   }
+
+  /**
+   * Ghost follows the cursor anywhere on screen, not just over its own window. About 30 times a
+   * second the cursor position (relative to this window, in DIPs) goes to the renderer. It is
+   * sent only when it moves, and paused while hidden over a fullscreen app.
+   */
+  startCursorFeed(): void {
+    if (this.cursorTimer) return;
+    this.cursorTimer = setInterval(() => {
+      if (this.win.isDestroyed() || !this.win.isVisible() || (this.hiddenForFullscreen && !this.summoned)) return;
+      const p = screen.getCursorScreenPoint();
+      if (p.x === this.lastCursor.x && p.y === this.lastCursor.y) return;
+      this.lastCursor = p;
+      const [wx, wy] = this.win.getPosition();
+      this.win.webContents.send('ghost:cursor', p.x - wx, p.y - wy);
+    }, 33);
+  }
+
+  stopCursorFeed(): void { if (this.cursorTimer) clearInterval(this.cursorTimer); this.cursorTimer = null; }
 
   load(): void {
     if (process.env.ELECTRON_RENDERER_URL) void this.win.loadURL(`${process.env.ELECTRON_RENDERER_URL}/overlay/index.html`);

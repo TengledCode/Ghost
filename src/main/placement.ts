@@ -2,12 +2,16 @@ import type { Corner } from '../shared/settings';
 
 export interface Rect { x: number; y: number; width: number; height: number }
 
-export const MARGIN = 16;
+export const MARGIN = 4; // the shell already sits inside its own glow margin (SHELL_PAD)
 export const SNAP_DISTANCE = 96;
 
-/** Overlay window size: the shell plus room for the reply bubble and the input bar. */
+/** Space kept around the shell so unfolded shards and their glow are never clipped by the window. */
+export const SHELL_PAD = 0.3;
+
+/** Overlay window size: the padded shell plus room for the reply bubble and the input bar. */
 export function windowSize(shell: number): { width: number; height: number } {
-  return { width: Math.max(shell + 40, 380), height: shell + 300 };
+  const padded = Math.round(shell * (1 + SHELL_PAD * 2));
+  return { width: Math.max(padded + 16, 380), height: padded + 290 };
 }
 
 export function cornerPosition(corner: Corner, work: Rect, size: { width: number; height: number }): { x: number; y: number } {

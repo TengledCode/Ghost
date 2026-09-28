@@ -45,6 +45,7 @@ app.whenReady().then(async () => {
 
   const overlay = new OverlayWindow(settings, patch => store.update(patch));
   overlay.load();
+  overlay.startCursorFeed();
 
   // ---- IPC used by the overlay and settings renderers
   ipcMain.handle('ghost:bootstrap', () => ({ url: core.url, token: core.token, settings: settings(), hasElevenLabsKey: !!store.getSecret('elevenlabs') }));
@@ -92,7 +93,7 @@ app.whenReady().then(async () => {
   tray.on('click', () => overlay.summon());
 
   app.on('second-instance', () => overlay.summon());
-  app.on('will-quit', () => { globalShortcut.unregisterAll(); fullscreen.stop(); core.stop(); });
+  app.on('will-quit', () => { globalShortcut.unregisterAll(); fullscreen.stop(); overlay.stopCursorFeed(); core.stop(); });
 });
 
 // A tray app: closing windows doesn't quit.

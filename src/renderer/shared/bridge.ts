@@ -25,6 +25,8 @@ const browserApi: GhostApi = {
   onSettings: () => {},
   onSummon: () => {},
   onOrientation: () => {},
+  // In a plain browser the page's own mousemove stands in for the global cursor feed.
+  onCursor: cb => window.addEventListener('mousemove', e => cb(e.clientX, e.clientY)),
 };
 
 export const bridge: GhostApi = window.ghost ?? browserApi;
