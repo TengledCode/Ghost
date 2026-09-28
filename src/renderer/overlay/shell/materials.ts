@@ -56,14 +56,27 @@ function panelTexture(size = 512): THREE.CanvasTexture {
   return tex;
 }
 
+/** Soft radial falloff used for the magnetic light pools under each shard. */
+function radialTexture(size = 128): THREE.CanvasTexture {
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const g = c.getContext('2d')!;
+  const grad = g.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  grad.addColorStop(0, 'rgba(255,255,255,1)');
+  grad.addColorStop(0.35, 'rgba(255,255,255,0.45)');
+  grad.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, size, size);
+  return new THREE.CanvasTexture(c);
+}
+
 export interface GhostMaterials {
   armour: THREE.MeshStandardMaterial;
   armourDark: THREE.MeshStandardMaterial;
   core: THREE.MeshStandardMaterial;
   cavity: THREE.MeshStandardMaterial;
-  seam: THREE.LineBasicMaterial;
-  seamBright: THREE.MeshBasicMaterial;
-  glowShell: THREE.MeshBasicMaterial;
+  underGlow: THREE.MeshBasicMaterial; // underside of each shard: light leaking out when it lifts
+  pool: THREE.MeshBasicMaterial; // magnetic light pool on the core beneath each shard
   lens: THREE.MeshPhysicalMaterial;
   iris: THREE.MeshBasicMaterial;
   setGlow(color: THREE.Color, intensity: number): void;
@@ -79,30 +92,27 @@ export function createMaterials(): GhostMaterials {
   });
   const armourDark = armour.clone();
   armourDark.color.set('#2a2e35');
+  // Engraved, not lit: panel lines are cut into the metal and catch light, with no glow of their own.
   const core = new THREE.MeshStandardMaterial({
-    color: '#2b3038', metalness: 0.85, roughness: 0.45, bumpMap: panels, bumpScale: -1.2, envMapIntensity: 0.5,
-    emissive: new THREE.Color('#7fd4ff'), emissiveMap: panels, emissiveIntensity: 0.6,
+    color: '#2b3038', metalness: 0.85, roughness: 0.42, bumpMap: panels, bumpScale: -1.4, envMapIntensity: 0.5, roughnessMap: brushed,
   });
   const cavity = new THREE.MeshStandardMaterial({ color: '#07090c', metalness: 0.3, roughness: 0.9, side: THREE.BackSide });
-  const seam = new THREE.LineBasicMaterial({ color: '#7fd4ff', transparent: true, opacity: 0.55, toneMapped: false });
-  const seamBright = new THREE.MeshBasicMaterial({ color: '#7fd4ff', toneMapped: false });
-  const glowShell = new THREE.MeshBasicMaterial({ color: '#7fd4ff', transparent: true, opacity: 0.35, toneMapped: false, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.BackSide });
+  const underGlow = new THREE.MeshBasicMaterial({ color: '#7fd4ff', toneMapped: false, side: THREE.DoubleSide, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false });
+  const pool = new THREE.MeshBasicMaterial({
+    color: '#7fd4ff', map: radialTexture(), transparent: true, opacity: 0.5, toneMapped: false, depthWrite: false, blending: THREE.AdditiveBlending,
+  });
   const lens = new THREE.MeshPhysicalMaterial({
-    color: '#0b1a22', metalness: 0, roughness: 0.05, clearcoat: 1, clearcoatRoughness: 0.03,
-    transparent: true, opacity: 0.22, envMapIntensity: 1.2, depthWrite: false,
+    color: '#0b1a22', metalness: 0, roughness: 0.22, clearcoat: 1, clearcoatRoughness: 0.28,
+    transparent: true, opacity: 0.16, envMapIntensity: 0.55, depthWrite: false,
   });
   const iris = new THREE.MeshBasicMaterial({ color: '#7fd4ff', toneMapped: false, transparent: true, side: THREE.DoubleSide });
 
   return {
-    armour, armourDark, core, cavity, seam, seamBright, glowShell, lens, iris,
+    armour, armourDark, core, cavity, underGlow, pool, lens, iris,
     setGlow(color, intensity) {
-      // Values above ~1 cross the bloom threshold; keep the armour itself below it.
-      seam.color.copy(color).multiplyScalar(0.45 + intensity * 0.25);
-      seamBright.color.copy(color).multiplyScalar(0.6 + intensity * 0.75);
-      core.emissive.copy(color);
-      core.emissiveIntensity = 0.12 + intensity * 0.22;
-      glowShell.color.copy(color);
-      glowShell.opacity = Math.min(0.8, 0.1 + intensity * 0.12);
+      underGlow.color.copy(color).multiplyScalar(0.04 + intensity * 0.08);
+      pool.color.copy(color);
+      pool.opacity = Math.min(0.7, 0.06 + intensity * 0.1);
       iris.color.copy(color).multiplyScalar(0.7 + intensity * 0.6);
     },
     setMetal(hex) {

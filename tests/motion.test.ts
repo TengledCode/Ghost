@@ -22,7 +22,7 @@ describe('state choreography', () => {
     expect(POSES.idle.split).toBeLessThan(POSES.listening.split);
     expect(POSES.listening.split).toBeLessThan(POSES.thinking.split);
     expect(POSES.thinking.split).toBeLessThan(POSES.searching.split);
-    expect(POSES.done.split).toBe(0);
+    expect(POSES.done.split).toBeLessThan(POSES.idle.split); // snaps in tighter than the idle float
   });
   it('uses the right tones and flourishes', () => {
     expect(POSES.thinking.tone).toBe('amber');
@@ -80,5 +80,47 @@ describe('QualityGovernor', () => {
     expect(g.level).toBe('high');
     expect(g.frameInterval(0)).toBeCloseTo(1 / 60);
     expect(g.frameInterval(45)).toBeCloseTo(1 / 30);
+  });
+});
+
+import { InflectionDetector, MicroLife, moodFromMessage } from '../src/renderer/overlay/shell/motion';
+
+describe('InflectionDetector', () => {
+  const dt = 1 / 60;
+  it('fires on syllable onsets and pitch swings, not on steady tone or silence', () => {
+    const d = new InflectionDetector();
+    for (let i = 0; i < 30; i++) d.update([0.5, 0.5, 0.2], dt); // the tone's own onset may pulse
+    let pulses = 0;
+    for (let i = 0; i < 120; i++) pulses += d.update([0.5, 0.5, 0.2], dt) > 0 ? 1 : 0; // then steady: nothing
+    expect(pulses).toBe(0);
+    pulses = 0;
+    for (let i = 0; i < 120; i++) pulses += d.update([0, 0, 0], dt) > 0 ? 1 : 0; // silence
+    expect(pulses).toBe(0);
+    // Syllables at ~5 Hz: energy bursts every 12 frames.
+    pulses = 0;
+    for (let i = 0; i < 120; i++) { const on = i % 12 < 5; pulses += d.update(on ? [0.6, 0.8, 0.3] : [0.2, 0.15, 0.05], dt) > 0 ? 1 : 0; }
+    expect(pulses).toBeGreaterThanOrEqual(7);
+    expect(pulses).toBeLessThanOrEqual(11);
+  });
+});
+
+describe('MicroLife', () => {
+  it('produces saccades often, blinks every few seconds, and occasional calibrations', () => {
+    const m = new MicroLife(seededRng(3));
+    const counts = { saccade: 0, blink: 0, calibrate: 0 };
+    for (let t = 0; t < 60; t += 1 / 30) for (const a of m.update(t, 8)) { counts[a.kind]++; if (a.kind === 'calibrate') expect(a.shard).toBeLessThan(8); }
+    expect(counts.saccade).toBeGreaterThan(40);
+    expect(counts.blink).toBeGreaterThan(6);
+    expect(counts.blink).toBeLessThan(25);
+    expect(counts.calibrate).toBeGreaterThan(2);
+  });
+});
+
+describe('moodFromMessage', () => {
+  it('reads thanks and questions', () => {
+    expect(moodFromMessage('thanks ghost')).toBe('happy');
+    expect(moodFromMessage('Cheers, that was great')).toBe('happy');
+    expect(moodFromMessage('what time is it in Tokyo?')).toBe('curious');
+    expect(moodFromMessage('open spotify')).toBeNull();
   });
 });

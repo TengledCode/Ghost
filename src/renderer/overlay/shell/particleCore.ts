@@ -95,9 +95,11 @@ export class ParticleCore {
   constructor(count: number, radius: number) {
     const seeds = new Float32Array(count * 4);
     const rnd = (i: number) => { const s = Math.sin(i * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); };
+    // A Fibonacci sphere with a small fixed nudge per point: without it, dense spheres show moiré grids.
+    const jitter = 1.2 / Math.sqrt(count);
     for (let i = 0; i < count; i++) {
-      const y = 1 - (2 * (i + 0.5)) / count;
-      const a = i * 2.399963229728653;
+      const y = Math.max(-0.999, Math.min(0.999, 1 - (2 * (i + 0.5)) / count + (rnd(i + 7) - 0.5) * jitter));
+      const a = i * 2.399963229728653 + (rnd(i + 19) - 0.5) * jitter * 6;
       const r = Math.sqrt(1 - y * y);
       seeds.set([r * Math.cos(a), y, r * Math.sin(a), rnd(i + 31)], i * 4);
     }
@@ -116,5 +118,5 @@ export class ParticleCore {
   }
 
   /** Point size scales with the canvas's pixel height so the core looks the same at any size. */
-  setPixelScale(heightPx: number): void { this.uniforms.size.value = heightPx * 0.04; }
+  setPixelScale(heightPx: number): void { this.uniforms.size.value = heightPx * 0.034; }
 }

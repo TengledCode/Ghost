@@ -12,11 +12,11 @@ const shell = new GhostShell(host, THEMES[themeName]);
 
 // ---- states
 const DESCRIPTIONS: Record<GhostState, string> = {
-  idle: 'Shut and hovering. Glances around on its own; follows your cursor.',
+  idle: 'Shards float on their magnetic field. Glances, blinks and follows your cursor. Click it for a boop.',
   listening: 'You are typing. Turns to the input bar, plates ease open, iris widens.',
   thinking: 'Plates unlock with a twist and the two sets counter-rotate. Amber core.',
   searching: 'Fully unfolded, rear set orbits, body sweeps; the core becomes scan rings.',
-  speaking: 'Plates, iris and glow pulse with the voice. Press Play voice.',
+  speaking: 'Shards pulse in a wave on each word and inflection. Press Play voice sample.',
   done: 'Snaps shut with a flash and a small nod.',
   approval: 'Half open, seams go amber, looks up at the confirm card.',
   error: 'Red flicker and a quick shake.',
@@ -79,59 +79,75 @@ stage.addEventListener('pointermove', e => {
   lastX = e.clientX; lastY = e.clientY;
   shell.setViewOrbit(orbitYaw, orbitPitch);
 });
-const endDrag = () => { dragging = false; stage.classList.remove('dragging'); };
+let downAt = { x: 0, y: 0 };
+stage.addEventListener('pointerdown', e => { downAt = { x: e.clientX, y: e.clientY }; });
+const endDrag = (e: PointerEvent) => {
+  dragging = false;
+  stage.classList.remove('dragging');
+  // A click on the Ghost itself (not a drag) boops it.
+  const r = host.getBoundingClientRect();
+  if (Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y) < 4 && Math.hypot(e.clientX - (r.left + r.width / 2), e.clientY - (r.top + r.height / 2)) < r.height * 0.22) shell.boop();
+};
 stage.addEventListener('pointerup', endDrag);
 stage.addEventListener('pointercancel', endDrag);
 $('#resetView').onclick = () => { orbitYaw = orbitPitch = 0; shell.setViewOrbit(0, 0); };
 
-// ---- voice demo: a synthesised vowel line through the same band analysis the app uses
-let ctx: AudioContext | null = null;
-let meter: BandMeter | null = null;
-let voiceUntil = 0;
+// ---- voice demo: the browser's own speech voice. Speech synthesis can't be routed into Web Audio,
+// so the bands are driven from its word-boundary events plus a syllable-rate envelope. In the app,
+// the real ElevenLabs/Edge audio drives them through the analyser instead.
+const LINE = 'Good evening, Aaron. Your jacket is pressed, your calendar is clear, and I am at your service. Shall I open Spotify, or would you prefer some quiet?';
+let speakingNow = false;
+let env = 0, syllable = 0, swing = 0, lastBoundary = 0;
+function pickVoice(): SpeechSynthesisVoice | undefined {
+  const voices = speechSynthesis.getVoices();
+  const prefs = [/Andrew/i, /Ryan/i, /Guy/i, /Brian/i, /Google UK English Male/i, /Daniel/i, /en-GB/i, /en-US/i, /^en/i];
+  for (const re of prefs) { const v = voices.find(v => re.test(v.name) || re.test(v.lang)); if (v) return v; }
+  return voices[0];
+}
 function playVoice(): void {
-  ctx ??= new AudioContext();
-  void ctx.resume();
-  const analyser = ctx.createAnalyser();
-  meter = new BandMeter(analyser);
-  const out = ctx.createGain();
-  out.gain.value = 0.18;
-  out.connect(analyser);
-  analyser.connect(ctx.destination);
-  const t0 = ctx.currentTime + 0.05;
-  const vowels = [[730, 1090], [270, 2290], [530, 1840], [300, 870], [660, 1720], [440, 1020], [390, 1990]];
-  const syllables = 16;
-  for (let i = 0; i < syllables; i++) {
-    const start = t0 + i * 0.23 + (i % 5 === 4 ? 0.25 : 0);
-    const dur = 0.17 + (i % 3) * 0.03;
-    const src = ctx.createOscillator();
-    src.type = 'sawtooth';
-    src.frequency.setValueAtTime(118 + Math.sin(i * 1.7) * 18, start);
-    src.frequency.linearRampToValueAtTime(104 + Math.cos(i) * 12, start + dur);
-    const env = ctx.createGain();
-    env.gain.setValueAtTime(0, start);
-    env.gain.linearRampToValueAtTime(1, start + 0.03);
-    env.gain.setTargetAtTime(0, start + dur - 0.05, 0.03);
-    const [f1, f2] = vowels[i % vowels.length];
-    const mix = ctx.createGain();
-    for (const [f, q, g] of [[f1, 8, 1], [f2, 10, 0.6], [2600, 12, 0.25]]) {
-      const bp = ctx.createBiquadFilter();
-      bp.type = 'bandpass'; bp.frequency.value = f; bp.Q.value = q;
-      const gain = ctx.createGain(); gain.gain.value = g;
-      src.connect(bp).connect(gain).connect(mix);
-    }
-    mix.connect(env).connect(out);
-    src.start(start);
-    src.stop(start + dur + 0.2);
-  }
-  voiceUntil = performance.now() + (syllables * 0.23 + 1.2) * 1000;
-  setState('speaking');
+  if (!('speechSynthesis' in window)) { $('#voiceNote').textContent = 'This browser has no speech voice; try Edge or Chrome.'; return; }
+  speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(LINE);
+  const v = pickVoice();
+  if (v) u.voice = v;
+  u.rate = 1.02;
+  u.pitch = 1.08;
+  u.onstart = () => { speakingNow = true; setState('speaking'); };
+  u.onboundary = e => {
+    // Each word: a burst of energy; punctuation before it: a pitch swing (an inflection).
+    const before = LINE.slice(Math.max(0, e.charIndex - 2), e.charIndex);
+    env = 1;
+    swing = /[,.?!]/.test(before) ? 1 : 0.35;
+    lastBoundary = performance.now();
+  };
+  u.onend = u.onerror = () => { speakingNow = false; env = 0; shell.setBands([0, 0, 0]); if (state === 'speaking') setState('done'); };
+  speechSynthesis.speak(u);
+  $('#voiceNote').textContent = v ? `Voice: ${v.name}` : '';
 }
 $('#voice').onclick = playVoice;
+let lastT = performance.now();
 (function pump() {
   requestAnimationFrame(pump);
-  if (meter && performance.now() < voiceUntil) shell.setBands(meter.read());
-  else if (meter) { shell.setBands([0, 0, 0]); meter = null; if (state === 'speaking') setState('done'); }
+  const now = performance.now();
+  const dt = Math.min(0.1, (now - lastT) / 1000);
+  lastT = now;
+  if (!speakingNow) return;
+  // No boundary events for a while (some voices don't send them): keep a steady syllable rhythm.
+  if (now - lastBoundary > 450) { env = Math.max(env, 0.6); swing = Math.max(swing, 0.2 * Math.random()); }
+  syllable += dt * 5.5 * Math.PI * 2;
+  env *= Math.exp(-dt / 0.35);
+  swing *= Math.exp(-dt / 0.12);
+  const s = Math.abs(Math.sin(syllable));
+  shell.setBands([0.35 + 0.4 * env * s, 0.3 + 0.55 * env * s + 0.2 * swing, 0.15 + 0.35 * swing + 0.15 * env * s]);
 })();
+
+// ---- reactions
+document.querySelectorAll<HTMLButtonElement>('[data-mood]').forEach(b => b.addEventListener('click', () => {
+  const mood = b.dataset.mood!;
+  if (mood === 'boop') shell.boop();
+  else if (mood === 'doze') { setState('idle'); shell.doze(); }
+  else shell.express(mood as 'happy' | 'curious' | 'sad');
+}));
 
 // ---- readouts
 let frames = 0, t = performance.now();

@@ -43,12 +43,12 @@ export interface Pose {
 }
 
 export const POSES: Record<GhostState, Pose> = {
-  idle: { split: 0.04, twist: 0, frontSpin: 0, rearSpin: 0, sweep: 0, bob: 1, iris: 1, glow: 0.9, tone: 'theme', eye: [1, 0, 0, 0], scan: 0, flicker: 0, curious: true },
+  idle: { split: 0.1, twist: 0, frontSpin: 0, rearSpin: 0, sweep: 0, bob: 1, iris: 1, glow: 0.9, tone: 'theme', eye: [1, 0, 0, 0], scan: 0, flicker: 0, curious: true },
   listening: { split: 0.14, twist: 0.12, frontSpin: 0, rearSpin: 0, sweep: 0, bob: 0.6, iris: 1.18, glow: 1.1, tone: 'theme', eye: [0, 1, 0, 0], scan: 0, flicker: 0, curious: false },
   thinking: { split: 0.42, twist: 0.35, frontSpin: 1.4, rearSpin: -0.9, sweep: 0, bob: 0.4, iris: 0.85, glow: 1.25, tone: 'amber', eye: [0, 0, 1, 0], scan: 0, flicker: 0, curious: false },
   searching: { split: 0.85, twist: 0.6, frontSpin: 0.6, rearSpin: 2.2, sweep: 0.45, bob: 0.3, iris: 1.05, glow: 1.3, tone: 'theme', eye: [0, 0, 0.3, 0], scan: 1, flicker: 0, curious: false },
   speaking: { split: 0.22, twist: 0.08, frontSpin: 0.15, rearSpin: -0.1, sweep: 0, bob: 0.5, iris: 1.1, glow: 1.15, tone: 'theme', eye: [0, 0, 0, 1], scan: 0, flicker: 0, curious: false },
-  done: { split: 0, twist: 0, frontSpin: 0, rearSpin: 0, sweep: 0, bob: 1, iris: 1, glow: 1, tone: 'theme', eye: [1, 0, 0, 0], scan: 0, flicker: 0, curious: false },
+  done: { split: 0.02, twist: 0, frontSpin: 0, rearSpin: 0, sweep: 0, bob: 1, iris: 1, glow: 1, tone: 'theme', eye: [1, 0, 0, 0], scan: 0, flicker: 0, curious: false },
   approval: { split: 0.35, twist: 0.2, frontSpin: 0, rearSpin: 0.25, sweep: 0, bob: 0.3, iris: 1.2, glow: 1.3, tone: 'amber', eye: [0.6, 0.4, 0, 0], scan: 0, flicker: 0.25, curious: false },
   error: { split: 0.12, twist: 0.05, frontSpin: 0, rearSpin: 0, sweep: 0, bob: 0.2, iris: 0.8, glow: 1.2, tone: 'red', eye: [1, 0, 0, 0], scan: 0, flicker: 0.9, curious: false },
 };
@@ -160,3 +160,84 @@ export class QualityGovernor {
     return 1 / fps;
   }
 }
+
+// ---------------------------------------------------------------- speech inflection
+
+/**
+ * Detects inflection in speech: a syllable onset (energy jumps) or a pitch/brightness swing (the
+ * high/mid balance moves). Each detection returns a pulse strength 0–1, which the shell turns into a
+ * wave of shard kicks around the ring.
+ */
+export class InflectionDetector {
+  private energy = 0;
+  private bright = 0;
+  private cooldown = 0;
+
+  update(bands: [number, number, number], dt: number): number {
+    const [low, mid, high] = bands;
+    const energy = low * 0.5 + mid + high * 0.5;
+    const bright = high / (mid + 0.05);
+    const rise = (energy - this.energy) / Math.max(dt, 1 / 240);
+    const swing = Math.abs(bright - this.bright) / Math.max(dt, 1 / 240);
+    // Slow followers: a jump is measured against the recent level, not the previous frame alone.
+    this.energy += (energy - this.energy) * (1 - Math.exp(-dt / 0.08));
+    this.bright += (bright - this.bright) * (1 - Math.exp(-dt / 0.12));
+    this.cooldown = Math.max(0, this.cooldown - dt);
+    if (this.cooldown > 0 || energy < 0.12) return 0;
+    const score = Math.max(rise / 6, swing / 9);
+    if (score < 1) return 0;
+    this.cooldown = 0.11; // at most ~9 pulses a second, about the syllable rate
+    return Math.min(1, 0.35 + (score - 1) * 0.3 + energy * 0.4);
+  }
+}
+
+// ---------------------------------------------------------------- eye micro-life
+
+export type MicroAct =
+  | { kind: 'saccade'; x: number; y: number }
+  | { kind: 'blink'; double: boolean }
+  | { kind: 'calibrate'; shard: number; amount: number };
+
+/** Tiny involuntary movements: eye darts, blinks and shards making small calibrating adjustments. */
+export class MicroLife {
+  private nextSaccade: number;
+  private nextBlink: number;
+  private nextCalibrate: number;
+
+  constructor(private readonly rng: Rng = Math.random, now = 0) {
+    this.nextSaccade = now + 0.5 + rng();
+    this.nextBlink = now + 3 + rng() * 4;
+    this.nextCalibrate = now + 6 + rng() * 8;
+  }
+
+  update(t: number, shards: number): MicroAct[] {
+    const out: MicroAct[] = [];
+    if (t >= this.nextSaccade) {
+      this.nextSaccade = t + 0.35 + this.rng() * 1.6;
+      out.push({ kind: 'saccade', x: (this.rng() - 0.5) * 0.5, y: (this.rng() - 0.5) * 0.35 });
+    }
+    if (t >= this.nextBlink) {
+      this.nextBlink = t + 2.8 + this.rng() * 4.5;
+      out.push({ kind: 'blink', double: this.rng() < 0.2 });
+    }
+    if (t >= this.nextCalibrate) {
+      this.nextCalibrate = t + 5 + this.rng() * 9;
+      out.push({ kind: 'calibrate', shard: Math.floor(this.rng() * shards), amount: (this.rng() < 0.5 ? -1 : 1) * (0.25 + this.rng() * 0.35) });
+    }
+    return out;
+  }
+}
+
+// ---------------------------------------------------------------- moods
+
+export type Mood = 'happy' | 'curious' | 'sad' | 'boop' | 'perk' | 'wake';
+
+/** Guess a mood from what Aaron typed, for a small reaction while Ghost works on the reply. */
+export function moodFromMessage(text: string): Mood | null {
+  const t = text.toLowerCase();
+  if (/\b(thanks?|thank you|cheers|ty|great job|well done|nice one|love (it|you)|brilliant|awesome|good (job|boy|work))\b/.test(t)) return 'happy';
+  if (/\?\s*$/.test(t) || /^(what|why|how|who|where|when|which|could|can|would|should|is|are|do|does)\b/.test(t)) return 'curious';
+  return null;
+}
+
+export const DOZE_AFTER = 300; // seconds of idle before Ghost dozes off
