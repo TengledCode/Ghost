@@ -43,7 +43,7 @@ export const TOOL_DEFS = {
     description: 'Store a lasting fact about Aaron (preferences, people, plans, routines). Keep it short and self-contained.',
     shape: { fact: z.string() },
   },
-  recall: { description: 'Search long-term memory.', shape: { query: z.string() } },
+  recall: { description: 'Search long-term memory: stored facts, summaries of past conversations, and what was actually said in them (with dates). Use it for questions like "what did we decide about X".', shape: { query: z.string() } },
   forget: { description: 'Delete memories by id or matching text.', shape: { match: z.string() } },
 } as const;
 

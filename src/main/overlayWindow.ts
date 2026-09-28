@@ -1,7 +1,7 @@
 import { BrowserWindow, screen } from 'electron';
 import { join } from 'node:path';
 import type { Corner, Settings } from '../shared/settings';
-import { cornerPosition, nearestCorner, orientationFor, windowSize } from './placement';
+import { cornerWindowPosition, orientationForShell, SHELL_PAD, snapShell, windowSize, type Rect } from './placement';
 
 export class OverlayWindow {
   readonly win: BrowserWindow;
@@ -9,9 +9,13 @@ export class OverlayWindow {
   private summoned = false;
   private cursorTimer: NodeJS.Timeout | null = null;
   private lastCursor = { x: NaN, y: NaN };
+  /** The shell's hit area inside the window (CSS px = DIPs), reported by the renderer. */
+  private shellRect: Rect;
+  private drag: { cursor: Electron.Point; win: { x: number; y: number }; timer: NodeJS.Timeout | null } | null = null;
 
   constructor(private settings: () => Settings, private save: (p: Partial<Settings>) => void) {
     const size = windowSize(settings().size);
+    this.shellRect = this.estimateShellRect();
     this.win = new BrowserWindow({
       ...size,
       transparent: true,
@@ -64,24 +68,47 @@ export class OverlayWindow {
     this.win.once('ready-to-show', () => this.win.showInactive());
   }
 
-  /** Position from settings: a snapped corner, or a remembered free position if its display still exists. */
+  /** Until the renderer reports it: the shell sits in the bottom-right of the window, inside its padding. */
+  private estimateShellRect(): Rect {
+    const { size } = this.settings();
+    const win = windowSize(size);
+    const inset = 8 + size * SHELL_PAD;
+    return { x: win.width - inset - size, y: win.height - inset - size, width: size, height: size };
+  }
+
+  private setWindowPos(x: number, y: number): void {
+    // setBounds with a fixed size: setPosition on scaled Windows displays slowly changes the
+    // window's size, which made Ghost drift and "shoot outward" while dragging.
+    const { width, height } = windowSize(this.settings().size);
+    this.win.setBounds({ x: Math.round(x), y: Math.round(y), width, height });
+  }
+
+  /** Position from settings: the shell in a corner of its monitor, or a remembered free position. */
   place(): void {
+    if (this.drag?.timer) return;
     const s = this.settings();
-    const size = windowSize(s.size);
-    this.win.setSize(size.width, size.height);
+    const displays = screen.getAllDisplays();
     const custom = s.customPosition;
-    const display = custom ? screen.getAllDisplays().find(d => d.id === custom.displayId) : undefined;
-    if (custom && display) {
-      const x = Math.min(Math.max(custom.x, display.workArea.x), display.workArea.x + display.workArea.width - size.width);
-      const y = Math.min(Math.max(custom.y, display.workArea.y), display.workArea.y + display.workArea.height - size.height);
-      this.win.setPosition(Math.round(x), Math.round(y));
-      this.sendOrientation(orientationFor(x, y, display.workArea, size));
+    const customDisplay = custom ? displays.find(d => d.id === custom.displayId) : undefined;
+    if (custom && customDisplay) {
+      const work = customDisplay.workArea;
+      const p = snapShell({ x: custom.x, y: custom.y }, this.shellRect, work); // also clamps onto the screen
+      this.setWindowPos(p.x, p.y);
+      this.sendOrientation(orientationForShell({ ...this.shellRect, x: p.x + this.shellRect.x, y: p.y + this.shellRect.y }, work));
     } else {
-      const work = screen.getPrimaryDisplay().workArea;
-      const p = cornerPosition(s.corner, work, size);
-      this.win.setPosition(p.x, p.y);
+      const display = displays.find(d => d.id === s.cornerDisplayId) ?? screen.getPrimaryDisplay();
+      const p = cornerWindowPosition(s.corner, this.shellRect, display.workArea);
+      this.setWindowPos(p.x, p.y);
       this.sendOrientation(s.corner);
     }
+  }
+
+  /** The renderer measured the shell (it moves inside the window when the orientation flips). */
+  setShellRect(r: Rect): void {
+    const old = this.shellRect;
+    if (Math.abs(old.x - r.x) + Math.abs(old.y - r.y) + Math.abs(old.width - r.width) < 1) return;
+    this.shellRect = r;
+    this.place();
   }
 
   private sendOrientation(corner: Corner): void {
@@ -89,18 +116,37 @@ export class OverlayWindow {
     if (this.win.webContents.isLoading()) this.win.webContents.once('did-finish-load', send); else send();
   }
 
-  dragBy(dx: number, dy: number): void {
+  // ---- dragging, done here in the main process from the real cursor position (no feedback loop)
+
+  /** Pointer went down on the shell: remember where things started, in case this becomes a drag. */
+  dragArm(): void {
     const [x, y] = this.win.getPosition();
-    this.win.setPosition(Math.round(x + dx), Math.round(y + dy));
+    this.drag = { cursor: screen.getCursorScreenPoint(), win: { x, y }, timer: null };
   }
 
+  /** The pointer moved far enough: follow the cursor until release. */
+  dragStart(): void {
+    if (!this.drag) this.dragArm();
+    const d = this.drag!;
+    if (d.timer) return;
+    d.timer = setInterval(() => {
+      const p = screen.getCursorScreenPoint();
+      this.setWindowPos(d.win.x + p.x - d.cursor.x, d.win.y + p.y - d.cursor.y);
+    }, 16);
+  }
+
+  /** Released: snap the shell to nearby edges or a corner of whichever monitor it is on, and remember it. */
   dragEnd(): void {
+    const d = this.drag;
+    this.drag = null;
+    if (!d?.timer) return;
+    clearInterval(d.timer);
     const [x, y] = this.win.getPosition();
-    const size = windowSize(this.settings().size);
-    const display = screen.getDisplayNearestPoint({ x: x + size.width / 2, y: y + size.height / 2 });
-    const { corner, snap } = nearestCorner(x, y, display.workArea, size);
-    if (snap && display.id === screen.getPrimaryDisplay().id) this.save({ corner, customPosition: null });
-    else this.save({ customPosition: { x, y, displayId: display.id } });
+    const r = this.shellRect;
+    const display = screen.getDisplayNearestPoint({ x: Math.round(x + r.x + r.width / 2), y: Math.round(y + r.y + r.height / 2) });
+    const snapped = snapShell({ x, y }, r, display.workArea);
+    if (snapped.corner) this.save({ corner: snapped.corner, cornerDisplayId: display.id, customPosition: null });
+    else this.save({ customPosition: { x: snapped.x, y: snapped.y, displayId: display.id } });
     this.place();
   }
 

@@ -65,6 +65,9 @@ export class GeminiCliProvider implements Provider {
 
   resetHistory(): void { this.history = []; }
 
+  /** Restore recent context after a restart (lines like "Aaron: …" / "Ghost: …"). */
+  seedHistory(lines: string[]): void { this.history = lines.slice(-12); }
+
   async *send(req: SendRequest): AsyncIterable<ProviderEvent> {
     const stdin = geminiPrompt(req.persona, this.history.join('\n'), req.prompt);
     const run = runCli(this.command, geminiArgs(req), { stdin, cwd: req.workspace, signal: req.signal });

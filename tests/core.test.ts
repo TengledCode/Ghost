@@ -132,3 +132,72 @@ describe('GhostCore', () => {
     expect(readFileSync(join(dir, 'persona.generated.md'), 'utf8')).toContain('Call him "Aaron"');
   });
 });
+
+import type { Provider, ProviderEvent } from '../src/core/providers/types';
+
+class LimitedProvider implements Provider {
+  readonly id = 'claude' as const;
+  calls = 0;
+  async isAvailable() { return true; }
+  async *send(): AsyncIterable<ProviderEvent> { this.calls++; yield { type: 'error', message: 'Claude usage limit reached', kind: 'limit' }; }
+}
+
+describe('provider fallback alert', () => {
+  it('says it once per outage, shows the fallback, and stops hammering the limited provider', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ghost-fb-'));
+    const limited = new LimitedProvider();
+    core = new GhostCore({
+      dataDir: dir, personaPath: join(__dirname, '../config/persona.md'), mcpServerPath: '/x.js', nodeExecPath: process.execPath,
+      providers: { claude: limited, gemini: new MockProvider() as never },
+      tts: new TtsService(fakeTts, fakeTts), host: { openExternal: async () => {}, openPath: async () => '', trash: async () => {} },
+      settings: () => mergeSettings({ provider: 'claude', fallbackProvider: 'gemini' }), port: 0,
+    });
+    await core.start();
+    const ui = client(core.url, core.token, 'ui');
+    await ui.ready;
+    await ui.waitFor(m => m.type === 'welcome');
+
+    ui.send({ type: 'user_message', text: 'hello there' });
+    const end1 = await ui.waitFor(m => m.type === 'turn_end') as Extract<CoreMessage, { type: 'turn_end' }>;
+    expect(end1.provider).toBe('gemini'); // the fallback answered
+    expect(ui.inbox).toContainEqual({ type: 'provider', active: 'gemini', primary: 'claude', reason: 'limit' });
+    await ui.waitFor(m => m.type === 'audio' && m.last);
+    const said = ui.inbox.filter((m): m is Extract<CoreMessage, { type: 'audio' }> => m.type === 'audio' && !!m.data)
+      .map(a => Buffer.from(a.data, 'base64').toString());
+    expect(said[0]).toBe("mp3:Claude's limit is reached for now, Aaron. I'll carry on with Gemini.");
+
+    const before = ui.inbox.length;
+    ui.send({ type: 'user_message', text: 'and again' });
+    await ui.waitFor(m => m.type === 'turn_end' && ui.inbox.indexOf(m) >= before);
+    await ui.waitFor(m => m.type === 'audio' && m.last && ui.inbox.indexOf(m) >= before);
+    const second = ui.inbox.slice(before).filter((m): m is Extract<CoreMessage, { type: 'audio' }> => m.type === 'audio' && !!m.data)
+      .map(a => Buffer.from(a.data, 'base64').toString());
+    expect(second.some(t => t.includes('limit is reached'))).toBe(false); // not announced again
+    expect(limited.calls).toBe(1); // skipped during the retry window
+    ui.ws.close();
+  }, 20_000);
+});
+
+describe('conversation memory across restarts', () => {
+  it('resumes the same conversation and Claude session after the core restarts', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ghost-restart-'));
+    const make = () => new GhostCore({
+      dataDir: dir, personaPath: join(__dirname, '../config/persona.md'), mcpServerPath: '/x.js', nodeExecPath: process.execPath,
+      providers: { claude: new MockProvider() as never }, tts: new TtsService(fakeTts, fakeTts),
+      host: { openExternal: async () => {}, openPath: async () => '', trash: async () => {} },
+      settings: () => mergeSettings({ provider: 'claude', fallbackProvider: null, voiceEnabled: false }), port: 0,
+    });
+    const first = make();
+    await first.start();
+    await first.userMessage('remember the blue tie for Saturday');
+    const id = first.log.current.conversationId;
+    expect(first.log.current.claudeSessionId).toBe('mock-session');
+    first.stop();
+
+    core = make(); // Ghost restarted
+    await core.start();
+    expect(core.log.current.conversationId).toBe(id);
+    expect(core.log.current.claudeSessionId).toBe('mock-session');
+    expect(core.log.lines().map(l => l.text)[0]).toBe('remember the blue tie for Saturday');
+  }, 20_000);
+});

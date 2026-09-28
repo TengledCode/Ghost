@@ -82,3 +82,8 @@ The ElevenLabs free tier gives about 20 minutes of speech a month. When it runs 
 - [ ] With a bad ElevenLabs key, it falls back to Edge with a notice
 - [ ] Setting Primary to Gemini answers and can use the Ghost tools
 - [ ] A second monitor: drag Ghost there and restart; it stays there
+- [ ] Dragging follows the cursor exactly (no drift or "shooting off"); dropping near an edge sticks Ghost to it, near a corner snaps it into the corner, and it never ends up partly off-screen, on either monitor
+- [ ] Quit: Settings → Behaviour → Quit Ghost, or Ctrl+Alt+Q (changeable), or the tray menu
+- [ ] Idle: leave Ghost untouched a few seconds (or click elsewhere) and Ghost plus its text boxes fade to the Idle opacity setting; hovering or Ctrl+Space brings them straight back
+- [ ] Memory: have a short chat, quit, start Ghost again and ask a follow-up; it still knows the context. Ask "what did we talk about yesterday?" a day later
+- [ ] Provider switch: if Claude hits its limit, Ghost says so once, answers with Gemini, and shows an amber "on Gemini · Claude limit reached" chip until Claude is back

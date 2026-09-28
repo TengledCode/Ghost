@@ -52,29 +52,39 @@ app.whenReady().then(async () => {
   ipcMain.handle('ghost:update-settings', (_e, patch: Partial<Settings>) => store.update(patch));
   ipcMain.handle('ghost:set-secret', (_e, name: string, value: string) => { store.setSecret(name, value); return !!value; });
   ipcMain.on('ghost:interactive', (_e, on: boolean) => overlay.setInteractive(on));
-  ipcMain.on('ghost:drag', (_e, dx: number, dy: number) => overlay.dragBy(dx, dy));
+  ipcMain.on('ghost:drag-arm', () => overlay.dragArm());
+  ipcMain.on('ghost:drag-start', () => overlay.dragStart());
   ipcMain.on('ghost:drag-end', () => overlay.dragEnd());
+  ipcMain.on('ghost:shell-rect', (_e, r: { x: number; y: number; width: number; height: number }) => overlay.setShellRect(r));
   ipcMain.on('ghost:dismissed', () => overlay.dismissed());
   ipcMain.on('ghost:open-settings', () => openSettingsWindow());
+  ipcMain.on('ghost:quit', () => app.quit());
 
   // ---- Hotkey, login item, fullscreen
-  const bindHotkey = (accelerator: string) => {
+  const bindHotkeys = (s: Settings) => {
     globalShortcut.unregisterAll();
-    if (!globalShortcut.register(accelerator, () => overlay.summon())) {
-      console.warn(`[ghost] hotkey ${accelerator} is taken by another app`);
+    const pairs: [string, string, () => void][] = [
+      [s.hotkey, 'Summon', () => overlay.summon()],
+      [s.quitHotkey, 'Quit', () => app.quit()],
+    ];
+    for (const [accelerator, label, action] of pairs) {
+      if (!accelerator) continue;
+      let ok = false;
+      try { ok = globalShortcut.register(accelerator, action); } catch { ok = false; }
+      if (!ok) core.notify('warn', `${label} hotkey ${accelerator.replace(/\+/g, ' + ')} is taken by another app. Pick another in Settings.`);
     }
   };
-  bindHotkey(settings().hotkey);
+  bindHotkeys(settings());
   const applyLogin = (on: boolean) => { if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: on, args: ['--hidden-start'] }); };
   applyLogin(settings().launchAtLogin);
   const fullscreen = new FullscreenWatcher(isFull => overlay.setFullscreenHidden(isFull));
   if (settings().hideOnFullscreen) fullscreen.start();
 
   store.on('change', (next: Settings, prev: Settings) => {
-    if (next.hotkey !== prev.hotkey) bindHotkey(next.hotkey);
+    if (next.hotkey !== prev.hotkey || next.quitHotkey !== prev.quitHotkey) bindHotkeys(next);
     if (next.launchAtLogin !== prev.launchAtLogin) applyLogin(next.launchAtLogin);
     if (next.hideOnFullscreen !== prev.hideOnFullscreen) { fullscreen.stop(); overlay.setFullscreenHidden(false); if (next.hideOnFullscreen) fullscreen.start(); }
-    if (next.size !== prev.size || next.corner !== prev.corner || next.customPosition !== prev.customPosition) overlay.place();
+    if (next.size !== prev.size || next.corner !== prev.corner || next.cornerDisplayId !== prev.cornerDisplayId || next.customPosition !== prev.customPosition) overlay.place();
     if (next.userName !== prev.userName || next.assistantName !== prev.assistantName) core.writeCliConfig();
     overlay.win.webContents.send('ghost:settings', next);
   });

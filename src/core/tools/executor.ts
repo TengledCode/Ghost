@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { appendFile, mkdir, readdir, writeFile } from 'node:fs/promises';
 import { basename, dirname, extname, isAbsolute, join } from 'node:path';
+import type { ConversationLog } from '../memory/conversations';
 import type { MemoryStore } from '../memory/store';
 import type { ReminderScheduler } from '../reminders/scheduler';
 import type { ToolName } from './definitions';
@@ -53,7 +54,12 @@ async function findStartMenuShortcut(name: string): Promise<string | null> {
 }
 
 export class ToolExecutor {
-  constructor(private readonly host: Host, private readonly memory: MemoryStore, private readonly reminders: ReminderScheduler) {}
+  constructor(
+    private readonly host: Host,
+    private readonly memory: MemoryStore,
+    private readonly reminders: ReminderScheduler,
+    private readonly history?: Pick<ConversationLog, 'search'>,
+  ) {}
 
   async run(tool: ToolName, a: Record<string, any>): Promise<string> {
     switch (tool) {
@@ -122,8 +128,11 @@ export class ToolExecutor {
         return `Remembered (${f.id}).`;
       }
       case 'recall': {
-        const hits = this.memory.recall(String(a.query), 10);
-        return hits.length ? hits.join('\n') : 'Nothing relevant in memory.';
+        // Facts and conversation summaries first, then matching lines from past conversations.
+        const facts = this.memory.recall(String(a.query), 8);
+        const said = this.history?.search(String(a.query), 8) ?? [];
+        const parts = [facts.length && `Memory:\n${facts.join('\n')}`, said.length && `From past conversations:\n${said.join('\n')}`].filter(Boolean);
+        return parts.length ? parts.join('\n\n') : 'Nothing relevant in memory or past conversations.';
       }
       case 'forget': {
         const n = this.memory.forget(String(a.match));

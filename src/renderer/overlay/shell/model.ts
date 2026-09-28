@@ -38,7 +38,7 @@ const EYE_OPENING = 0.56; // polar angle (rad) of the eye opening in the core sp
  * so the edges catch highlights. Local +Z points outwards and the base sits at z = 0. It returns the
  * armour faces and the underside cap separately, because the underside glows.
  */
-function shardGeometry(len: number, wide: number, height: number): { shell: THREE.BufferGeometry; under: THREE.BufferGeometry } {
+export function shardGeometry(len: number, wide: number, height: number): { shell: THREE.BufferGeometry; under: THREE.BufferGeometry } {
   const base = [
     new THREE.Vector3(0, -len * 0.55, 0),
     new THREE.Vector3(wide, -len * 0.05, 0),
@@ -58,8 +58,8 @@ function shardGeometry(len: number, wide: number, height: number): { shell: THRE
     tri(shell, base[i], base[j], chamfer[j]);
     tri(shell, base[i], chamfer[j], chamfer[i]);
     tri(shell, chamfer[i], chamfer[j], apex);
-    // Underside, slightly shrunk so it never z-fights with the armour's bottom edge.
-    tri(under, base[j].clone().multiplyScalar(0.96), base[i].clone().multiplyScalar(0.96), centre);
+    // Underside cap on the exact base outline, so the shard is watertight (no slit to see through).
+    tri(under, base[j], base[i], centre);
   }
   const build = (arr: number[]) => {
     const g = new THREE.BufferGeometry();

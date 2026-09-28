@@ -71,6 +71,8 @@ export class MemoryStore {
 
   list(): Fact[] { return [...this.data.facts]; }
 
+  clearEpisodes(): void { this.data.episodes = []; this.save(); }
+
   private save(): void {
     mkdirSync(dirname(this.file), { recursive: true });
     const tmp = `${this.file}.tmp`;

@@ -25,6 +25,7 @@ export interface Settings {
   assistantName: string;
   // Placement
   corner: Corner;
+  cornerDisplayId: number | null; // which monitor the corner is on (null = primary)
   customPosition: { x: number; y: number; displayId: number } | null;
   size: number; // px, shell diameter
   idleOpacity: number; // 0.2 - 1
@@ -35,6 +36,7 @@ export interface Settings {
   renderQuality: RenderQuality;
   // Behaviour
   hotkey: string;
+  quitHotkey: string;
   launchAtLogin: boolean;
   hideOnFullscreen: boolean;
   // Brain
@@ -54,6 +56,7 @@ export const DEFAULT_SETTINGS: Settings = {
   userName: 'Aaron',
   assistantName: 'Ghost',
   corner: 'bottom-right',
+  cornerDisplayId: null,
   customPosition: null,
   size: 180,
   idleOpacity: 0.85,
@@ -63,6 +66,7 @@ export const DEFAULT_SETTINGS: Settings = {
   skin: 'ghost-shell',
   renderQuality: 'auto',
   hotkey: 'Control+Space',
+  quitHotkey: 'Control+Alt+Q',
   launchAtLogin: true,
   hideOnFullscreen: true,
   provider: 'claude',

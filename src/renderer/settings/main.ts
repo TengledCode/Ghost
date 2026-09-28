@@ -36,7 +36,7 @@ function render(): void {
     const out = el.parentElement?.querySelector('output');
     if (out) out.textContent = el.dataset.key === 'size' ? `${value}px` : `${Math.round(Number(value) * 100)}%`;
   }
-  (document.getElementById('hotkey') as HTMLInputElement).value = settings.hotkey.replace(/\+/g, ' + ');
+  for (const box of document.querySelectorAll<HTMLInputElement>('[data-hotkey]')) box.value = String(settings[box.dataset.hotkey as 'hotkey' | 'quitHotkey']).replace(/\+/g, ' + ');
   renderThemes();
   renderVoices('elevenVoices', ELEVENLABS_VOICES, 'elevenlabs', settings.elevenLabsVoiceId);
   renderVoices('edgeVoices', EDGE_VOICES, 'edge', settings.edgeVoice);
@@ -103,15 +103,29 @@ document.getElementById('saveKey')!.addEventListener('click', async () => {
 
 document.getElementById('newConversation')!.addEventListener('click', () => core.send({ type: 'new_conversation' }));
 
-// Hotkey capture → Electron accelerator syntax.
-const hotkey = document.getElementById('hotkey') as HTMLInputElement;
-hotkey.addEventListener('keydown', e => {
-  e.preventDefault();
-  if (['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) return;
-  const mods = [e.ctrlKey && 'Control', e.altKey && 'Alt', e.shiftKey && 'Shift', e.metaKey && 'Super'].filter(Boolean) as string[];
-  if (!mods.length) return; // a bare key would hijack normal typing
-  const key = e.code === 'Space' ? 'Space' : e.key.length === 1 ? e.key.toUpperCase() : e.key;
-  void update({ hotkey: [...mods, key].join('+') });
+// Two-step confirm inside the page (dialogs like confirm() aren't used in Ghost's windows).
+const clearBtn = document.getElementById('clearHistory') as HTMLButtonElement;
+let clearArmed = 0;
+clearBtn.addEventListener('click', () => {
+  if (Date.now() - clearArmed > 4000) { clearArmed = Date.now(); clearBtn.textContent = 'Click again to clear'; return; }
+  core.send({ type: 'clear_history' });
+  clearArmed = 0;
+  clearBtn.textContent = 'History cleared';
+  setTimeout(() => { clearBtn.textContent = 'Clear conversation history'; }, 2500);
 });
+
+// Hotkey capture → Electron accelerator syntax (summon and quit share the same capture).
+for (const box of document.querySelectorAll<HTMLInputElement>('[data-hotkey]')) {
+  box.addEventListener('keydown', e => {
+    e.preventDefault();
+    if (['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) return;
+    const mods = [e.ctrlKey && 'Control', e.altKey && 'Alt', e.shiftKey && 'Shift', e.metaKey && 'Super'].filter(Boolean) as string[];
+    if (!mods.length) return; // a bare key would hijack normal typing
+    const key = e.code === 'Space' ? 'Space' : e.key.length === 1 ? e.key.toUpperCase() : e.key;
+    void update({ [box.dataset.hotkey!]: [...mods, key].join('+') } as Partial<Settings>);
+  });
+}
+
+document.getElementById('quit')!.addEventListener('click', () => bridge.quit());
 
 render();

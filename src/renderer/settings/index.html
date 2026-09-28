@@ -27,6 +27,7 @@
       <p class="hint">You can also drag Ghost anywhere. Drop it near a corner to snap.</p>
       <label>Size <input type="range" min="90" max="420" step="10" data-key="size" data-num /><output></output></label>
       <label>Idle opacity <input type="range" min="0.2" max="1" step="0.05" data-key="idleOpacity" data-num /><output></output></label>
+      <p class="hint">How see-through Ghost and its text boxes become when you're not using them (a few seconds untouched, or after you click away).</p>
       <label class="check"><input type="checkbox" data-key="clickThroughWhenIdle" /> Click-through when idle (hover briefly or hold Alt to grab it)</label>
     </section>
 
@@ -63,7 +64,11 @@
           <option value="fast">Always fast (Haiku / Flash)</option><option value="balanced">Always balanced (Sonnet)</option><option value="deep">Always deep (Opus / Pro)</option>
         </select>
       </label>
-      <button type="button" id="newConversation">Start a new conversation</button>
+      <div class="row-buttons">
+        <button type="button" id="newConversation">Start a new conversation</button>
+        <button type="button" id="clearHistory" class="danger">Clear conversation history</button>
+      </div>
+      <p class="hint" id="clearHint">Conversations are kept on this PC so Ghost can pick up after a restart and recall past chats. Clearing keeps the lasting facts it has learned about you.</p>
     </section>
 
     <section>
@@ -82,10 +87,12 @@
 
     <section>
       <h2>Behaviour</h2>
-      <label>Summon hotkey <input id="hotkey" readonly /></label>
-      <p class="hint">Click the box, then press the new combination.</p>
+      <label>Summon hotkey <input id="hotkey" data-hotkey="hotkey" readonly /></label>
+      <label>Quit hotkey <input id="quitHotkey" data-hotkey="quitHotkey" readonly /></label>
+      <p class="hint">Click a box, then press the new combination (it needs Ctrl, Alt or Shift).</p>
       <label class="check"><input type="checkbox" data-key="launchAtLogin" /> Start with Windows</label>
       <label class="check"><input type="checkbox" data-key="hideOnFullscreen" /> Hide over fullscreen games and apps (voice and reminders keep working)</label>
+      <button type="button" id="quit" class="danger">Quit Ghost</button>
     </section>
   </main>
   <script type="module" src="./main.ts"></script>

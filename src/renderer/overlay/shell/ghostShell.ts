@@ -67,7 +67,6 @@ export class GhostShell {
   private glow = new Spring(0.9, 0.9, 20, 1);
   private eyeW = [new Spring(1, 1, 12), new Spring(0, 0, 12), new Spring(0, 0, 12), new Spring(0, 0, 12)];
   private scan = new Spring(0, 0, 12, 1);
-  private beamOn = new Spring(0, 0, 30, 1);
   private near = new Spring(0, 0, 25, 1);
   private sacX = new Spring(0, 0, 400, 0.9);
   private sacY = new Spring(0, 0, 400, 0.9);
@@ -120,7 +119,7 @@ export class GhostShell {
     this.model.particleAnchor.add(this.core.points);
     this.holo = new Hologram(this.model.eyeFront.z + 0.14);
     this.model.eye.add(this.holo.iris);
-    this.scene.add(this.model.root, this.holo.beam);
+    this.scene.add(this.model.root);
     this.shards = this.model.segments.map((s, i) => {
       const poolMat = this.mats.pool.clone();
       s.pool.material = poolMat;
@@ -137,7 +136,7 @@ export class GhostShell {
     this.fx = new PostFx(this.renderer, this.scene, this.camera);
     this.fx.setExposure(0.95);
     // Only light sources glow: the iris ring, particle core, hologram and magnetic pools.
-    for (const o of [this.model.iris, this.core.points, this.holo.iris, this.holo.beam, ...this.model.segments.map(s => s.pool)]) o.layers.enable(BLOOM_LAYER);
+    for (const o of [this.model.iris, this.core.points, this.holo.iris, ...this.model.segments.map(s => s.pool)]) o.layers.enable(BLOOM_LAYER);
     this.governor = new QualityGovernor(quality);
     this.setTheme(theme);
     this.resize();
@@ -279,18 +278,16 @@ export class GhostShell {
     // ---- where to look: approval card > searching sweep > input bar > cursor > idle glances
     const cursorFresh = !!this.cursorPx && t - this.cursorAt < 2.5;
     const target = this.target;
-    let beamWanted = 0;
     let lookingAtSomething = true;
     let rollT = 0;
-    if (this.state === 'approval') { target.set(0, 1.4, 1.2); beamWanted = 1; }
-    else if (this.state === 'searching') { target.set(Math.sin(t * 2.2) * 1.4, Math.sin(t * 1.3) * 0.35, LOOK_PLANE_Z); beamWanted = 1; }
-    else if (this.lean) { target.set(this.lean * 0.9, 1.1, 1.3); beamWanted = 0.7; }
+    if (this.state === 'approval') target.set(0, 1.4, 1.2);
+    else if (this.state === 'searching') { target.set(Math.sin(t * 2.2) * 1.4, Math.sin(t * 1.3) * 0.35, LOOK_PLANE_Z); }
+    else if (this.lean) target.set(this.lean * 0.9, 1.1, 1.3);
     else if (cursorFresh && !this.dozing) {
       // A direction across the whole screen (not clamped to this small canvas), so every part of
       // the screen maps to a distinct gaze.
       const g = lookAt(this.cursorPx!.dx, this.cursorPx!.dy);
       target.set(Math.sin(g.yaw) * Math.cos(g.pitch), -Math.sin(g.pitch), Math.cos(g.yaw) * Math.cos(g.pitch)).multiplyScalar(1.6);
-      beamWanted = t - this.cursorAt < 1.2 ? 0.8 : 0;
       rollT = -Math.atan2(target.x, 3) * 0.2;
     } else if (p.curious && !this.dozing) {
       const act = this.curiosity.update(t);
@@ -316,7 +313,6 @@ export class GhostShell {
     this.roll.target = rollT;
     this.eyeYaw.target = (yawT - this.yaw.value) * 0.8;
     this.eyePitch.target = (pitchT - this.pitch.value) * 0.8;
-    this.beamOn.target = this.dozing ? 0 : beamWanted;
     this.near.target = !this.dozing && this.cursorPx && cursorFresh ? Math.max(0, 1 - Math.hypot(this.cursorPx.dx, this.cursorPx.dy) / NEAR_PX) : 0;
 
     // ---- micro-life: saccades, blinks, calibrating shards
@@ -349,7 +345,7 @@ export class GhostShell {
     p.eye.forEach((w, i) => { this.eyeW[i].target = w; });
     this.scan.target = p.scan;
     for (const s of [this.yaw, this.pitch, this.roll, this.eyeYaw, this.eyePitch, this.recoil, this.approach, this.hop, this.twist, this.frontSpeed,
-      this.rearSpeed, this.bob, this.iris, this.glow, this.scan, this.beamOn, this.near, this.sacX, this.sacY, ...this.eyeW]) s.step(dt);
+      this.rearSpeed, this.bob, this.iris, this.glow, this.scan, this.near, this.sacX, this.sacY, ...this.eyeW]) s.step(dt);
 
     // ---- colour and glow (computed first: shards and eye both use it)
     const u = this.core.uniforms;
@@ -422,14 +418,12 @@ export class GhostShell {
     u.onset.value = speaking * Math.max(0, low - 0.5) * 1.5;
 
     // ---- hologram
-    m.root.updateMatrixWorld();
-    const from = m.root.localToWorld(m.eyeFront.clone());
     const look = new THREE.Vector2(
       THREE.MathUtils.clamp(this.eyeYaw.value * 2 + this.sacX.value * 0.5, -1, 1),
       THREE.MathUtils.clamp(-this.eyePitch.value * 2 - this.sacY.value * 0.5, -1, 1),
     );
     this.holo.update(t, dt, {
-      color: this.glowColor, intensity, look, from, to: target.clone(), beamOn: THREE.MathUtils.clamp(this.beamOn.value, 0, 1),
+      color: this.glowColor, intensity, look,
       irisOn: this.dozing ? 0.15 : 1, blink: this.blink,
     });
   }

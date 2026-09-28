@@ -115,7 +115,7 @@ export function createMaterials(): GhostMaterials {
   const panels = panelTexture();
   // Lacquered gunmetal: glossy metal under a clear coat, so facets carry crisp reflections of the soft studio.
   const armour = new THREE.MeshPhysicalMaterial({
-    color: '#8f96a1', metalness: 0.88, roughness: 0.22, roughnessMap: brushed, flatShading: true, envMapIntensity: 1.5,
+    color: '#8f96a1', metalness: 0.88, roughness: 0.22, roughnessMap: brushed, flatShading: true, envMapIntensity: 1.5, side: THREE.DoubleSide,
     clearcoat: 0.7, clearcoatRoughness: 0.08,
   });
   const armourDark = armour.clone();
@@ -127,7 +127,10 @@ export function createMaterials(): GhostMaterials {
   });
   const cavity = new THREE.MeshStandardMaterial({ color: '#07090c', metalness: 0.3, roughness: 0.9, side: THREE.BackSide });
   // No colour of its own: the glow it shows is reflected light from the pool beneath (set per shard).
-  const underside = new THREE.MeshStandardMaterial({ color: '#3a3f47', metalness: 0.9, roughness: 0.3, flatShading: true, envMapIntensity: 0.5, emissive: new THREE.Color('#000000') });
+  const underside = new THREE.MeshStandardMaterial({
+    color: '#3a3f47', metalness: 0.9, roughness: 0.3, flatShading: true, envMapIntensity: 0.5, emissive: new THREE.Color('#000000'),
+    polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1, // shares its edge with the armour without flicker
+  });
   const pool = new THREE.MeshBasicMaterial({
     color: '#7fd4ff', map: radialTexture(), transparent: true, opacity: 0.5, toneMapped: false, depthWrite: false, blending: THREE.AdditiveBlending,
   });

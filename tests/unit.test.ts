@@ -202,3 +202,40 @@ describe('overlay window sizing', () => {
     expect(height).toBeGreaterThanOrEqual(200 * 1.6 + 250); // plus bubble and input bar
   });
 });
+
+import { cornerWindowPosition, EDGE_MARGIN, orientationForShell, snapShell } from '../src/main/placement';
+
+describe('snapping by the shell', () => {
+  const work = { x: 0, y: 0, width: 1920, height: 1040 };
+  const shell = { x: 240, y: 330, width: 180, height: 180 }; // shell rect inside the window
+  const abs = (p: { x: number; y: number }) => ({ x: p.x + shell.x, y: p.y + shell.y });
+
+  it('sticks the shell (not the window) to a nearby edge and keeps it fully on-screen', () => {
+    // Dropped with the shell 30 px from the right edge, mid-height.
+    const p = snapShell({ x: 1920 - 180 - 30 - shell.x, y: 400 - shell.y }, shell, work);
+    expect(abs(p).x).toBe(1920 - 180 - EDGE_MARGIN);
+    expect(abs(p).y).toBe(400);
+    expect(p.corner).toBeNull();
+  });
+  it('snaps into a corner when near two edges', () => {
+    const p = snapShell({ x: 1920 - 180 - 20 - shell.x, y: 1040 - 180 - 25 - shell.y }, shell, work);
+    expect(p.corner).toBe('bottom-right');
+    expect(p).toEqual({ ...cornerWindowPosition('bottom-right', shell, work), corner: 'bottom-right' });
+  });
+  it('never lets the shell be dragged off-screen ("shoots outward")', () => {
+    const p = snapShell({ x: 2600, y: -500 }, shell, work);
+    const s = abs(p);
+    expect(s.x + shell.width).toBeLessThanOrEqual(1920 - EDGE_MARGIN);
+    expect(s.y).toBeGreaterThanOrEqual(EDGE_MARGIN);
+  });
+  it('works on a second monitor to the left with its own work area', () => {
+    const left = { x: -2560, y: 0, width: 2560, height: 1400 };
+    const p = snapShell({ x: -2560 + 10 - shell.x, y: 10 - shell.y }, shell, left);
+    expect(p.corner).toBe('top-left');
+    expect(abs(p)).toEqual({ x: -2560 + EDGE_MARGIN, y: EDGE_MARGIN });
+  });
+  it('orients the chat stack towards the screen centre', () => {
+    expect(orientationForShell({ x: 1700, y: 850, width: 180, height: 180 }, work)).toBe('bottom-right');
+    expect(orientationForShell({ x: 20, y: 20, width: 180, height: 180 }, work)).toBe('top-left');
+  });
+});

@@ -7,6 +7,7 @@ import type { ClientMessage, ClientRole, CoreMessage, GhostState } from '../shar
 import { parseMessage } from '../shared/protocol';
 import type { ProviderId, Settings } from '../shared/settings';
 import { classify, describe } from './approvals/classify';
+import { ConversationLog } from './memory/conversations';
 import { MemoryStore } from './memory/store';
 import { buildPersona, buildTurnPrompt } from './persona';
 import type { Provider, ProviderEvent } from './providers/types';
@@ -34,6 +35,7 @@ export interface CoreOptions {
 interface Client { ws: WebSocket; role: ClientRole | null }
 interface Turn { id: string; abort: AbortController; spoken: number; audioSent: number; audioDone: boolean; textDone: boolean }
 
+const PRIMARY_RETRY_MS = 15 * 60_000; // while fallen back, try the primary again at most this often
 const SESSION_IDLE_MS = 2 * 3600_000; // start a fresh conversation after 2h of quiet to keep context (and usage) small
 const TOOL_LABEL: Record<string, string> = { WebSearch: 'Searching the web', WebFetch: 'Reading a page', google_web_search: 'Searching the web', web_fetch: 'Reading a page' };
 
@@ -45,10 +47,10 @@ export class GhostCore {
   private state: GhostState = 'idle';
   private turn: Turn | null = null;
   private sessionId: string | undefined;
-  private lastActivity = 0;
-  private transcript: string[] = [];
+  readonly log: ConversationLog;
   private approvals = new Map<string, (ok: boolean) => void>();
   private idleTimer: NodeJS.Timeout | null = null;
+  private fallback: { reason: 'limit' | 'auth' | 'missing' | 'other'; retryAt: number; active: ProviderId } | null = null;
   private speechQueue: Promise<void> = Promise.resolve();
   readonly memory: MemoryStore;
   readonly reminders: ReminderScheduler;
@@ -64,7 +66,9 @@ export class GhostCore {
     mkdirSync(this.workspace, { recursive: true });
     this.memory = new MemoryStore(join(o.dataDir, 'memory.json'));
     this.reminders = new ReminderScheduler(join(o.dataDir, 'reminders.json'), r => this.fireReminder(r.id, r.text));
-    this.executor = new ToolExecutor(o.host, this.memory, this.reminders);
+    this.log = new ConversationLog(o.dataDir);
+    this.sessionId = this.log.current.claudeSessionId; // resume the Claude conversation after a restart
+    this.executor = new ToolExecutor(o.host, this.memory, this.reminders, this.log);
     o.tts.onFallback = reason => this.broadcast({ type: 'notice', level: 'info', text: `Voice switched to Edge (${reason}).` });
   }
 
@@ -81,6 +85,9 @@ export class GhostCore {
     this.wss!.on('connection', ws => this.onConnection(ws));
     this.writeCliConfig();
     this.reminders.start();
+    // Pick up where we left off, or file away a conversation that went quiet while Ghost was closed.
+    if (this.log.isStale(SESSION_IDLE_MS)) this.rotateConversation();
+    else this.seedGemini();
   }
 
   stop(): void {
@@ -131,6 +138,7 @@ export class GhostCore {
           const s = this.o.settings();
           this.send(client, { type: 'welcome', name: s.assistantName, userName: s.userName });
           this.send(client, { type: 'state', state: this.state });
+          if (this.fallback) this.send(client, { type: 'provider', active: this.fallback.active, primary: s.provider, reason: this.fallback.reason });
         }
         return;
       }
@@ -151,6 +159,14 @@ export class GhostCore {
         if (this.turn?.id === msg.turnId || msg.turnId.startsWith('reminder-') || msg.turnId.startsWith('preview-')) this.finishSpeaking(msg.turnId);
         return;
       case 'new_conversation': return this.newConversation();
+      case 'clear_history':
+        this.cancel();
+        this.log.clear();
+        this.memory.clearEpisodes();
+        this.setSession(undefined);
+        this.resetGemini();
+        this.broadcast({ type: 'notice', level: 'info', text: 'Conversation history cleared. Lasting facts are kept.' });
+        return;
       case 'voice_preview': return this.voicePreview(msg.engine, msg.voice, msg.text);
       case 'tool_call':
         if (client.role !== 'mcp') return;
@@ -158,6 +174,9 @@ export class GhostCore {
       default: return;
     }
   }
+
+  /** A notice for every open Ghost window (used by the main process, e.g. a hotkey conflict). */
+  notify(level: 'info' | 'warn' | 'error', text: string): void { this.broadcast({ type: 'notice', level, text }); }
 
   private send(c: Client, m: CoreMessage): void { if (c.ws.readyState === WebSocket.OPEN) c.ws.send(JSON.stringify(m)); }
   private broadcast(m: CoreMessage): void { for (const c of this.clients) if (c.role === 'ui') this.send(c, m); }
@@ -183,10 +202,30 @@ export class GhostCore {
 
   newConversation(): void {
     this.cancel();
-    void this.archiveSession();
-    this.sessionId = undefined;
-    (this.o.providers.gemini as { resetHistory?: () => void } | undefined)?.resetHistory?.();
+    this.rotateConversation();
     this.broadcast({ type: 'notice', level: 'info', text: 'New conversation.' });
+  }
+
+  /** Close the open conversation (it's summarised in the background) and start a fresh one. */
+  private rotateConversation(): void {
+    const ended = this.log.rotate();
+    this.setSession(undefined);
+    this.resetGemini();
+    void this.archiveConversation(ended);
+  }
+
+  private setSession(id: string | undefined): void {
+    this.sessionId = id;
+    this.log.setClaudeSession(id);
+  }
+
+  private resetGemini(): void { (this.o.providers.gemini as { resetHistory?: () => void } | undefined)?.resetHistory?.(); }
+
+  /** Gemini has no resumable sessions, so after a restart it gets the recent lines of the conversation. */
+  private seedGemini(): void {
+    const s = this.o.settings();
+    const recent = this.log.lines().slice(-12).map(l => `${l.role === 'user' ? s.userName : s.assistantName}: ${l.text}`);
+    (this.o.providers.gemini as { seedHistory?: (h: string[]) => void } | undefined)?.seedHistory?.(recent);
   }
 
   async userMessage(text: string): Promise<void> {
@@ -195,8 +234,7 @@ export class GhostCore {
     if (/^\/(new|reset)$/i.test(message)) return this.newConversation();
     this.cancel();
     const s = this.o.settings();
-    if (this.sessionId && Date.now() - this.lastActivity > SESSION_IDLE_MS) { void this.archiveSession(); this.sessionId = undefined; }
-    this.lastActivity = Date.now();
+    if (this.log.isStale(SESSION_IDLE_MS)) this.rotateConversation();
 
     const turn: Turn = { id: randomUUID(), abort: new AbortController(), spoken: 0, audioSent: 0, audioDone: false, textDone: false };
     this.turn = turn;
@@ -204,7 +242,9 @@ export class GhostCore {
 
     const tier = routeTier(message, s.modelTier);
     const prompt = buildTurnPrompt(message, { now: new Date(), memories: this.memory.contextFor(message), userName: s.userName });
-    const order = [s.provider, s.fallbackProvider].filter((p, i, a): p is ProviderId => !!p && a.indexOf(p) === i);
+    let order = [s.provider, s.fallbackProvider].filter((p, i, a): p is ProviderId => !!p && a.indexOf(p) === i);
+    // While fallen back, don't pay for a failing call to the primary on every message.
+    if (this.fallback && Date.now() < this.fallback.retryAt && order.length > 1) order = order.slice(1);
     const splitter = new SentenceSplitter();
     let reply = '';
 
@@ -220,7 +260,7 @@ export class GhostCore {
           mcpConfigPath: this.mcpConfigPath, workspace: this.workspace, signal: turn.abort.signal,
         })) {
           if (this.turn !== turn) return;
-          if (ev.type === 'session' && pid === 'claude') this.sessionId = ev.sessionId;
+          if (ev.type === 'session' && pid === 'claude') this.setSession(ev.sessionId);
           else if (ev.type === 'text_delta') {
             reply += ev.text;
             this.broadcast({ type: 'text_delta', turnId: turn.id, text: ev.text });
@@ -231,7 +271,7 @@ export class GhostCore {
           } else if (ev.type === 'tool_end') {
             if (this.state === 'searching') this.setState('thinking');
           } else if (ev.type === 'done') {
-            if (ev.sessionId && pid === 'claude') this.sessionId = ev.sessionId;
+            if (ev.sessionId && pid === 'claude') this.setSession(ev.sessionId);
             if (!reply && ev.text) { reply = ev.text; this.broadcast({ type: 'text_delta', turnId: turn.id, text: ev.text }); splitter.push(ev.text); }
           } else if (ev.type === 'error') {
             failed = ev;
@@ -242,8 +282,14 @@ export class GhostCore {
       }
       if (turn.abort.signal.aborted || this.turn !== turn) return;
       if (!failed) {
+        if (pid === s.provider && this.fallback) {
+          this.fallback = null;
+          this.broadcast({ type: 'provider', active: pid, primary: s.provider, reason: null });
+          this.broadcast({ type: 'notice', level: 'info', text: `Back on ${brainName(pid)}.` });
+        }
         for (const sentence of splitter.flush()) this.queueSpeech(turn, sentence);
-        this.transcript.push(`${s.userName}: ${message}`, `${s.assistantName}: ${reply}`);
+        this.log.append('user', message);
+        this.log.append('assistant', reply, { provider: pid, model: model || 'default' });
         this.broadcast({ type: 'turn_end', turnId: turn.id, text: reply, provider: pid, model: model || 'default' });
         turn.textDone = true;
         this.maybeFinish(turn);
@@ -254,8 +300,17 @@ export class GhostCore {
         this.reportError(turn, pid, failed);
         return;
       }
-      if (pid === 'claude') this.sessionId = undefined;
-      this.broadcast({ type: 'notice', level: 'warn', text: `${pid} unavailable (${failed.kind}); trying ${order[attempt + 1]}.` });
+      // Keep the Claude conversation for when it comes back, unless the session itself failed.
+      if (pid === 'claude' && failed.kind === 'other') this.setSession(undefined);
+      const next = order[attempt + 1];
+      const reason = failed.kind ?? 'other';
+      if (pid === s.provider) {
+        const firstTime = !this.fallback;
+        this.fallback = { reason, retryAt: Date.now() + PRIMARY_RETRY_MS, active: next };
+        this.broadcast({ type: 'provider', active: next, primary: pid, reason });
+        // Say it once per outage, before the fallback's answer (speech is queued in order).
+        if (firstTime) this.queueSpeech(turn, switchLine(pid, next, reason, s.userName));
+      }
     }
   }
 
@@ -384,12 +439,11 @@ export class GhostCore {
     }
   }
 
-  /** On rotation, condense the finished conversation into a one-paragraph episode using the cheapest tier. */
-  private async archiveSession(): Promise<void> {
-    const lines = this.transcript;
-    this.transcript = [];
-    if (lines.length < 6) return;
+  /** Condense a finished conversation into a short episode for long-term memory, using the cheapest tier. */
+  private async archiveConversation(conversationId: string): Promise<void> {
     const s = this.o.settings();
+    const lines = this.log.lines(conversationId).map(l => `${l.role === 'user' ? s.userName : s.assistantName}: ${l.text}`);
+    if (lines.length < 6) return;
     const provider = this.o.providers[s.provider];
     if (!provider || s.provider === 'mock') return;
     let summary = '';
@@ -402,6 +456,19 @@ export class GhostCore {
     } catch { /* memory is best effort */ }
     if (summary.trim()) this.memory.addEpisode(summary);
   }
+}
+
+function brainName(id: string): string {
+  return ({ claude: 'Claude', gemini: 'Gemini', mock: 'the test brain' } as Record<string, string>)[id] ?? id;
+}
+
+/** What Ghost says, once, when it has to switch brains. */
+export function switchLine(from: string, to: string, reason: string, user: string): string {
+  const a = brainName(from), b = brainName(to);
+  if (reason === 'limit') return `${a}'s limit is reached for now, ${user}. I'll carry on with ${b}.`;
+  if (reason === 'auth') return `I'm signed out of ${a}, ${user}, so I'll use ${b} until you sign back in.`;
+  if (reason === 'missing') return `I can't find ${a} on this PC, ${user}. ${b} will take it from here.`;
+  return `${a} isn't answering, ${user}. I'll carry on with ${b}.`;
 }
 
 function prettyTool(name: string): string {

@@ -17,6 +17,7 @@ const signalOrb = $('signal-orb');
 const bubble = $('#bubble');
 const bubbleText = $('#bubble .bubble-text');
 const bubbleMeta = $('#bubble .meta-label');
+const providerChip = $('#bubble .provider-chip');
 const historyEl = $('#history');
 const form = $('#input') as HTMLFormElement;
 const input = form.querySelector('input')!;
@@ -46,7 +47,7 @@ voiceOrb.connect?.(player.master).catch(() => {});
 applySettings(settings);
 bridge.onSettings(s => applySettings(s));
 bridge.onOrientation(c => setOrientation(c));
-bridge.onSummon(() => openInput());
+bridge.onSummon(() => { touch(); openInput(); });
 // Follow the cursor anywhere on screen: positions arrive relative to this window.
 bridge.onCursor((x, y) => {
   if (!shell) return;
@@ -128,6 +129,8 @@ function setState(next: GhostState, detail?: string): void {
 core.onConnection = up => { if (!up) showNotice('Reconnecting to the Ghost core…', 'warn'); else hideNotice(); };
 
 core.on((m: CoreMessage) => {
+  // Anything Ghost says or asks brings the UI back from idle.
+  if (m.type === 'text_delta' || m.type === 'turn_end' || m.type === 'reminder' || m.type === 'approval_request' || (m.type === 'audio' && !m.last)) touch();
   switch (m.type) {
     case 'state': setState(m.state, m.detail); break;
     case 'text_delta':
@@ -152,6 +155,15 @@ core.on((m: CoreMessage) => {
     case 'approval_request': showConfirm(m.id, m.summary); break;
     case 'approval_resolved': if (pendingApproval === m.id) hideConfirm(); break;
     case 'notice': showNotice(m.text, m.level); break;
+    case 'provider': {
+      // Stays visible for as long as Ghost is running on its fallback brain.
+      const name = (id: string) => id.charAt(0).toUpperCase() + id.slice(1);
+      const why = { limit: 'limit reached', auth: 'signed out', missing: 'not installed', other: 'unavailable' };
+      providerChip.hidden = !m.reason;
+      providerChip.textContent = m.reason ? `on ${name(m.active)} · ${name(m.primary)} ${why[m.reason]}` : '';
+      if (m.reason) { bubble.hidden = false; touch(); }
+      break;
+    }
     default: break;
   }
 });
@@ -214,6 +226,7 @@ function hideNotice(): void { noticeEl.hidden = true; }
 // ------------------------------------------------------------------ input
 
 function openInput(): void {
+  touch();
   form.hidden = false;
   refreshInteractivity();
   requestAnimationFrame(() => input.focus());
@@ -310,35 +323,84 @@ function refreshInteractivity(): void {
   if (want !== interactive) { interactive = want; bridge.setInteractive(want); }
 }
 
-window.addEventListener('mousemove', e => { lastPoint = { x: e.clientX, y: e.clientY }; refreshInteractivity(); });
+window.addEventListener('mousemove', e => {
+  lastPoint = { x: e.clientX, y: e.clientY };
+  refreshInteractivity();
+  if (hoveringUi()) touch();
+});
 setInterval(refreshInteractivity, 200); // completes hover-intent without further mouse movement
+
+// ------------------------------------------------------------------ true idle
+// Idle means untouched: not busy, not hovered, and nothing typed, said or shown for a few seconds.
+// Only then do Ghost and its panels drop to the "Idle opacity" from Settings. Clicking away
+// (the window losing focus) counts as done with it straight away.
+const ACTIVE_HOLD_MS = 6000;
+const HIDE_INPUT_MS = 30000;
+let lastActive = performance.now();
+
+function touch(): void { lastActive = performance.now(); updateIdle(); }
+
+function hoveringUi(): boolean {
+  const el = document.elementFromPoint(lastPoint.x, lastPoint.y);
+  return !!el?.closest('#shell, #stack .panel');
+}
+
+function busy(): boolean {
+  return state === 'thinking' || state === 'searching' || state === 'speaking' || state === 'approval' || state === 'listening' || !confirmEl.hidden || dragging;
+}
+
+function updateIdle(): void {
+  const quiet = performance.now() - lastActive;
+  const idle = !busy() && !hoveringUi() && quiet > ACTIVE_HOLD_MS;
+  if (idle) stage.dataset.idle = ''; else delete stage.dataset.idle;
+  // A long-idle, empty input bar tucks itself away; the hotkey or a click brings it back.
+  if (idle && quiet > HIDE_INPUT_MS && !form.hidden && !input.value) closeInput();
+}
+
+setInterval(updateIdle, 250);
+window.addEventListener('blur', () => { lastActive = 0; updateIdle(); });
+input.addEventListener('focus', touch);
+input.addEventListener('keydown', touch);
 window.addEventListener('keydown', e => { if (e.key === 'Alt') { altDown = true; refreshInteractivity(); } });
 window.addEventListener('keyup', e => { if (e.key === 'Alt') { altDown = false; refreshInteractivity(); } });
 window.addEventListener('blur', () => { altDown = false; });
 
 let dragging = false;
-let dragStart: { x: number; y: number; last: { x: number; y: number } } | null = null;
+let dragStart: { x: number; y: number } | null = null;
 
+// Dragging is driven by the main process from the real cursor position; the page only decides
+// whether a press is a click (open the input, boop) or a drag (moved more than a few pixels).
 shellEl.addEventListener('pointerdown', e => {
   if (e.button !== 0) return;
   shellEl.setPointerCapture(e.pointerId);
-  dragStart = { x: e.screenX, y: e.screenY, last: { x: e.screenX, y: e.screenY } };
+  dragStart = { x: e.screenX, y: e.screenY };
+  bridge.dragArm();
 });
 shellEl.addEventListener('pointermove', e => {
-  if (!dragStart) return;
-  if (!dragging && Math.hypot(e.screenX - dragStart.x, e.screenY - dragStart.y) > 5) dragging = true;
-  if (dragging) {
-    bridge.dragBy(e.screenX - dragStart.last.x, e.screenY - dragStart.last.y);
-    dragStart.last = { x: e.screenX, y: e.screenY };
-  }
+  if (!dragStart || dragging) return;
+  if (Math.hypot(e.screenX - dragStart.x, e.screenY - dragStart.y) > 5) { dragging = true; bridge.dragStart(); }
 });
-shellEl.addEventListener('pointerup', () => {
+const release = (click: boolean) => {
   if (dragging) bridge.dragEnd();
-  else if (form.hidden) { shell?.boop(); openInput(); }
-  else closeInput();
+  else if (click && dragStart) {
+    if (form.hidden) { shell?.boop(); openInput(); }
+    else closeInput();
+  }
   dragging = false;
   dragStart = null;
-});
+};
+shellEl.addEventListener('pointerup', () => release(true));
+shellEl.addEventListener('pointercancel', () => release(false));
+
+// Tell the main process where the shell sits inside the window, so it snaps the shell itself
+// (not the window's transparent padding) to the screen edges.
+const reportShellRect = () => {
+  const r = shellEl.getBoundingClientRect();
+  bridge.shellRect({ x: r.left, y: r.top, width: r.width, height: r.height });
+};
+new ResizeObserver(() => requestAnimationFrame(reportShellRect)).observe(stage);
+new MutationObserver(() => requestAnimationFrame(reportShellRect)).observe(stage, { attributes: true, attributeFilter: ['data-orient'] });
+requestAnimationFrame(reportShellRect);
 shellEl.addEventListener('contextmenu', e => { e.preventDefault(); bridge.openSettings(); });
 
 setState('idle');

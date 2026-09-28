@@ -20,7 +20,11 @@ html, body { margin: 0; height: 100%; background: transparent; overflow: hidden;
 /* ---- the shell ---- */
 #shell { position: relative; width: var(--shell); height: var(--shell); flex: none; cursor: grab; transition: opacity .6s ease, transform .3s ease; touch-action: none; }
 #shell:active { cursor: grabbing; }
-#stage[data-state="idle"] #shell { opacity: var(--idle-opacity); }
+/* True idle (untouched for a while, or clicked away): Ghost and its panels drop to the Idle opacity
+   setting, and the panels lose their fill so only faint glass remains. Any activity snaps back fast. */
+#shell, #stack .panel { transition: opacity .15s ease, background-color .15s ease, box-shadow .15s ease, backdrop-filter .15s ease; }
+#stage[data-idle] #shell, #stage[data-idle] #stack .panel { opacity: var(--idle-opacity); transition-duration: .8s; }
+#stage[data-idle] #stack .panel { background-color: rgba(12, 14, 20, 0.12); box-shadow: none; backdrop-filter: none; }
 #shell .eye { position: absolute; inset: 17%; border-radius: 50%; }
 #shell[data-skin="classic-orb"] .eye { inset: 0; }
 #shell .eye > * { position: absolute; inset: 0; width: 100%; transition: opacity .5s ease; }
@@ -46,6 +50,7 @@ html, body { margin: 0; height: 100%; background: transparent; overflow: hidden;
 #bubble .bubble-text { overflow-y: auto; white-space: pre-wrap; word-wrap: break-word; user-select: text; }
 #bubble .bubble-text pre { background: rgba(255,255,255,.06); border-radius: 8px; padding: 8px; overflow-x: auto; font: 12px/1.4 Consolas, "Cascadia Mono", monospace; white-space: pre; }
 .bubble-meta { display: flex; justify-content: space-between; align-items: center; margin-top: 4px; font-size: 11px; color: var(--muted); }
+.provider-chip { margin-left: 8px; margin-right: auto; padding: 1px 7px; border-radius: 999px; background: rgba(255, 174, 66, .16); color: #ffcf85; border: 1px solid rgba(255, 174, 66, .35); }
 .history-toggle { background: none; border: 0; color: var(--muted); font: inherit; cursor: pointer; padding: 2px 0; }
 .history-toggle:hover { color: var(--text); }
 
