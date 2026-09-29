@@ -62,6 +62,9 @@ const history: { who: 'user' | 'ghost'; text: string }[] = [];
 
 const boot = await bridge.bootstrap();
 settings = boot.settings;
+// Face the right way from the first frame: the chat stack grows towards the middle of the screen.
+bridge.onOrientation(c => setOrientation(c));
+if (boot.orientation) setOrientation(boot.orientation);
 const core = new CoreClient(boot.url, boot.token);
 const player = new VoicePlayer(settings.ghostFilter, settings.volume);
 // While voice is on, the bubble shows the reply in step with the voice (see subtitles.ts).
@@ -79,7 +82,6 @@ voiceOrb.connect?.(player.master).catch(() => {});
 
 applySettings(settings);
 bridge.onSettings(s => applySettings(s));
-bridge.onOrientation(c => setOrientation(c));
 bridge.onSummon(() => { touch(); openInput(); });
 // Follow the cursor anywhere on screen: positions arrive relative to this window.
 bridge.onCursor((x, y) => {

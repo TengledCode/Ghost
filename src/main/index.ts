@@ -54,7 +54,7 @@ app.whenReady().then(async () => {
   overlay.startCursorFeed();
 
   // ---- IPC used by the overlay and settings renderers
-  ipcMain.handle('ghost:bootstrap', () => ({ url: core.url, token: core.token, settings: settings(), hasElevenLabsKey: !!store.getSecret('elevenlabs') }));
+  ipcMain.handle('ghost:bootstrap', () => ({ url: core.url, token: core.token, settings: settings(), hasElevenLabsKey: !!store.getSecret('elevenlabs'), orientation: overlay.orientation }));
   ipcMain.handle('ghost:update-settings', (_e, patch: Partial<Settings>) => store.update(patch));
   ipcMain.handle('ghost:set-secret', (_e, name: string, value: string) => { store.setSecret(name, value); return !!value; });
   ipcMain.on('ghost:interactive', (_e, on: boolean) => overlay.setInteractive(on));

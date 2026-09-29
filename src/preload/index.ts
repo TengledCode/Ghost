@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { Corner, Settings } from '../shared/settings';
 
-export interface Bootstrap { url: string; token: string; settings: Settings; hasElevenLabsKey: boolean }
+export interface Bootstrap { url: string; token: string; settings: Settings; hasElevenLabsKey: boolean; orientation?: Corner }
 
 const api = {
   bootstrap: (): Promise<Bootstrap> => ipcRenderer.invoke('ghost:bootstrap'),

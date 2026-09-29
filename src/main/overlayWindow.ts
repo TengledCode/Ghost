@@ -12,6 +12,8 @@ export class OverlayWindow {
   /** The shell's hit area inside the window (CSS px = DIPs), reported by the renderer. */
   private shellRect: Rect;
   private drag: { cursor: Electron.Point; win: { x: number; y: number }; timer: NodeJS.Timeout | null } | null = null;
+  /** Which way the chat stack grows. The renderer also asks for it on start, as a message sent while it loads can be missed. */
+  orientation: Corner = 'bottom-right';
 
   constructor(private settings: () => Settings, private save: (p: Partial<Settings>) => void) {
     const size = windowSize(settings().size);
@@ -112,6 +114,7 @@ export class OverlayWindow {
   }
 
   private sendOrientation(corner: Corner): void {
+    this.orientation = corner;
     const send = () => this.win.webContents.send('ghost:orientation', corner);
     if (this.win.webContents.isLoading()) this.win.webContents.once('did-finish-load', send); else send();
   }
