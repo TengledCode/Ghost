@@ -44,7 +44,7 @@ export type CoreMessage =
   | { type: 'provider'; active: string; primary: string; reason: 'limit' | 'auth' | 'missing' | 'other' | null }
   | { type: 'tool_result'; id: string; ok: boolean; result: string }
   // How long a reply took: ms from the message to its first text and to its first synthesised audio.
-  | { type: 'timing'; turnId: string; firstTextMs?: number; firstAudioMs?: number; acked: boolean };
+  | { type: 'timing'; turnId: string; firstTextMs?: number; firstAudioMs?: number };
 
 export type TtsEngineId = 'elevenlabs' | 'edge' | 'none';
 

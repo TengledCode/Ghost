@@ -104,6 +104,22 @@ document.getElementById('saveKey')!.addEventListener('click', async () => {
 
 document.getElementById('newConversation')!.addEventListener('click', () => core.send({ type: 'new_conversation' }));
 
+// Checks that the first word survives a long silence (Bluetooth headsets tend to swallow it).
+const testButton = document.getElementById('testFirstWord') as HTMLButtonElement;
+const testStatus = document.getElementById('testFirstWordStatus')!;
+testButton.addEventListener('click', () => {
+  testButton.disabled = true;
+  let left = 12;
+  const tick = () => {
+    if (left > 0) { testStatus.textContent = `Stay quiet… Ghost counts to four in ${left}s. Listen for "one".`; left--; setTimeout(tick, 1000); return; }
+    testStatus.textContent = 'Did you hear "one"? If not, try Keep audio awake: Always.';
+    testButton.disabled = false;
+    const engine = settings.ttsEngine;
+    core.send({ type: 'voice_preview', engine, voice: engine === 'edge' ? settings.edgeVoice : settings.elevenLabsVoiceId, text: 'One, two, three, four.' });
+  };
+  tick();
+});
+
 // Two-step confirm inside the page (dialogs like confirm() aren't used in Ghost's windows).
 const clearBtn = document.getElementById('clearHistory') as HTMLButtonElement;
 let clearArmed = 0;

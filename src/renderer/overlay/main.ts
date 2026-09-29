@@ -47,14 +47,14 @@ let thankedThisTurn = false;
 let materialised = false;
 // Reply timings (Settings → Brain → Show reply timings), measured from when Aaron pressed Enter.
 let sentAt = 0;
-let timing: { text?: number; voice?: number; heard?: number; acked?: boolean } = {};
+let timing: { text?: number; voice?: number; heard?: number } = {};
 let modelLabel = '';
 const standalone = (turnId: string) => /^(say|reminder|preview)-/.test(turnId);
 function renderMeta(): void {
   const sec = (ms?: number) => (ms === undefined ? '–' : `${(ms / 1000).toFixed(1)}s`);
   const parts = [modelLabel];
   if (settings.showTimings && timing.text !== undefined) {
-    parts.push(`text ${sec(timing.text)} · voice ${sec(timing.voice)} · heard ${sec(timing.heard)}${timing.acked ? ' (ack)' : ''}`);
+    parts.push(`text ${sec(timing.text)} · voice ${sec(timing.voice)} · heard ${sec(timing.heard)}`);
   }
   bubbleMeta.textContent = parts.filter(Boolean).join(' · ');
 }
@@ -204,7 +204,7 @@ core.on((m: CoreMessage) => {
       break;
     }
     case 'timing':
-      timing = { ...timing, text: m.firstTextMs, voice: m.firstAudioMs, acked: m.acked };
+      timing = { ...timing, text: m.firstTextMs, voice: m.firstAudioMs };
       renderMeta();
       break;
     case 'approval_request': showConfirm(m.id, m.summary); break;

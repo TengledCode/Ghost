@@ -1,27 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { ACKS, AckPicker, classifyAck } from '../src/shared/acks';
 import { birthdayFrom, pickGreeting } from '../src/core/greeting';
 import { SentenceSplitter } from '../src/core/sentenceSplitter';
-
-describe('acknowledgements', () => {
-  it('rotates through every line of a pool before repeating, never back to back', () => {
-    const picker = new AckPicker();
-    for (const pool of Object.keys(ACKS) as (keyof typeof ACKS)[]) {
-      const n = ACKS[pool].length;
-      const seen = Array.from({ length: n * 6 }, () => picker.next(pool));
-      for (let i = 0; i < seen.length; i += n) expect(new Set(seen.slice(i, i + n)).size).toBe(n);
-      for (let i = 1; i < seen.length; i++) expect(seen[i]).not.toBe(seen[i - 1]);
-    }
-  });
-
-  it('picks a pool to suit the message', () => {
-    expect(classifyAck('what is on my screen', 'balanced', true)).toBe('screen');
-    expect(classifyAck('explain quantum computing', 'deep', false)).toBe('deep');
-    expect(classifyAck("what's the weather in Singapore", 'fast', false)).toBe('search');
-    expect(classifyAck('Please draft an email to Sam', 'balanced', false)).toBe('task');
-    expect(classifyAck('why is the sky blue?', 'balanced', false)).toBe('question');
-  });
-});
 
 describe('startup greeting', () => {
   const base = { userName: 'Aaron', assistantName: 'Ghost' };

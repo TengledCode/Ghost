@@ -6,17 +6,25 @@ export type KeepAlive = 'while-talking' | 'always' | 'off';
 /** After this much silence the output device may have gone to sleep, so leave it time to wake. */
 export const SILENCE_BEFORE_PREROLL = 3;
 export const PREROLL = 0.25;
+/** Time a sleeping Bluetooth headset needs to wake once real signal reaches it. */
+export const WAKE_TIME = 0.9;
 const LEAD = 0.03;
+const FADE_IN = 0.015;
+/** Keep-alive tone: 20 Hz at about -46 dBFS. Far below hearing at that pitch, but real signal to a Bluetooth codec. */
+const KEEPALIVE_HZ = 20;
+const KEEPALIVE_LEVEL = 0.005;
 const KEEPALIVE_TAIL_MS = 20_000;
 
 /**
  * When the next chunk should start: straight after the previous one (gapless), or, when nothing is
- * playing, a little ahead of now. That lead is longer after a silence, so a device that sleeps on
- * silence (Bluetooth headsets, some USB/Realtek outputs) is awake before the first word.
+ * playing, a little ahead of now. After a silence the device may be asleep (Bluetooth headsets
+ * especially), so the first word waits until it has had WAKE_TIME of keep-alive signal to wake up.
+ * `warmFor`: seconds the keep-alive has been playing (0 if it's off).
  */
-export function chunkStart(now: number, playhead: number, lastSoundEnd: number, playing: boolean): number {
+export function chunkStart(now: number, playhead: number, lastSoundEnd: number, playing: boolean, warmFor = Infinity): number {
   if (playing && playhead > now) return playhead;
-  const lead = now - lastSoundEnd > SILENCE_BEFORE_PREROLL ? PREROLL : LEAD;
+  const silent = now - lastSoundEnd > SILENCE_BEFORE_PREROLL;
+  const lead = silent ? Math.max(PREROLL, WAKE_TIME - warmFor) : LEAD;
   return Math.max(now + lead, playhead);
 }
 
@@ -35,6 +43,7 @@ export class VoicePlayer {
   private sources = new Set<AudioBufferSourceNode>();
   private decodeChain: Promise<void> = Promise.resolve();
   private keepAliveGain: GainNode;
+  private keepAliveSince: number | null = null; // ctx time the keep-alive tone started
   private keepAliveMode: KeepAlive = 'while-talking';
   private keepAliveTimer = 0;
   onFinished: (turnId: string) => void = () => {};
@@ -52,19 +61,16 @@ export class VoicePlayer {
     this.master.connect(analyser);
     this.meter = new BandMeter(analyser);
 
-    // Keep-alive: a looping whisper of noise at about -80 dBFS, inaudible, straight to the output
-    // (it bypasses the analyser, so it never moves the shards). Feeding the device real, non-zero
-    // samples stops it from sleeping and swallowing the first word of a reply.
-    const noise = this.ctx.createBuffer(1, this.ctx.sampleRate, this.ctx.sampleRate);
-    const d = noise.getChannelData(0);
-    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * 1e-4;
-    const src = this.ctx.createBufferSource();
-    src.buffer = noise;
-    src.loop = true;
+    // Keep-alive: a 20 Hz tone at about -46 dBFS, straight to the output (it bypasses the analyser,
+    // so it never moves the shards). It's inaudible, but unlike near-silent noise it survives the
+    // Windows volume and the Bluetooth codec as real signal, so a headset stays awake and doesn't
+    // swallow the first word of a reply.
+    const tone = this.ctx.createOscillator();
+    tone.frequency.value = KEEPALIVE_HZ;
     this.keepAliveGain = this.ctx.createGain();
     this.keepAliveGain.gain.value = 0;
-    src.connect(this.keepAliveGain).connect(this.ctx.destination);
-    src.start();
+    tone.connect(this.keepAliveGain).connect(this.ctx.destination);
+    tone.start();
   }
 
   /** Smoothed [low, mid, high] levels of the voice right now; zeros when nothing is playing. */
@@ -86,8 +92,13 @@ export class VoicePlayer {
 
   private setKeepAliveOn(on: boolean): void {
     if (on) void this.ctx.resume();
-    this.keepAliveGain.gain.setTargetAtTime(on ? 1 : 0, this.ctx.currentTime, 0.05);
+    if (on && this.keepAliveSince === null) this.keepAliveSince = this.ctx.currentTime;
+    if (!on) this.keepAliveSince = null;
+    this.keepAliveGain.gain.setTargetAtTime(on ? KEEPALIVE_LEVEL : 0, this.ctx.currentTime, 0.05);
   }
+
+  /** How long the output has been fed keep-alive signal (seconds). */
+  private warmFor(): number { return this.keepAliveSince === null ? 0 : this.ctx.currentTime - this.keepAliveSince; }
 
   /** After speech, keep the device awake a little longer, then let it sleep (unless 'always'). */
   private relax(): void {
@@ -132,9 +143,17 @@ export class VoicePlayer {
       if (!buf) continue;
       const src = this.ctx.createBufferSource();
       src.buffer = buf;
-      src.connect(this.filter.input);
       const now = this.ctx.currentTime;
-      const start = chunkStart(now, this.playhead, this.lastSoundEnd, this.sources.size > 0);
+      const gapless = this.sources.size > 0 && this.playhead > now;
+      const start = chunkStart(now, this.playhead, this.lastSoundEnd, this.sources.size > 0, this.warmFor());
+      if (gapless) src.connect(this.filter.input);
+      else {
+        // A short fade-in after silence, so a device waking up doesn't click.
+        const fade = this.ctx.createGain();
+        fade.gain.setValueAtTime(0, start);
+        fade.gain.linearRampToValueAtTime(1, start + FADE_IN);
+        src.connect(fade).connect(this.filter.input);
+      }
       if (this.sources.size === 0) this.onStart();
       src.start(start);
       this.playhead = start + buf.duration;

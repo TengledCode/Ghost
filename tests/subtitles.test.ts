@@ -60,7 +60,7 @@ describe('Subtitles (text in step with the voice)', () => {
   });
 });
 
-import { chunkStart, PREROLL } from '../src/renderer/overlay/audio/player';
+import { chunkStart, PREROLL, WAKE_TIME } from '../src/renderer/overlay/audio/player';
 import { isIdle } from '../src/renderer/overlay/idle';
 
 describe('chunk scheduling (no clipped first words)', () => {
@@ -68,6 +68,14 @@ describe('chunk scheduling (no clipped first words)', () => {
     expect(chunkStart(100, 0, 90, false)).toBeCloseTo(100 + PREROLL); // 10 s of silence
     expect(chunkStart(100, 0, 99.5, false)).toBeCloseTo(100.03); // just finished talking: no pre-roll
     expect(chunkStart(100, 101.7, 99, true)).toBe(101.7); // mid-reply: starts exactly when the last ends
+  });
+
+  it('waits for a sleeping Bluetooth device to wake, unless the keep-alive has already woken it', () => {
+    expect(chunkStart(100, 0, 90, false, 0)).toBeCloseTo(100 + WAKE_TIME); // cold: keep-alive only just started
+    expect(chunkStart(100, 0, 90, false, 0.5)).toBeCloseTo(100 + WAKE_TIME - 0.5);
+    expect(chunkStart(100, 0, 90, false, 5)).toBeCloseTo(100 + PREROLL); // warm since "thinking" began
+    expect(chunkStart(100, 0, 99.5, false, 0)).toBeCloseTo(100.03); // just finished talking: still awake
+    expect(chunkStart(100, 101.7, 90, true, 0)).toBe(101.7); // mid-reply: gapless
   });
 });
 

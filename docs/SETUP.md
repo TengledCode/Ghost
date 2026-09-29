@@ -53,7 +53,6 @@ The ElevenLabs free tier gives about 20 minutes of speech a month. When it runs 
 | `think hard about the best way to structure my week` | Routed to Opus |
 | `clean up my Downloads folder` | Shows a confirm card before any file is touched |
 | `/new` | Starts a fresh conversation |
-| `what's the capital of Peru?` | If the answer takes more than a moment, Ghost says "Noted." (or similar) first |
 | `Esc` while it talks | Stops it |
 
 ## 5. Where things live
@@ -94,6 +93,7 @@ The ElevenLabs free tier gives about 20 minutes of speech a month. When it runs 
 - [ ] After 10+ s of silence, the first word of a reply is heard in full (if not, set Settings → Voice → Keep audio awake to "Always")
 - [ ] Clicking into another app fades Ghost and its text box straight away; moving the cursor off it fades them after a few seconds
 - [ ] Startup: the shards fly in and lock around the eye, then Ghost greets you out loud (a different line each launch; "Back so soon?" after a quick restart)
-- [ ] A slow question gets a quick spoken "Noted."-style acknowledgement first; a quick "open notepad" doesn't
+- [ ] Replies start with the answer: no "Very good" / "Certainly, Aaron." openers, and no "Noted." while it thinks
+- [ ] Bluetooth: Settings → Voice → Test first word, stay quiet, and "one" is heard in full; no hum from the keep-alive tone
 - [ ] Settings → Brain → Show reply timings: the bubble shows "text · voice · heard" times. The second message of a session answers noticeably faster than a cold start used to
 - [ ] Provider switch: if Claude hits its limit, Ghost says so once, answers with Gemini, and shows an amber "on Gemini · Claude limit reached" chip until Claude is back

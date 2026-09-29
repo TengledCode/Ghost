@@ -9,7 +9,7 @@ It runs on **your existing subscriptions, not API keys.** Ghost drives the offic
 ## Highlights
 
 - **Subscription-powered brain.** Claude is the primary backend and Gemini the fallback, with automatic model routing: Haiku for quick things, Sonnet by default, Opus when you say "think hard". Conversations continue across messages, and a fresh one starts after 2 hours of quiet.
-- **Quick to answer.** Claude stays running between messages instead of starting up for each one, and the voice starts on the reply's opening clause. When a reply will take a moment, Ghost says a quick "Noted." or "Looking into it." first, picked to suit the question. Settings → Brain can show how long each reply took.
+- **Quick to answer.** Claude stays running between messages instead of starting up for each one, and the voice starts on the reply's opening clause. Replies start with the answer, with no "Certainly, Aaron." first. Settings → Brain can show how long each reply took.
 - **Says hello.** On every startup the shards fly in and lock around the eye, and Ghost greets you: by time of day, how long you've been away, the day of the week (or your birthday, if it knows it), never the same line twice in a row.
 - **A voice with a Ghost feel.** It uses the ElevenLabs free tier and falls back automatically to free Edge neural voices. A soundalike stock voice goes through an adjustable *Ghost filter* (metallic resonance, shimmer, chorus). No voice cloning.
 - **A 3D companion drone.** An original gunmetal drone (Three.js): eight armour shards float magnetically around a machined core, and a lens eye holds a living particle core (adapted from the MIT [Voice Orb](https://github.com/aqualang89/shipnotes-components)) plus a holographic iris.

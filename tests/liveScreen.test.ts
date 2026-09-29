@@ -83,7 +83,7 @@ describe('live screen view in the core', () => {
     expect(core.isLiveScreen).toBe(true);
     expect(provider.prompts).toHaveLength(0);
     expect(sent).toContainEqual({ type: 'live_screen', on: true, offAt: undefined });
-    expect(sent.some(m => m.type === 'turn_end' && /watching your screen/.test(m.text))).toBe(true);
+    expect(sent.some(m => m.type === 'turn_end' && /Watching your screen/.test(m.text))).toBe(true);
     await core.userMessage('stop watching');
     expect(core.isLiveScreen).toBe(false);
   });

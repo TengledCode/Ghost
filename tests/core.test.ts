@@ -78,12 +78,9 @@ describe('GhostCore', () => {
     const audio = ui.inbox.filter((m): m is Extract<CoreMessage, { type: 'audio' }> => m.type === 'audio' && !m.last);
     expect(audio.map(a => a.seq)).toEqual(audio.map((_, i) => i));
     expect(last.seq).toBe(audio.length);
-    // A web search started before any text, so Ghost acknowledged it first (no bubble text for it).
-    expect(Buffer.from(audio[0].data, 'base64').toString()).toMatch(/^mp3:(Looking into it|Allow me to check|I'll find out|Let me look that up)\./);
-    expect(audio[0].display).toBe('');
-    expect(Buffer.from(audio[1].data, 'base64').toString()).toMatch(/^mp3:Understood, Aaron\./);
+    expect(Buffer.from(audio[0].data, 'base64').toString()).toMatch(/^mp3:You said/); // the mock's "Understood, Aaron." opener is dropped
     const timing = await ui.waitFor(m => m.type === 'timing') as Extract<CoreMessage, { type: 'timing' }>;
-    expect(timing).toMatchObject({ turnId: last.turnId, acked: true });
+    expect(timing).toMatchObject({ turnId: last.turnId });
     expect(timing.firstTextMs).toBeGreaterThanOrEqual(0);
     expect(timing.firstAudioMs).toBeGreaterThanOrEqual(timing.firstTextMs!);
     // Each chunk carries the text it speaks, so the overlay can reveal words in step with the voice.
@@ -212,25 +209,25 @@ describe('conversation memory across restarts', () => {
   }, 20_000);
 });
 
-describe('acknowledgements and greeting', () => {
-  // A brain that waits `delay` ms before answering "Here you are, Aaron."
-  const slowBrain = (delay: number) => ({
+describe('no waiting words, and the startup greeting', () => {
+  // A brain that waits `delay` ms before answering.
+  const slowBrain = (delay: number, answer = 'Here you are, Aaron.') => ({
     id: 'mock' as const,
     isAvailable: async () => true,
     async *send() {
       await new Promise(r => setTimeout(r, delay));
-      yield { type: 'text_delta' as const, text: 'Here you are, Aaron.' };
-      yield { type: 'done' as const, text: 'Here you are, Aaron.' };
+      for (const part of answer.match(/.{1,4}/gs)!) yield { type: 'text_delta' as const, text: part };
+      yield { type: 'done' as const, text: answer };
     },
   });
 
-  async function start(delay: number, extra: Record<string, unknown> = {}) {
+  async function start(delay: number, extra: Record<string, unknown> = {}, answer?: string) {
     const dir = mkdtempSync(join(tmpdir(), 'ghost-ack-'));
     core = new GhostCore({
       dataDir: dir, personaPath: join(__dirname, '../config/persona.md'), mcpServerPath: '/x.js', nodeExecPath: process.execPath,
-      providers: { claude: slowBrain(delay) as never }, tts: new TtsService(fakeTts, fakeTts),
+      providers: { claude: slowBrain(delay, answer) as never }, tts: new TtsService(fakeTts, fakeTts),
       host: { openExternal: async () => {}, openPath: async () => '', trash: async () => {} },
-      settings: () => mergeSettings({ provider: 'claude', fallbackProvider: null }), port: 0, ackDelayMs: 150, ...extra,
+      settings: () => mergeSettings({ provider: 'claude', fallbackProvider: null }), port: 0, ...extra,
     });
     await core.start();
     const ui = client(core.url, core.token, 'ui');
@@ -242,32 +239,23 @@ describe('acknowledgements and greeting', () => {
     .filter((m): m is Extract<CoreMessage, { type: 'audio' }> => m.type === 'audio' && !m.last)
     .map(a => Buffer.from(a.data, 'base64').toString().replace(/^mp3:/, ''));
 
-  it('says a quick acknowledgement first when the reply is slow', async () => {
-    const { ui } = await start(600);
-    ui.send({ type: 'user_message', text: 'what is the capital of France?' });
-    await ui.waitFor(m => m.type === 'audio' && m.last);
-    const lines = spoken(ui);
-    expect(lines).toHaveLength(2);
-    expect(['Noted.', 'A fair question. One moment.', 'Let me see.', 'Good question, Aaron. One moment.', 'Allow me a moment.']).toContain(lines[0]);
-    expect(lines[1]).toBe('Here you are, Aaron.');
-    // Still thinking while the acknowledgement plays; speaking only once the reply's voice arrives.
-    const states = ui.inbox.filter(m => m.type === 'state').map(m => (m as { state: string }).state);
-    expect(states.filter(s => s === 'speaking')).toHaveLength(1);
-  });
-
-  it('stays quiet when the reply comes quickly', async () => {
-    const { ui } = await start(10);
-    ui.send({ type: 'user_message', text: 'open notepad' });
-    await ui.waitFor(m => m.type === 'audio' && m.last);
-    expect(spoken(ui)).toEqual(['Here you are, Aaron.']);
-    expect(await ui.waitFor(m => m.type === 'timing')).toMatchObject({ acked: false });
-  });
-
-  it('acknowledges deep questions straight away', async () => {
-    const { ui } = await start(10);
+  it('stays silent while a slow reply is coming, then speaks only the reply', async () => {
+    const { ui } = await start(1500);
     ui.send({ type: 'user_message', text: 'think carefully about the trade-offs of renting versus buying' });
     await ui.waitFor(m => m.type === 'audio' && m.last);
-    expect(['That deserves some thought.', 'Allow me to think this through.', 'Give me a moment with this one.']).toContain(spoken(ui)[0]);
+    expect(spoken(ui)).toEqual(['Here you are, Aaron.']);
+    expect(await ui.waitFor(m => m.type === 'timing')).toMatchObject({ firstTextMs: expect.any(Number) });
+  });
+
+  it('drops a pleasantry opener from the text, the voice and the transcript', async () => {
+    const { ui } = await start(10, {}, 'Certainly, Aaron. Paris is the capital of France.');
+    ui.send({ type: 'user_message', text: 'capital of France?' });
+    const end = await ui.waitFor(m => m.type === 'turn_end') as Extract<CoreMessage, { type: 'turn_end' }>;
+    expect(end.text).toBe('Paris is the capital of France.');
+    const streamed = ui.inbox.filter(m => m.type === 'text_delta').map(m => (m as { text: string }).text).join('');
+    expect(streamed).toBe('Paris is the capital of France.');
+    await ui.waitFor(m => m.type === 'audio' && m.last);
+    expect(spoken(ui).join(' ')).toBe('Paris is the capital of France.');
   });
 
   it('greets once when the overlay first connects, and remembers the line', async () => {
