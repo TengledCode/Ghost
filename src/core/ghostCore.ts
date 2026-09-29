@@ -20,6 +20,7 @@ import { modelFor, routeTier } from './router';
 import { SentenceSplitter, type Segment } from './sentenceSplitter';
 import { TOOL_DEFS, type ToolName } from './tools/definitions';
 import { CLAUDE_BUILTIN_TOOLS } from './providers/claude';
+import { agyPaths, writeAgyPersona, writeAgyPlugin, type AgyPaths } from './providers/agyPlugin';
 import { ToolExecutor, type Host } from './tools/executor';
 import type { TtsService } from './tts/service';
 
@@ -75,6 +76,8 @@ export class GhostCore {
   private personaFile: string;
   private mcpConfigPath: string;
   private presence: PresenceStore;
+  private agy: AgyPaths;
+  private googleInSync = false; // whether the Google brain's own conversation holds everything said so far
   private greeted = false;
   private presenceTimer: NodeJS.Timeout | null = null;
 
@@ -89,6 +92,7 @@ export class GhostCore {
     this.sessionId = this.log.current.claudeSessionId; // resume the Claude conversation after a restart
     this.executor = new ToolExecutor(o.host, this.memory, this.reminders, this.log);
     this.presence = new PresenceStore(join(o.dataDir, 'presence.json'));
+    this.agy = agyPaths(join(o.dataDir, 'agy'));
     o.tts.onFallback = reason => this.broadcast({ type: 'notice', level: 'info', text: `Voice switched to Edge (${reason}).` });
   }
 
@@ -107,21 +111,28 @@ export class GhostCore {
     this.reminders.start();
     // Pick up where we left off, or file away a conversation that went quiet while Ghost was closed.
     if (this.log.isStale(SESSION_IDLE_MS)) this.rotateConversation();
-    else this.seedGemini();
-    this.warmClaude();
+    this.warmBrains();
     this.presenceTimer = setInterval(() => this.presence.update({ lastSeen: Date.now() }), 5 * 60_000);
     this.presenceTimer.unref?.();
   }
 
-  /** Start the Claude session now, so the first message doesn't wait for the CLI to boot. */
-  private warmClaude(): void {
+  /** Start the brains' CLIs now, so the first message doesn't wait for them to boot. */
+  private warmBrains(): void {
     const s = this.o.settings();
+    const tier = s.modelTier === 'auto' ? 'balanced' : s.modelTier;
     const claude = this.o.providers.claude as { warm?: (r: object) => void } | undefined;
-    if (s.provider !== 'claude' && s.fallbackProvider !== 'claude') return;
-    claude?.warm?.({
-      model: modelFor('claude', s.modelTier === 'auto' ? 'balanced' : s.modelTier), personaFile: this.personaFile,
-      mcpConfigPath: this.mcpConfigPath, workspace: this.workspace, sessionId: this.sessionId,
-    });
+    if (s.provider === 'claude' || s.fallbackProvider === 'claude') {
+      claude?.warm?.({
+        model: modelFor('claude', tier), personaFile: this.personaFile,
+        mcpConfigPath: this.mcpConfigPath, workspace: this.workspace, sessionId: this.sessionId,
+      });
+    }
+    // Antigravity is heavy (a large process plus a helper), so it's kept running only as the primary brain.
+    if (s.provider === 'gemini') (this.o.providers.gemini as { warm?: (r: object) => void } | undefined)?.warm?.({ model: modelFor('gemini', tier) });
+  }
+
+  private stopBrains(): void {
+    for (const p of Object.values(this.o.providers)) (p as { stop?: () => void } | undefined)?.stop?.();
   }
 
   private voiceChoice() {
@@ -133,7 +144,7 @@ export class GhostCore {
     this.clearLiveTimer();
     if (this.presenceTimer) clearInterval(this.presenceTimer);
     this.presence.update({ lastSeen: Date.now() });
-    (this.o.providers.claude as { stop?: () => void } | undefined)?.stop?.();
+    this.stopBrains();
     this.turn?.abort.abort();
     this.reminders.stop();
     for (const c of this.clients) c.ws.close();
@@ -152,17 +163,13 @@ export class GhostCore {
       env: { ELECTRON_RUN_AS_NODE: '1', GHOST_CORE_URL: this.url, GHOST_TOKEN: this.token },
     };
     writeFileSync(this.mcpConfigPath, JSON.stringify({ mcpServers: { ghost: server } }, null, 2));
-    // Gemini CLI reads project settings from <cwd>/.gemini/settings.json.
-    mkdirSync(join(this.workspace, '.gemini'), { recursive: true });
-    const geminiReadOnly = ['google_web_search', 'web_fetch', 'read_file', 'read_many_files', 'glob', 'search_file_content', 'list_directory'];
-    writeFileSync(join(this.workspace, '.gemini', 'settings.json'), JSON.stringify({
-      mcpServers: { ghost: { ...server, trust: true } },
-      tools: { exclude: ['run_shell_command', 'write_file', 'replace', 'save_memory'], allowed: geminiReadOnly },
-    }, null, 2));
+    // Antigravity: Ghost's tools and permission hooks as a plugin, and the persona as GEMINI.md.
+    writeAgyPlugin(this.agy, { nodeExecPath: this.o.nodeExecPath, mcpServerPath: this.o.mcpServerPath, env: { GHOST_CORE_URL: this.url, GHOST_TOKEN: this.token } });
+    writeAgyPersona(this.agy, buildPersona(this.o.personaPath, s));
     // Claude Code: keep this folder free of project instructions.
-    writeFileSync(join(this.workspace, 'README.txt'), 'Ghost working folder for the Claude/Gemini CLIs. Safe to leave empty.\n');
-    // A running Claude session read the old persona; the next message restarts it (same conversation).
-    (this.o.providers.claude as { stop?: () => void } | undefined)?.stop?.();
+    writeFileSync(join(this.workspace, 'README.txt'), 'Ghost working folder for the Claude CLI. Safe to leave empty.\n');
+    // Running sessions read the old persona; the next message restarts them (same conversation).
+    this.stopBrains();
   }
 
   // ---------------------------------------------------------------- connections
@@ -267,13 +274,16 @@ export class GhostCore {
     this.log.setClaudeSession(id);
   }
 
-  private resetGemini(): void { (this.o.providers.gemini as { resetHistory?: () => void } | undefined)?.resetHistory?.(); }
+  /** A new conversation for the Google brain too. */
+  private resetGemini(): void {
+    this.googleInSync = false;
+    (this.o.providers.gemini as { resetHistory?: () => void } | undefined)?.resetHistory?.();
+  }
 
-  /** Gemini has no resumable sessions, so after a restart it gets the recent lines of the conversation. */
-  private seedGemini(): void {
+  /** The last lines of the conversation, for a brain that may not have seen them. */
+  private recentLines(): string[] {
     const s = this.o.settings();
-    const recent = this.log.lines().slice(-12).map(l => `${l.role === 'user' ? s.userName : s.assistantName}: ${l.text}`);
-    (this.o.providers.gemini as { seedHistory?: (h: string[]) => void } | undefined)?.seedHistory?.(recent);
+    return this.log.lines().slice(-12).map(l => `${l.role === 'user' ? s.userName : s.assistantName}: ${l.text}`);
   }
 
   async userMessage(text: string): Promise<void> {
@@ -328,6 +338,7 @@ export class GhostCore {
         for await (const ev of provider.send({
           prompt, model, persona: buildPersona(this.o.personaPath, s), personaFile: this.personaFile,
           sessionId: pid === 'claude' ? this.sessionId : undefined,
+          history: pid === 'gemini' ? { lines: this.recentLines(), inSync: this.googleInSync } : undefined,
           mcpConfigPath: this.mcpConfigPath, workspace: this.workspace, signal: turn.abort.signal,
         })) {
           if (this.turn !== turn) return;
@@ -360,6 +371,7 @@ export class GhostCore {
         }
         emit(opener.flush());
         for (const seg of splitter.flush()) this.queueSpeech(turn, seg);
+        this.googleInSync = pid === 'gemini';
         this.log.append('user', message);
         this.log.append('assistant', reply, { provider: pid, model: model || 'default' });
         this.broadcast({ type: 'turn_end', turnId: turn.id, text: reply, provider: pid, model: model || 'default' });
@@ -392,8 +404,8 @@ export class GhostCore {
     const s = this.o.settings();
     const line = {
       limit: `I've reached the usage limit on your ${pid} plan for now.`,
-      auth: `${s.userName}, I'm signed out of ${pid}. Please run "${pid}" in a terminal and log in again.`,
-      missing: `I can't find the ${pid} command-line tool on this PC, ${s.userName}. It needs installing first.`,
+      auth: `I'm signed out of ${brainName(pid)}. Please run "${cliName(pid)}" in a terminal and sign in again.`,
+      missing: `I can't find the ${cliName(pid)} command-line tool on this PC. It needs installing first.`,
       other: `Something went wrong on my side. The details are in the transcript.`,
     }[err.kind ?? 'other'] ?? '';
     this.broadcast({ type: 'text_delta', turnId: turn.id, text: line });
@@ -608,6 +620,9 @@ export class GhostCore {
     if (summary.trim()) this.memory.addEpisode(summary);
   }
 }
+
+/** The command Aaron runs to sign a brain back in. */
+function cliName(id: string): string { return ({ claude: 'claude', gemini: 'agy' } as Record<string, string>)[id] ?? id; }
 
 function brainName(id: string): string {
   return ({ claude: 'Claude', gemini: 'Gemini', mock: 'the test brain' } as Record<string, string>)[id] ?? id;

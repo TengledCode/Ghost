@@ -134,8 +134,12 @@ describe('GhostCore', () => {
     const { core, dir } = await setup();
     const cfg = JSON.parse(readFileSync(join(dir, 'ghost-mcp.json'), 'utf8'));
     expect(cfg.mcpServers.ghost.env).toMatchObject({ GHOST_CORE_URL: core.url, GHOST_TOKEN: core.token, ELECTRON_RUN_AS_NODE: '1' });
-    const gem = JSON.parse(readFileSync(join(dir, 'workspace/.gemini/settings.json'), 'utf8'));
-    expect(gem.tools.exclude).toContain('run_shell_command');
+    // Antigravity gets the same server as a plugin, with its permission hooks and the persona.
+    const plugin = join(dir, 'agy/root/.agents/plugins/ghost');
+    expect(JSON.parse(readFileSync(join(plugin, 'mcp_config.json'), 'utf8')).mcpServers.ghost.env).toMatchObject({ GHOST_CORE_URL: core.url, GHOST_TOKEN: core.token });
+    const hooks = JSON.parse(readFileSync(join(plugin, 'hooks.json'), 'utf8'))['ghost-permissions'];
+    expect(hooks.PreToolUse[0].hooks[0].command).toMatch(/[\\/]hook\.(cmd|sh)$/);
+    expect(readFileSync(join(dir, 'agy/workspace/GEMINI.md'), 'utf8')).toContain('ghost_ghost');
     expect(readFileSync(join(dir, 'persona.generated.md'), 'utf8')).toContain('Call him "Aaron"');
   });
 });
@@ -270,5 +274,32 @@ describe('no waiting words, and the startup greeting', () => {
     await new Promise(r => setTimeout(r, 1700));
     expect(second.inbox.some(m => m.type === 'turn_end')).toBe(false);
     second.ws.close();
+  });
+});
+
+describe('Google brain history', () => {
+  it("hands Gemini the recent conversation when it hasn't seen it, and not once it has", async () => {
+    const seen: (SendRequestLike['history'])[] = [];
+    type SendRequestLike = { history?: { lines: string[]; inSync: boolean } };
+    const gemini = {
+      id: 'gemini' as const, isAvailable: async () => true,
+      async *send(req: SendRequestLike) { seen.push(req.history); yield { type: 'done' as const, text: 'Gemini here.' }; },
+    };
+    let primary: 'claude' | 'gemini' = 'claude';
+    const dir = mkdtempSync(join(tmpdir(), 'ghost-hist-'));
+    core = new GhostCore({
+      dataDir: dir, personaPath: join(__dirname, '../config/persona.md'), mcpServerPath: '/x.js', nodeExecPath: process.execPath,
+      providers: { claude: new MockProvider() as never, gemini: gemini as never }, tts: new TtsService(fakeTts, fakeTts),
+      host: { openExternal: async () => {}, openPath: async () => '', trash: async () => {} },
+      settings: () => mergeSettings({ provider: primary, fallbackProvider: null, voiceEnabled: false }), port: 0,
+    });
+    await core.start();
+    await core.userMessage('first question');
+    primary = 'gemini';
+    await core.userMessage('second question');
+    await core.userMessage('third question');
+    expect(seen[0]).toMatchObject({ inSync: false });
+    expect(seen[0]!.lines.join('\n')).toMatch(/Aaron: first question\nGhost: .*You said/);
+    expect(seen[1]).toMatchObject({ inSync: true });
   });
 });

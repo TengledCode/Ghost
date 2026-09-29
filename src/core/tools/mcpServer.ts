@@ -1,4 +1,4 @@
-// Stdio MCP server that the Claude/Gemini CLI launches as a child process. It holds no logic of its
+// Stdio MCP server that the Claude or Antigravity CLI launches as a child process. It holds no logic of its
 // own: each tool call is relayed over the local WebSocket to the Ghost core, which applies the
 // approval policy and runs it. That keeps one policy for every model backend.
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';

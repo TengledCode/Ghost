@@ -10,10 +10,11 @@
    claude auth status   # should say loggedIn: true
    ```
    Ghost never asks for an API key. If `claude` asks you to choose, pick the subscription login, not "API key".
-3. **Gemini CLI (optional fallback):**
+3. **Antigravity CLI (optional Gemini fallback, uses your Google AI Pro plan):** Google retired Gemini CLI sign-in for personal accounts in June 2026; its replacement is `agy`.
    ```powershell
-   npm install -g @google/gemini-cli
-   gemini            # choose "Login with Google", then /quit
+   irm https://antigravity.google/cli/install.ps1 | iex   # then close and reopen PowerShell
+   agy --version
+   agy               # sign in with your Google account, then /quit
    ```
 4. **ElevenLabs (optional, free):** create a free account at elevenlabs.io → Profile → **API keys**, then paste the key into Ghost's settings. Without it, Ghost uses Edge voices, which are free with no key.
 
@@ -64,6 +65,8 @@ The ElevenLabs free tier gives about 20 minutes of speech a month. When it runs 
 - **"I can't find the claude command-line tool"**: open a *new* terminal and run `where claude`. If nothing shows, reinstall the CLI and restart Ghost.
 - **"I'm signed out"**: run `claude` in a terminal and log in again.
 - **"I've reached the usage limit"**: your plan's window is used up. Ghost tries Gemini automatically if it's set as the fallback.
+- **Gemini says it's signed out**: run `agy` in a terminal and sign in again.
+- **"Antigravity's safety hook didn't load"**: Ghost refuses to let Gemini act without its permission rules. Restart Ghost; if it persists, delete `%APPDATA%\Ghost\data\agy` and restart.
 - **The hotkey does nothing**: another app owns `Ctrl+Space` (some IMEs do). Pick another in settings → Behaviour.
 - **Ghost doesn't hide in a game**: detection uses Windows' own "fullscreen app" signal. Borderless-windowed games don't always raise it.
 
@@ -80,7 +83,7 @@ The ElevenLabs free tier gives about 20 minutes of speech a month. When it runs 
 - [ ] `open notepad` runs without asking; `delete C:\temp\x.txt` shows the confirm card
 - [ ] A reminder fires while Destiny 2 is fullscreen: the shell stays hidden and the voice is heard
 - [ ] With a bad ElevenLabs key, it falls back to Edge with a notice
-- [ ] Setting Primary to Gemini answers and can use the Ghost tools
+- [ ] Setting Primary to Gemini (Antigravity): "what's the weather in Singapore?" searches the web; "open notepad" opens it; "delete C:\temp\x.txt" shows the confirm card
 - [ ] A second monitor: drag Ghost there and restart; it stays there
 - [ ] Dragging follows the cursor exactly (no drift or "shooting off"); dropping near an edge sticks Ghost to it, near a corner snaps it into the corner, and it never ends up partly off-screen, on either monitor
 - [ ] Quit: Settings → Behaviour → Quit Ghost, or Ctrl+Alt+Q (changeable), or the tray menu

@@ -24,7 +24,7 @@ describe('screen context in the prompt', () => {
   it('includes the snapshot path only when there is one', () => {
     expect(buildTurnPrompt('hi', { now, memories: [], userName: 'Aaron' })).not.toMatch(/screen/i);
     const p = buildTurnPrompt('what is this?', { now, memories: [], userName: 'Aaron', screen: { path: 'C:\\g\\screens\\s.png' } });
-    expect(p).toMatch(/Aaron's screen right now.*C:\\g\\screens\\s\.png.*Read tool/s);
+    expect(p).toMatch(/Aaron's screen right now.*C:\\g\\screens\\s\.png.*file-reading tool/s);
     expect(buildTurnPrompt('x', { now, memories: [], userName: 'Aaron', screen: { error: 'denied' } })).toMatch(/could not be captured/);
   });
   it('clamps the auto-off minutes', () => {

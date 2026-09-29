@@ -2,7 +2,7 @@ import { app, BrowserWindow, globalShortcut, ipcMain, Menu, nativeImage, shell, 
 import { join } from 'node:path';
 import { GhostCore } from '../core/ghostCore';
 import { ClaudeLiveProvider } from '../core/providers/claudeLive';
-import { GeminiCliProvider } from '../core/providers/gemini';
+import { AntigravityProvider } from '../core/providers/antigravity';
 import { MockProvider } from '../core/providers/mock';
 import { EdgeTts } from '../core/tts/edge';
 import { ElevenLabsTts } from '../core/tts/elevenlabs';
@@ -34,7 +34,7 @@ app.whenReady().then(async () => {
     nodeExecPath: process.execPath,
     providers: mock
       ? { mock: new MockProvider(), claude: new MockProvider() as never, gemini: new MockProvider() as never }
-      : { claude: new ClaudeLiveProvider(), gemini: new GeminiCliProvider() },
+      : { claude: new ClaudeLiveProvider(), gemini: new AntigravityProvider({ dir: join(app.getPath('userData'), 'data', 'agy') }) },
     tts: new TtsService(new ElevenLabsTts(() => store.getSecret('elevenlabs')), new EdgeTts()),
     host: {
       openExternal: url => shell.openExternal(url),

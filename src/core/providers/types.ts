@@ -15,7 +15,9 @@ export interface SendRequest {
   mcpConfigPath: string;
   workspace: string; // cwd for the CLI, so it never picks up an unrelated project's CLAUDE.md
   signal: AbortSignal;
-  oneShot?: boolean; // a standalone run outside the ongoing conversation (e.g. summarising an old chat)
+  oneShot?: boolean;
+  /** Recent lines of the conversation, for a brain whose own conversation may not hold them (Google). */
+  history?: { lines: string[]; inSync: boolean }; // a standalone run outside the ongoing conversation (e.g. summarising an old chat)
 }
 
 export interface Provider {
@@ -27,7 +29,7 @@ export interface Provider {
 /** Classifies CLI error text so Ghost can say something useful ("I've hit the usage limit"). */
 export function classifyError(text: string): 'auth' | 'limit' | 'missing' | 'other' {
   if (/ENOENT|not recognized as an internal|command not found|is not recognized/i.test(text)) return 'missing';
-  if (/usage limit|rate.?limit|quota|limit reached|resets at|too many requests|429/i.test(text)) return 'limit';
-  if (/log ?in|logged out|auth|unauthori[sz]ed|401|credential|oauth/i.test(text)) return 'auth';
+  if (/usage limit|rate.?limit|quota|limit reached|resets at|too many requests|429|resource.?exhausted|weekly limit/i.test(text)) return 'limit';
+  if (/log ?in|logged out|not logged in|auth|unauthori[sz]ed|401|credential|oauth/i.test(text)) return 'auth';
   return 'other';
 }

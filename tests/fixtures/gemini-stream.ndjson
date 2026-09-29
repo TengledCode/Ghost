@@ -1,7 +1,0 @@
-{"type":"init","timestamp":"2026-09-27T10:00:00Z","session_id":"g-1","model":"gemini-2.5-flash"}
-{"type":"message","role":"user","content":"hello"}
-{"type":"tool_use","tool_name":"google_web_search","tool_id":"t1","parameters":{"query":"x"}}
-{"type":"tool_result","tool_id":"t1","status":"success","output":"..."}
-{"type":"message","role":"assistant","content":"Good ","delta":true}
-{"type":"message","role":"assistant","content":"evening, Aaron.","delta":true}
-{"type":"result","status":"success","stats":{"total_tokens":10}}

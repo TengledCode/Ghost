@@ -6,7 +6,6 @@ import { classify } from '../src/core/approvals/classify';
 import { MemoryStore } from '../src/core/memory/store';
 import { buildTurnPrompt } from '../src/core/persona';
 import { ClaudeStreamParser, claudeArgs } from '../src/core/providers/claude';
-import { GeminiStreamParser, geminiPrompt } from '../src/core/providers/gemini';
 import { quoteWin } from '../src/core/providers/spawnCli';
 import { classifyError, type ProviderEvent } from '../src/core/providers/types';
 import { ReminderScheduler } from '../src/core/reminders/scheduler';
@@ -60,7 +59,8 @@ describe('router', () => {
   it('maps tiers to CLI models', () => {
     expect(modelFor('claude', 'fast')).toBe('haiku');
     expect(modelFor('claude', 'deep')).toBe('opus');
-    expect(modelFor('gemini', 'balanced')).toBe('');
+    expect(modelFor('gemini', 'balanced')).toBe('flash'); // resolved against `agy models` by the provider
+    expect(modelFor('gemini', 'deep')).toBe('pro');
   });
 });
 
@@ -103,20 +103,6 @@ describe('Claude CLI provider', () => {
   it('classifies CLI failures', () => {
     expect(classifyError("'claude' is not recognized as an internal or external command")).toBe('missing');
     expect(classifyError('Invalid API key · Please run /login')).toBe('auth');
-  });
-});
-
-describe('Gemini CLI provider', () => {
-  it('parses stream-json', () => {
-    const p = new GeminiStreamParser();
-    const events = lines('gemini-stream.ndjson').flatMap(l => p.parse(l));
-    expect(events.filter(e => e.type === 'text_delta').map(e => (e as { text: string }).text).join('')).toBe('Good evening, Aaron.');
-    expect(events).toContainEqual({ type: 'tool_start', name: 'google_web_search' });
-    expect(events).toContainEqual({ type: 'tool_end', name: 'google_web_search' });
-    expect(events.at(-1)).toEqual({ type: 'done', text: 'Good evening, Aaron.' });
-  });
-  it('carries persona and history in the prompt', () => {
-    expect(geminiPrompt('Be precise.', 'Aaron: hi', 'next')).toMatch(/<instructions>\nBe precise.[\s\S]*Aaron: hi[\s\S]*next$/);
   });
 });
 

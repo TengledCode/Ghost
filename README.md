@@ -2,7 +2,7 @@
 
 A floating personal AI companion for Windows. Ghost lives in a corner of your screen as an animated shell with a glowing particle eye. You type to it, it answers out loud, and it can act on your PC: open apps, search the web, set reminders, remember things about you, and (with your one-click approval) run commands or change files.
 
-It runs on **your existing subscriptions, not API keys.** Ghost drives the official **Claude Code CLI** (Claude Pro/Max) and the **Gemini CLI** (Google account) in the background, so usage counts against the same plan limits you already have.
+It runs on **your existing subscriptions, not API keys.** Ghost drives the official **Claude Code CLI** (Claude Pro/Max) and Google's **Antigravity CLI** (Gemini on a Google AI Pro plan) in the background, so usage counts against the same plan limits you already have.
 
 ![states](docs/states.png)
 
@@ -31,7 +31,7 @@ See **[docs/SETUP.md](docs/SETUP.md)** for the full walkthrough. In short:
 
 ```powershell
 npm install -g @anthropic-ai/claude-code   # then run `claude` once and log in with your Pro/Max account
-npm install -g @google/gemini-cli          # optional fallback: run `gemini` once, choose "Login with Google"
+irm https://antigravity.google/cli/install.ps1 | iex   # optional Gemini fallback: then run `agy` once and sign in
 git clone https://github.com/TengledCode/Ghost; cd Ghost
 npm install
 npm run dev                                # or: npm run dist:win for an installer
@@ -44,7 +44,7 @@ Electron main ─┬─ Overlay window (transparent, always on top)  ── src/
                ├─ Settings window                               ── src/renderer/settings
                ├─ Tray · hotkey · login item · fullscreen watcher
                └─ Ghost core (ws://127.0.0.1, token)             ── src/core
-                    ├─ providers/  claude (one live stream-json session) | gemini …
+                    ├─ providers/  claude · agy (each one live stream-json session)
                     ├─ router · persona · memory · reminders
                     ├─ approvals (confirm-risky policy)
                     ├─ tools/  ← MCP bridge (stdio) launched by the CLI

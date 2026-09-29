@@ -19,7 +19,8 @@ export function routeTier(message: string, setting: ModelTier): ConcreteTier {
 // Aliases resolve to the newest model of each family in the CLI. An empty string means "CLI default".
 export const MODEL_MAP: Record<Exclude<ProviderId, 'mock'>, Record<ConcreteTier, string>> = {
   claude: { fast: 'haiku', balanced: 'sonnet', deep: 'opus' },
-  gemini: { fast: 'gemini-2.5-flash', balanced: '', deep: 'gemini-2.5-pro' },
+  // Families for Antigravity: the provider picks the newest matching id from `agy models`.
+  gemini: { fast: 'flash', balanced: 'flash', deep: 'pro' },
 };
 
 export function modelFor(provider: ProviderId, tier: ConcreteTier): string {

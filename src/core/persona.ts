@@ -17,7 +17,7 @@ export function buildTurnPrompt(
 ): string {
   const lines = [`<context>`, `Local time: ${opts.now.toLocaleString('en-GB', { dateStyle: 'full', timeStyle: 'short' })} (ISO ${opts.now.toISOString()})`];
   if (opts.screen && 'path' in opts.screen) {
-    lines.push(`${opts.userName}'s screen right now (a snapshot of the monitor under his cursor, taken as he sent this): ${opts.screen.path}. Look at it with your Read tool if it is relevant to what he asks.`);
+    lines.push(`${opts.userName}'s screen right now (a snapshot of the monitor under his cursor, taken as he sent this): ${opts.screen.path}. Open that image file (your file-reading tool can view images) if it is relevant to what he asks.`);
   } else if (opts.screen) {
     lines.push(`Live screen view is on, but the screen could not be captured this time (${opts.screen.error}).`);
   }
