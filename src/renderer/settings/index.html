@@ -89,9 +89,28 @@
       </label>
       <label>ElevenLabs key <input type="password" id="elevenKey" placeholder="Paste your free-tier API key" /><button type="button" id="saveKey">Save</button></label>
       <p class="hint" id="keyStatus"></p>
+      <label>ElevenLabs model
+        <select data-key="elevenLabsModel">
+          <option value="eleven_flash_v2_5">Flash v2.5: fastest, plainest delivery</option>
+          <option value="eleven_multilingual_v2">Multilingual v2: more natural, a little slower, 2× credits</option>
+          <option value="eleven_v3">v3: most expressive, slowest, 2× credits</option>
+        </select>
+      </label>
       <div class="voices"><h3>ElevenLabs voices</h3><div id="elevenVoices"></div></div>
+      <label>Any ElevenLabs voice <input type="text" id="customVoice" data-key="elevenLabsVoiceId" placeholder="Paste a voice ID" spellcheck="false" /><button type="button" id="previewCustomVoice">Preview</button></label>
+      <p class="hint">For a voice that doesn't sound like every narrator: on elevenlabs.io open Voices → Voice Library (or Voice Design to make one from a description), add it to My Voices, then copy its ID here.</p>
+      <label>Steadiness <input type="range" min="0" max="1" step="0.05" data-key="voiceStability" data-num /><output></output></label>
+      <label>Style <input type="range" min="0" max="1" step="0.05" data-key="voiceStyle" data-num /><output></output></label>
+      <p class="hint">Lower steadiness sounds livelier and less monotone; higher is calmer and more even. Style exaggerates the voice's own character (not used by v3).</p>
       <div class="voices"><h3>Edge voices (fallback)</h3><div id="edgeVoices"></div></div>
-      <label>Ghost filter <input type="range" min="0" max="1" step="0.05" data-key="ghostFilter" data-num /><output></output></label>
+      <label>Character
+        <select data-key="voiceCharacter">
+          <option value="natural">Natural: the voice as it is, lightly polished</option>
+          <option value="companion">Companion: a small synthetic companion</option>
+          <option value="drone">Drone: clearly a little machine</option>
+        </select>
+      </label>
+      <label>Filter amount <input type="range" min="0" max="1" step="0.05" data-key="ghostFilter" data-num /><output></output></label>
       <label>Volume <input type="range" min="0" max="1" step="0.05" data-key="volume" data-num /><output></output></label>
       <label>Keep audio awake
         <select id="audioKeepAlive" data-key="audioKeepAlive">

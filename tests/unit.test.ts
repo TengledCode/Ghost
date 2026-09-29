@@ -244,3 +244,46 @@ describe('snapping by the shell', () => {
     expect(orientationForShell({ x: 20, y: 20, width: 180, height: 180 }, work)).toBe('top-left');
   });
 });
+
+import { elevenLabsBody } from '../src/core/tts/elevenlabs';
+import { CHARACTERS, saturationCurve } from '../src/renderer/overlay/audio/ghostFilter';
+
+describe('voice settings', () => {
+  it('sends the chosen ElevenLabs model and delivery', () => {
+    expect(elevenLabsBody('Hi.', { model: 'eleven_multilingual_v2', stability: 0.3, style: 0.6 })).toEqual({
+      text: 'Hi.', model_id: 'eleven_multilingual_v2',
+      voice_settings: { stability: 0.3, similarity_boost: 0.75, style: 0.6, use_speaker_boost: true },
+    });
+    // v3 only takes stability, in three steps.
+    expect(elevenLabsBody('Hi.', { model: 'eleven_v3', stability: 0.3, style: 0.6 })).toEqual({ text: 'Hi.', model_id: 'eleven_v3', voice_settings: { stability: 0.5 } });
+    expect(elevenLabsBody('Hi.').model_id).toBe('eleven_flash_v2_5');
+  });
+
+  it('trims a pasted voice ID and falls back to the default when empty', () => {
+    expect(mergeSettings({ elevenLabsVoiceId: '  abc123 \n' }).elevenLabsVoiceId).toBe('abc123');
+    expect(mergeSettings({ elevenLabsVoiceId: ' ' }).elevenLabsVoiceId).toBe('TX3LPaxmHKxFdv7VOQHJ');
+  });
+
+  it('makes each character progressively more synthetic', () => {
+    const [n, c, d] = [CHARACTERS.natural, CHARACTERS.companion, CHARACTERS.drone];
+    expect(n.rate).toBeLessThan(c.rate);
+    expect(c.rate).toBeLessThan(d.rate);
+    expect(d.rate).toBeLessThanOrEqual(1.08); // a small speaker, not a chipmunk
+    expect(n.ring).toBeLessThan(d.ring);
+    const curve = saturationCurve(0.5);
+    expect(curve[0]).toBeCloseTo(-1);
+    expect(curve[curve.length - 1]).toBeCloseTo(1);
+    expect(saturationCurve(0)[256]).toBeCloseTo(256 / 1023 * 2 - 1);
+  });
+});
+
+import { softClipCurve } from '../src/renderer/overlay/audio/ghostFilter';
+describe('output soft clipper', () => {
+  it('leaves normal levels alone and rounds off peaks below full scale', () => {
+    const c = softClipCurve(2001); // index i ↔ input (i / 1000) - 1
+    expect(c[1000 + 500]).toBeCloseTo(0.5); // -6 dBFS passes unchanged
+    expect(c[2000]).toBeLessThan(0.98);
+    expect(c[2000]).toBeGreaterThan(0.85);
+    expect(c[0]).toBeCloseTo(-c[2000]);
+  });
+});

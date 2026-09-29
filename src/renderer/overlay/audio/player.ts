@@ -1,4 +1,5 @@
 import { BandMeter } from './bands';
+import type { VoiceCharacter } from '../../../shared/settings';
 import { GhostFilter } from './ghostFilter';
 
 export type KeepAlive = 'while-talking' | 'always' | 'off';
@@ -51,8 +52,8 @@ export class VoicePlayer {
   /** A chunk begins playing: `at` is on the performance clock (seconds), for syncing the subtitles. */
   onChunkStart: (turnId: string, seq: number, at: number, duration: number) => void = () => {};
 
-  constructor(mix: number, volume: number) {
-    this.filter = new GhostFilter(this.ctx, mix);
+  constructor(mix: number, volume: number, character: VoiceCharacter = 'companion') {
+    this.filter = new GhostFilter(this.ctx, mix, character);
     this.master = this.ctx.createGain();
     this.master.gain.value = volume;
     this.filter.output.connect(this.master).connect(this.ctx.destination);
@@ -143,6 +144,10 @@ export class VoicePlayer {
       if (!buf) continue;
       const src = this.ctx.createBufferSource();
       src.buffer = buf;
+      // The Ghost character plays the voice slightly fast: a smaller-sounding speaker.
+      const rate = this.filter.rate;
+      src.playbackRate.value = rate;
+      const duration = buf.duration / rate;
       const now = this.ctx.currentTime;
       const gapless = this.sources.size > 0 && this.playhead > now;
       const start = chunkStart(now, this.playhead, this.lastSoundEnd, this.sources.size > 0, this.warmFor());
@@ -156,10 +161,10 @@ export class VoicePlayer {
       }
       if (this.sources.size === 0) this.onStart();
       src.start(start);
-      this.playhead = start + buf.duration;
+      this.playhead = start + duration;
       this.sources.add(src);
       // Tell the subtitles when this chunk will actually be heard, on the page's own clock.
-      this.onChunkStart(this.turnId, seq, performance.now() / 1000 + (start - now), buf.duration);
+      this.onChunkStart(this.turnId, seq, performance.now() / 1000 + (start - now), duration);
       src.onended = () => {
         this.sources.delete(src);
         this.lastSoundEnd = this.ctx.currentTime;

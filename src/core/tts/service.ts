@@ -1,7 +1,10 @@
 import type { TtsEngine, TtsResult } from './types';
 import { TtsError } from './types';
 
-export interface TtsChoice { engine: 'elevenlabs' | 'edge'; elevenLabsVoiceId: string; edgeVoice: string }
+export interface TtsChoice {
+  engine: 'elevenlabs' | 'edge'; elevenLabsVoiceId: string; edgeVoice: string;
+  elevenLabsModel?: string; stability?: number; style?: number;
+}
 export interface SpokenAudio extends TtsResult { engine: 'elevenlabs' | 'edge' }
 
 /**
@@ -17,7 +20,7 @@ export class TtsService {
   async speak(text: string, choice: TtsChoice, signal?: AbortSignal): Promise<SpokenAudio> {
     if (choice.engine === 'elevenlabs' && this.now() >= this.elevenBlockedUntil) {
       try {
-        return { ...(await this.eleven.synthesize(text, choice.elevenLabsVoiceId, signal)), engine: 'elevenlabs' };
+        return { ...(await this.eleven.synthesize(text, choice.elevenLabsVoiceId, signal, { model: choice.elevenLabsModel, stability: choice.stability, style: choice.style })), engine: 'elevenlabs' };
       } catch (e) {
         if (signal?.aborted) throw e;
         const err = e instanceof TtsError ? e : new TtsError(String(e), 'other');

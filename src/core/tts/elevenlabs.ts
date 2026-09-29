@@ -1,13 +1,27 @@
-import type { TtsEngine, TtsResult } from './types';
+import type { SynthOptions, TtsEngine, TtsResult } from './types';
 import { TtsError } from './types';
 
 // ElevenLabs free tier: 10k credits a month. Flash v2.5 costs 0.5 credit per character, so that
-// is roughly 20k characters (~20 minutes of speech). The key comes from a free account.
+// is roughly 20k characters (~20 minutes of speech); the more expressive Multilingual v2 and v3
+// cost about twice that. The key comes from a free account.
+
+/** Request body for a model. v3 takes stability only, in three steps (creative / natural / robust). */
+export function elevenLabsBody(text: string, opts: SynthOptions = {}): Record<string, unknown> {
+  const model = opts.model || 'eleven_flash_v2_5';
+  const stability = clamp01(opts.stability ?? 0.45);
+  if (model === 'eleven_v3') return { text, model_id: model, voice_settings: { stability: Math.round(stability * 2) / 2 } };
+  return {
+    text, model_id: model,
+    voice_settings: { stability, similarity_boost: 0.75, style: clamp01(opts.style ?? 0.25), use_speaker_boost: true },
+  };
+}
+
+function clamp01(v: number): number { return Math.min(1, Math.max(0, Number.isFinite(v) ? v : 0.5)); }
 export class ElevenLabsTts implements TtsEngine {
   readonly id = 'elevenlabs' as const;
   constructor(private readonly apiKey: () => string, private readonly fetchImpl: typeof fetch = fetch) {}
 
-  async synthesize(text: string, voice: string, signal?: AbortSignal): Promise<TtsResult> {
+  async synthesize(text: string, voice: string, signal?: AbortSignal, opts?: SynthOptions): Promise<TtsResult> {
     const key = this.apiKey();
     if (!key) throw new TtsError('No ElevenLabs key configured', 'auth');
     if (!voice) throw new TtsError('No ElevenLabs voice selected', 'other');
@@ -16,11 +30,7 @@ export class ElevenLabsTts implements TtsEngine {
       res = await this.fetchImpl(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voice)}?output_format=mp3_44100_128`, {
         method: 'POST',
         headers: { 'xi-api-key': key, 'content-type': 'application/json', accept: 'audio/mpeg' },
-        body: JSON.stringify({
-          text,
-          model_id: 'eleven_flash_v2_5',
-          voice_settings: { stability: 0.55, similarity_boost: 0.75, style: 0.15, use_speaker_boost: true },
-        }),
+        body: JSON.stringify(elevenLabsBody(text, opts)),
         signal,
       });
     } catch (e) {

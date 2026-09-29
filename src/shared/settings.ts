@@ -14,6 +14,7 @@ export const DEFAULT_BRAIN_MODELS: Record<BrainId, SlotModels> = {
 };
 export type Skin = 'ghost-shell' | 'classic-orb';
 export type RenderQuality = 'auto' | 'high' | 'medium' | 'low';
+export type VoiceCharacter = 'natural' | 'companion' | 'drone';
 
 export interface ThemeColors {
   shell: string; // shard base colour
@@ -62,6 +63,10 @@ export interface Settings {
   ttsEngine: Exclude<TtsEngineId, 'none'>;
   elevenLabsVoiceId: string;
   edgeVoice: string;
+  elevenLabsModel: 'eleven_flash_v2_5' | 'eleven_multilingual_v2' | 'eleven_v3';
+  voiceStability: number; // 0 - 1: low = more expressive and varied, high = steadier
+  voiceStyle: number; // 0 - 1: how strongly the voice's own character is exaggerated
+  voiceCharacter: VoiceCharacter; // how synthetic the Ghost filter makes the voice
   ghostFilter: number; // 0 - 1 wet mix of the Ghost FX chain
   volume: number; // 0 - 1
   audioKeepAlive: 'while-talking' | 'always' | 'off'; // keep the output device awake so first words aren't clipped
@@ -96,7 +101,11 @@ export const DEFAULT_SETTINGS: Settings = {
   ttsEngine: 'elevenlabs',
   elevenLabsVoiceId: 'TX3LPaxmHKxFdv7VOQHJ', // Liam; change in settings after auditioning
   edgeVoice: 'en-US-AndrewMultilingualNeural',
-  ghostFilter: 0.35,
+  elevenLabsModel: 'eleven_flash_v2_5',
+  voiceStability: 0.45,
+  voiceStyle: 0.25,
+  voiceCharacter: 'companion',
+  ghostFilter: 0.5,
   volume: 0.9,
   audioKeepAlive: 'while-talking',
 };
@@ -107,6 +116,9 @@ export function mergeSettings(stored: Partial<Settings> | null | undefined): Set
   merged.idleOpacity = clamp(merged.idleOpacity, 0.2, 1);
   merged.ghostFilter = clamp(merged.ghostFilter, 0, 1);
   merged.volume = clamp(merged.volume, 0, 1);
+  merged.voiceStability = clamp(merged.voiceStability, 0, 1);
+  merged.voiceStyle = clamp(merged.voiceStyle, 0, 1);
+  merged.elevenLabsVoiceId = String(merged.elevenLabsVoiceId ?? '').trim() || DEFAULT_SETTINGS.elevenLabsVoiceId;
   merged.liveScreenAutoOffMinutes = Math.round(clamp(merged.liveScreenAutoOffMinutes, 5, 240));
   const saved = (stored?.brainModels ?? {}) as Partial<Record<BrainId, Partial<SlotModels>>>;
   merged.brainModels = {

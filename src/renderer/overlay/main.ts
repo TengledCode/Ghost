@@ -3,6 +3,7 @@ import { themeColors, type Corner, type Settings } from '../../shared/settings';
 import { bridge, inElectron } from '../shared/bridge';
 import { CoreClient } from '../shared/coreClient';
 import { VoicePlayer } from './audio/player';
+import { GhostFilter } from './audio/ghostFilter';
 import { GhostShell } from './shell/ghostShell';
 import { moodFromMessage } from './shell/motion';
 import { isIdle } from './idle';
@@ -66,7 +67,7 @@ settings = boot.settings;
 bridge.onOrientation(c => setOrientation(c));
 if (boot.orientation) setOrientation(boot.orientation);
 const core = new CoreClient(boot.url, boot.token);
-const player = new VoicePlayer(settings.ghostFilter, settings.volume);
+const player = new VoicePlayer(settings.ghostFilter, settings.volume, settings.voiceCharacter);
 // While voice is on, the bubble shows the reply in step with the voice (see subtitles.ts).
 const subtitles = new Subtitles(text => showBubble(text));
 player.onChunkStart = (turnId, seq, at, duration) => {
@@ -75,7 +76,7 @@ player.onChunkStart = (turnId, seq, at, duration) => {
 };
 player.onFinished = turnId => { subtitles.revealAll(turnId); core.send({ type: 'playback_finished', turnId }); };
 (function tickSubtitles() { requestAnimationFrame(tickSubtitles); subtitles.tick(); })();
-if (!inElectron) (window as unknown as { ghostDebug: object }).ghostDebug = { player, subtitles }; // browser preview: inspectable
+if (!inElectron) (window as unknown as { ghostDebug: object }).ghostDebug = { player, subtitles, GhostFilter }; // browser preview: inspectable
 await customElements.whenDefined('voice-orb').catch(() => {});
 // The orb taps the processed voice, so the eye pulses with what Aaron actually hears.
 voiceOrb.connect?.(player.master).catch(() => {});
@@ -114,6 +115,7 @@ function applySettings(s: Settings): void {
   const hue = hueOf(theme.eye);
   voiceOrb.style.filter = signalOrb.style.filter = `hue-rotate(${Math.round(hue - 250)}deg)`;
   player.filter.setMix(s.ghostFilter);
+  player.filter.setCharacter(s.voiceCharacter);
   player.setVolume(s.voiceEnabled ? s.volume : 0);
   player.setKeepAlive(s.voiceEnabled ? s.audioKeepAlive : 'off');
   input.placeholder = `Speak your mind, ${s.userName}…`;

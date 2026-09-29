@@ -148,6 +148,10 @@ document.getElementById('saveKey')!.addEventListener('click', async () => {
 });
 
 document.getElementById('newConversation')!.addEventListener('click', () => core.send({ type: 'new_conversation' }));
+document.getElementById('previewCustomVoice')!.addEventListener('click', () => {
+  const voice = (document.getElementById('customVoice') as HTMLInputElement).value.trim();
+  if (voice) core.send({ type: 'voice_preview', engine: 'elevenlabs', voice });
+});
 
 // Checks that the first word survives a long silence (Bluetooth headsets tend to swallow it).
 const testButton = document.getElementById('testFirstWord') as HTMLButtonElement;

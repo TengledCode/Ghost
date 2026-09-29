@@ -137,7 +137,7 @@ export class GhostCore {
 
   private voiceChoice() {
     const s = this.o.settings();
-    return { engine: s.ttsEngine, elevenLabsVoiceId: s.elevenLabsVoiceId, edgeVoice: s.edgeVoice };
+    return { engine: s.ttsEngine, elevenLabsVoiceId: s.elevenLabsVoiceId, edgeVoice: s.edgeVoice, elevenLabsModel: s.elevenLabsModel, stability: s.voiceStability, style: s.voiceStyle };
   }
 
   stop(): void {
@@ -528,8 +528,9 @@ export class GhostCore {
   private async voicePreview(engine: 'elevenlabs' | 'edge' | 'none', voice: string, text?: string): Promise<void> {
     const s = this.o.settings();
     this.o.tts.resetBackoff();
-    const line = text ?? `Good evening, ${s.userName}. Your jacket is pressed, your calendar is clear, and I am at your service.`;
+    const line = text ?? `Good evening, ${s.userName}. Your calendar is clear, the weather is holding, and I've kept an eye on things while you were away.`;
     await this.speakStandalone(`preview-${randomUUID()}`, line, {
+      ...this.voiceChoice(),
       engine: engine === 'none' ? 'edge' : engine,
       elevenLabsVoiceId: engine === 'elevenlabs' ? voice : s.elevenLabsVoiceId,
       edgeVoice: engine === 'edge' ? voice : s.edgeVoice,
@@ -590,7 +591,7 @@ export class GhostCore {
     const s = this.o.settings();
     if (!s.voiceEnabled && !turnId.startsWith('preview-')) return;
     try {
-      const audio = await this.o.tts.speak(text, choice ?? { engine: s.ttsEngine, elevenLabsVoiceId: s.elevenLabsVoiceId, edgeVoice: s.edgeVoice });
+      const audio = await this.o.tts.speak(text, choice ?? this.voiceChoice());
       this.setState('speaking');
       this.broadcast({ type: 'audio', turnId, seq: 0, mime: audio.mime, data: audio.audio.toString('base64'), engine: audio.engine, last: false, display: text });
       this.broadcast({ type: 'audio', turnId, seq: 1, mime: audio.mime, data: '', engine: 'none', last: true });
