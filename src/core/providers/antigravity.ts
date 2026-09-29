@@ -1,7 +1,7 @@
 import { existsSync, rmSync } from 'node:fs';
-import { agyPaths, pickAgyModel, parseAgyModels, type AgyPaths } from './agyPlugin';
+import { agyModelLabel, agyPaths, parseAgyCatalog, pickAgyModel, type AgyPaths } from './agyPlugin';
 import { commandExists, runCli, spawnLive, type LiveCli } from './spawnCli';
-import type { Provider, ProviderEvent, SendRequest } from './types';
+import type { ModelOption, Provider, ProviderEvent, SendRequest } from './types';
 import { classifyError } from './types';
 
 // Ghost's Google brain: the Antigravity CLI (`agy`), signed in with Aaron's Google AI Pro account.
@@ -190,20 +190,31 @@ export class AntigravityProvider implements Provider {
     void proc.exit.then(() => { if (this.proc === proc) { this.proc = null; this.init = null; } });
   }
 
-  /** A tier hint ('flash' / 'pro') becomes a real model id from `agy models`; ids pass through. */
+  /** Everything agy offers (Gemini, and Claude / GPT-OSS models on the same plan), newest-first automatic picks on top. */
+  async listModels(): Promise<ModelOption[]> {
+    this.models ??= this.catalog();
+    const ids = await this.models;
+    return [
+      { id: 'flash', label: `Automatic: newest Gemini Flash${pickAgyModel(ids, 'flash') ? ` (${agyModelLabel(pickAgyModel(ids, 'flash'))})` : ''}` },
+      { id: 'pro', label: `Automatic: newest Gemini Pro${pickAgyModel(ids, 'pro') ? ` (${agyModelLabel(pickAgyModel(ids, 'pro'))})` : ''}` },
+      ...ids.map(id => ({ id, label: agyModelLabel(id) })),
+    ];
+  }
+
+  /** `flash` / `pro` become the newest matching id from `agy models`; any other id is used as it is. */
   private async resolveModel(hint: string): Promise<string> {
-    if (!hint || hint.startsWith('gemini-')) return hint;
-    this.models ??= this.listModels();
+    if (hint !== 'flash' && hint !== 'pro') return hint;
+    this.models ??= this.catalog();
     return pickAgyModel(await this.models, hint);
   }
 
-  private async listModels(): Promise<string[]> {
+  private async catalog(): Promise<string[]> {
     try {
       const run = runCli(this.command, ['models'], { stdin: '', cwd: this.paths.workspace, signal: AbortSignal.timeout(30_000) });
       let out = '';
       for await (const line of run.lines) out += `${line}\n`;
       await run.exit;
-      const ids = parseAgyModels(out + run.stderr());
+      const ids = parseAgyCatalog(out + run.stderr());
       if (!ids.length) this.models = null; // try again next time
       return ids;
     } catch {

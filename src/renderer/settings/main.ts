@@ -1,5 +1,5 @@
 import { EDGE_VOICES, ELEVENLABS_VOICES, type VoiceOption } from '../../shared/voices';
-import { THEMES, type Settings } from '../../shared/settings';
+import { SLOT_LABELS, THEMES, type BrainId, type Settings, type SlotModels } from '../../shared/settings';
 import { bridge } from '../shared/bridge';
 import { CoreClient } from '../shared/coreClient';
 
@@ -38,9 +38,54 @@ function render(): void {
   }
   for (const box of document.querySelectorAll<HTMLInputElement>('[data-hotkey]')) box.value = String(settings[box.dataset.hotkey as 'hotkey' | 'quitHotkey' | 'liveScreenHotkey']).replace(/\+/g, ' + ');
   (document.getElementById('liveScreenAutoOffMinutes') as HTMLInputElement).disabled = !settings.liveScreenAutoOff;
+  renderBrains();
   renderThemes();
   renderVoices('elevenVoices', ELEVENLABS_VOICES, 'elevenlabs', settings.elevenLabsVoiceId);
   renderVoices('edgeVoices', EDGE_VOICES, 'edge', settings.edgeVoice);
+}
+
+// ---- Brain: each brain's Light / Balanced / Heavy slots list the models that brain offers.
+type ModelList = { id: string; label: string }[];
+const modelLists = new Map<string, ModelList | 'loading' | { error: string }>();
+core.on(m => {
+  if (m.type !== 'models') return;
+  modelLists.set(m.provider, m.error && !m.models.length ? { error: m.error } : m.models);
+  renderBrains();
+});
+
+function renderBrains(): void {
+  // A brain can't back itself up.
+  for (const opt of (document.getElementById('secondaryBrain') as HTMLSelectElement).options) opt.disabled = !!opt.value && opt.value === settings.provider;
+  const pairs: [string, string | null][] = [['primary', settings.provider], ['secondary', settings.fallbackProvider]];
+  for (const [which, brain] of pairs) {
+    const wrap = document.querySelector<HTMLElement>(`[data-brain-slots="${which}"]`)!;
+    if (!brain || brain === 'mock') { wrap.hidden = true; wrap.replaceChildren(); continue; }
+    wrap.hidden = false;
+    let list = modelLists.get(brain);
+    if (list === undefined) { list = 'loading'; modelLists.set(brain, list); core.send({ type: 'list_models', provider: brain }); }
+    const slots = settings.brainModels[brain as BrainId];
+    wrap.replaceChildren(...(Object.keys(SLOT_LABELS) as (keyof SlotModels)[]).map(slot => {
+      const label = document.createElement('label');
+      label.append(SLOT_LABELS[slot]);
+      const select = document.createElement('select');
+      const options: ModelList = Array.isArray(list) ? [...list] : [];
+      // Keep the saved choice visible even if the list couldn't be loaded or no longer has it.
+      if (!options.some(o => o.id === slots[slot])) {
+        const why = list === 'loading' ? 'loading the list…' : !Array.isArray(list) ? "couldn't load the list" : list.length ? 'not available' : '';
+        options.unshift({ id: slots[slot], label: why ? `${slots[slot]} (${why})` : slots[slot] });
+      }
+      for (const o of options) select.append(new Option(o.label, o.id, false, o.id === slots[slot]));
+      select.onchange = () => void update({ brainModels: { ...settings.brainModels, [brain]: { ...slots, [slot]: select.value } } });
+      label.append(select);
+      return label;
+    }));
+    if (list !== 'loading' && !Array.isArray(list)) {
+      const hint = document.createElement('p');
+      hint.className = 'hint';
+      hint.textContent = `Couldn't read the model list: ${list.error}`;
+      wrap.append(hint);
+    }
+  }
 }
 
 function renderThemes(): void {

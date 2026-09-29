@@ -1,4 +1,4 @@
-import type { ModelTier, ProviderId } from '../shared/settings';
+import { DEFAULT_BRAIN_MODELS, type BrainId, type ModelTier, type ProviderId, type SlotModels } from '../shared/settings';
 
 export type ConcreteTier = Exclude<ModelTier, 'auto'>;
 
@@ -16,13 +16,7 @@ export function routeTier(message: string, setting: ModelTier): ConcreteTier {
   return 'balanced';
 }
 
-// Aliases resolve to the newest model of each family in the CLI. An empty string means "CLI default".
-export const MODEL_MAP: Record<Exclude<ProviderId, 'mock'>, Record<ConcreteTier, string>> = {
-  claude: { fast: 'haiku', balanced: 'sonnet', deep: 'opus' },
-  // Families for Antigravity: the provider picks the newest matching id from `agy models`.
-  gemini: { fast: 'flash', balanced: 'flash', deep: 'pro' },
-};
-
-export function modelFor(provider: ProviderId, tier: ConcreteTier): string {
-  return provider === 'mock' ? `mock-${tier}` : MODEL_MAP[provider][tier];
+/** The model for a brain's slot, from Settings → Brain (defaults: see DEFAULT_BRAIN_MODELS). */
+export function modelFor(provider: ProviderId, tier: ConcreteTier, models: Record<BrainId, SlotModels> = DEFAULT_BRAIN_MODELS): string {
+  return provider === 'mock' ? `mock-${tier}` : models[provider]?.[tier] ?? DEFAULT_BRAIN_MODELS[provider][tier];
 }

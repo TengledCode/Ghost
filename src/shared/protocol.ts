@@ -24,6 +24,8 @@ export type ClientMessage =
   | { type: 'new_conversation' }
   | { type: 'clear_history' }
   | { type: 'toggle_live_screen' }
+  // Settings asks which models a brain offers (for the Light / Balanced / Heavy dropdowns).
+  | { type: 'list_models'; provider: string }
   // Sent by the MCP bridge process on behalf of the model.
   | { type: 'tool_call'; id: string; tool: string; args: Record<string, unknown> };
 
@@ -43,6 +45,7 @@ export type CoreMessage =
   // Which brain is answering. `reason` is set while Ghost has fallen back from the primary.
   | { type: 'provider'; active: string; primary: string; reason: 'limit' | 'auth' | 'missing' | 'other' | null }
   | { type: 'tool_result'; id: string; ok: boolean; result: string }
+  | { type: 'models'; provider: string; models: { id: string; label: string }[]; error?: string }
   // How long a reply took: ms from the message to its first text and to its first synthesised audio.
   | { type: 'timing'; turnId: string; firstTextMs?: number; firstAudioMs?: number };
 

@@ -127,7 +127,37 @@ export function pickAgyModel(ids: string[], hint: string): string {
   return candidates[0] ?? '';
 }
 
-/** Model ids mentioned in `agy models` output (the format is a loose table, so just find the ids). */
+/** Gemini model ids mentioned in `agy models` output. */
 export function parseAgyModels(output: string): string[] {
-  return output.match(/\bgemini-[a-z0-9][a-z0-9.-]*[a-z0-9]/gi) ?? [];
+  return parseAgyCatalog(output).filter(id => id.startsWith('gemini-'));
+}
+
+/**
+ * Every model id in `agy models` output: the first column of each table row that looks like an id
+ * (lowercase words joined by dashes, e.g. gemini-3.8-flash-high, claude-opus-4-6-thinking, gpt-oss-120b-medium).
+ */
+export function parseAgyCatalog(output: string): string[] {
+  const ids: string[] = [];
+  for (const line of output.split(/\r?\n/)) {
+    const first = line.trim().split(/\s+/)[0] ?? '';
+    for (const id of first.includes('-') ? [first] : line.match(/\b[a-z][a-z0-9]*(?:-[a-z0-9.]+)+\b/g) ?? []) {
+      if (/^[a-z][a-z0-9]*(?:-[a-z0-9.]+)+$/.test(id) && /\d/.test(id) && !ids.includes(id)) ids.push(id);
+    }
+  }
+  return ids;
+}
+
+/** "gemini-3.8-flash-high" → "Gemini 3.8 Flash (high)", "claude-opus-4-6-thinking" → "Claude Opus 4.6 (thinking)". */
+export function agyModelLabel(id: string): string {
+  const parts = id.split('-');
+  const suffix = /^(low|medium|high|thinking|max|minimal)$/.test(parts.at(-1) ?? '') ? parts.pop() : undefined;
+  const words: string[] = [];
+  for (let i = 0; i < parts.length; i++) {
+    const p = parts[i];
+    // Claude's versions come as separate numbers ("4-6" → "4.6").
+    if (/^\d+$/.test(p) && /^\d+$/.test(parts[i + 1] ?? '')) { words.push(`${p}.${parts[++i]}`); continue; }
+    words.push(p === 'gpt' || p === 'oss' ? p.toUpperCase() : p.charAt(0).toUpperCase() + p.slice(1));
+  }
+  const name = words.join(' ').replace('GPT OSS', 'GPT-OSS');
+  return suffix ? `${name} (${suffix})` : name;
 }

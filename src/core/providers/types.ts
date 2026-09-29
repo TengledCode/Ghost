@@ -24,7 +24,11 @@ export interface Provider {
   readonly id: 'claude' | 'gemini' | 'mock';
   isAvailable(): Promise<boolean>;
   send(req: SendRequest): AsyncIterable<ProviderEvent>;
+  /** Models this brain offers, for the slot dropdowns in Settings. */
+  listModels?(): Promise<ModelOption[]>;
 }
+
+export interface ModelOption { id: string; label: string }
 
 /** Classifies CLI error text so Ghost can say something useful ("I've hit the usage limit"). */
 export function classifyError(text: string): 'auth' | 'limit' | 'missing' | 'other' {

@@ -123,12 +123,12 @@ export class GhostCore {
     const claude = this.o.providers.claude as { warm?: (r: object) => void } | undefined;
     if (s.provider === 'claude' || s.fallbackProvider === 'claude') {
       claude?.warm?.({
-        model: modelFor('claude', tier), personaFile: this.personaFile,
+        model: modelFor('claude', tier, s.brainModels), personaFile: this.personaFile,
         mcpConfigPath: this.mcpConfigPath, workspace: this.workspace, sessionId: this.sessionId,
       });
     }
     // Antigravity is heavy (a large process plus a helper), so it's kept running only as the primary brain.
-    if (s.provider === 'gemini') (this.o.providers.gemini as { warm?: (r: object) => void } | undefined)?.warm?.({ model: modelFor('gemini', tier) });
+    if (s.provider === 'gemini') (this.o.providers.gemini as { warm?: (r: object) => void } | undefined)?.warm?.({ model: modelFor('gemini', tier, s.brainModels) });
   }
 
   private stopBrains(): void {
@@ -223,6 +223,16 @@ export class GhostCore {
         this.broadcast({ type: 'notice', level: 'info', text: 'Conversation history cleared. Lasting facts are kept.' });
         return;
       case 'voice_preview': return this.voicePreview(msg.engine, msg.voice, msg.text);
+      case 'list_models': {
+        const provider = this.o.providers[msg.provider as ProviderId];
+        try {
+          const models = (await provider?.listModels?.()) ?? [];
+          this.send(client, { type: 'models', provider: msg.provider, models });
+        } catch (e) {
+          this.send(client, { type: 'models', provider: msg.provider, models: [], error: String((e as Error).message ?? e) });
+        }
+        return;
+      }
       case 'tool_call':
         if (client.role !== 'mcp') return;
         return this.toolCall(client, msg.id, msg.tool, msg.args);
@@ -332,7 +342,7 @@ export class GhostCore {
     for (const [attempt, pid] of order.entries()) {
       const provider = this.o.providers[pid];
       if (!provider) continue;
-      const model = modelFor(pid, tier);
+      const model = modelFor(pid, tier, s.brainModels);
       let failed: ProviderEvent & { type: 'error' } | null = null;
       try {
         for await (const ev of provider.send({
@@ -613,7 +623,7 @@ export class GhostCore {
     try {
       for await (const ev of provider.send({
         prompt: `Summarise this conversation in 2-3 sentences for your long-term memory. Note decisions, plans and facts about ${s.userName}. Reply with the summary only.\n\n${lines.join('\n').slice(-12_000)}`,
-        model: modelFor(s.provider, 'fast'), persona: '', personaFile: this.personaFile, mcpConfigPath: this.mcpConfigPath,
+        model: modelFor(s.provider, 'fast', s.brainModels), persona: '', personaFile: this.personaFile, mcpConfigPath: this.mcpConfigPath,
         workspace: this.workspace, signal: new AbortController().signal, oneShot: true,
       })) if (ev.type === 'done') summary = ev.text;
     } catch { /* memory is best effort */ }

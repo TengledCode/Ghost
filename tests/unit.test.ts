@@ -62,6 +62,16 @@ describe('router', () => {
     expect(modelFor('gemini', 'balanced')).toBe('flash'); // resolved against `agy models` by the provider
     expect(modelFor('gemini', 'deep')).toBe('pro');
   });
+  it("uses the model Aaron picked for each brain's slot", () => {
+    const s = mergeSettings({ brainModels: { gemini: { fast: 'gemini-3.8-flash-low' } } as never });
+    expect(modelFor('gemini', 'fast', s.brainModels)).toBe('gemini-3.8-flash-low');
+    expect(modelFor('gemini', 'deep', s.brainModels)).toBe('pro'); // untouched slots keep their defaults
+    expect(modelFor('claude', 'balanced', s.brainModels)).toBe('sonnet');
+  });
+  it("won't let a brain be its own backup", () => {
+    expect(mergeSettings({ provider: 'gemini', fallbackProvider: 'gemini' }).fallbackProvider).toBeNull();
+    expect(mergeSettings({ provider: 'gemini', fallbackProvider: 'claude' }).fallbackProvider).toBe('claude');
+  });
 });
 
 describe('approval policy', () => {

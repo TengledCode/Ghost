@@ -3,6 +3,15 @@ import type { TtsEngineId } from './protocol';
 export type Corner = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
 export type ProviderId = 'claude' | 'gemini' | 'mock';
 export type ModelTier = 'auto' | 'fast' | 'balanced' | 'deep';
+/** The model each slot uses (shown as Light / Balanced / Heavy). */
+export interface SlotModels { fast: string; balanced: string; deep: string }
+export type BrainId = Exclude<ProviderId, 'mock'>;
+export const SLOT_LABELS: Record<keyof SlotModels, string> = { fast: 'Light', balanced: 'Balanced', deep: 'Heavy' };
+/** Claude takes the CLI's aliases (newest of each family); for Gemini, `flash`/`pro` mean "newest of that family". */
+export const DEFAULT_BRAIN_MODELS: Record<BrainId, SlotModels> = {
+  claude: { fast: 'haiku', balanced: 'sonnet', deep: 'opus' },
+  gemini: { fast: 'flash', balanced: 'flash', deep: 'pro' },
+};
 export type Skin = 'ghost-shell' | 'classic-orb';
 export type RenderQuality = 'auto' | 'high' | 'medium' | 'low';
 
@@ -46,6 +55,7 @@ export interface Settings {
   provider: ProviderId;
   fallbackProvider: ProviderId | null;
   modelTier: ModelTier;
+  brainModels: Record<BrainId, SlotModels>;
   showTimings: boolean; // show how long each reply took under the bubble
   // Voice
   voiceEnabled: boolean;
@@ -80,6 +90,7 @@ export const DEFAULT_SETTINGS: Settings = {
   provider: 'claude',
   fallbackProvider: 'gemini',
   modelTier: 'auto',
+  brainModels: DEFAULT_BRAIN_MODELS,
   showTimings: false,
   voiceEnabled: true,
   ttsEngine: 'elevenlabs',
@@ -97,6 +108,12 @@ export function mergeSettings(stored: Partial<Settings> | null | undefined): Set
   merged.ghostFilter = clamp(merged.ghostFilter, 0, 1);
   merged.volume = clamp(merged.volume, 0, 1);
   merged.liveScreenAutoOffMinutes = Math.round(clamp(merged.liveScreenAutoOffMinutes, 5, 240));
+  const saved = (stored?.brainModels ?? {}) as Partial<Record<BrainId, Partial<SlotModels>>>;
+  merged.brainModels = {
+    claude: { ...DEFAULT_BRAIN_MODELS.claude, ...saved.claude },
+    gemini: { ...DEFAULT_BRAIN_MODELS.gemini, ...saved.gemini },
+  };
+  if (merged.fallbackProvider === merged.provider) merged.fallbackProvider = null; // a brain can't be its own backup
   return merged;
 }
 

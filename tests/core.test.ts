@@ -303,3 +303,24 @@ describe('Google brain history', () => {
     expect(seen[1]).toMatchObject({ inSync: true });
   });
 });
+
+describe('model lists for Settings', () => {
+  it('answers list_models with the brain\'s models, to the asking window only', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ghost-models-'));
+    const brain = Object.assign(new MockProvider(), { listModels: async () => [{ id: 'haiku', label: 'Haiku (newest)' }] });
+    core = new GhostCore({
+      dataDir: dir, personaPath: join(__dirname, '../config/persona.md'), mcpServerPath: '/x.js', nodeExecPath: process.execPath,
+      providers: { claude: brain as never }, tts: new TtsService(fakeTts, fakeTts),
+      host: { openExternal: async () => {}, openPath: async () => '', trash: async () => {} },
+      settings: () => mergeSettings({ provider: 'claude', fallbackProvider: null }), port: 0,
+    });
+    await core.start();
+    const settingsWin = client(core.url, core.token, 'ui');
+    const overlay = client(core.url, core.token, 'ui');
+    await Promise.all([settingsWin.ready, overlay.ready]);
+    await settingsWin.waitFor(m => m.type === 'welcome');
+    settingsWin.send({ type: 'list_models', provider: 'claude' });
+    expect(await settingsWin.waitFor(m => m.type === 'models')).toEqual({ type: 'models', provider: 'claude', models: [{ id: 'haiku', label: 'Haiku (newest)' }] });
+    expect(overlay.inbox.some(m => m.type === 'models')).toBe(false);
+  });
+});

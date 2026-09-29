@@ -1,6 +1,6 @@
 import { ClaudeCliProvider, ClaudeStreamParser, claudeArgs } from './claude';
 import { spawnLive, type LiveCli } from './spawnCli';
-import type { Provider, ProviderEvent, SendRequest } from './types';
+import type { ModelOption, Provider, ProviderEvent, SendRequest } from './types';
 import { classifyError } from './types';
 
 // Keeps one Claude Code session running between messages instead of starting the CLI for every
@@ -31,6 +31,15 @@ export class ClaudeLiveProvider implements Provider {
   constructor(private readonly command = 'claude') { this.oneShot = new ClaudeCliProvider(command); }
 
   isAvailable(): Promise<boolean> { return this.oneShot.isAvailable(); }
+
+  /** Claude Code's aliases always point at the newest model of each family. */
+  async listModels(): Promise<ModelOption[]> {
+    return [
+      { id: 'haiku', label: 'Haiku (newest)' },
+      { id: 'sonnet', label: 'Sonnet (newest)' },
+      { id: 'opus', label: 'Opus (newest)' },
+    ];
+  }
 
   /** Start the session ahead of the first message (called at launch). */
   warm(req: Pick<SendRequest, 'model' | 'personaFile' | 'mcpConfigPath' | 'workspace' | 'sessionId'>): void {

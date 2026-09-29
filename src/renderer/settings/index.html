@@ -52,18 +52,26 @@
 
     <section>
       <h2>Brain</h2>
-      <label>Primary
-        <select data-key="provider"><option value="claude">Claude (Pro/Max subscription)</option><option value="gemini">Gemini (Google AI Pro, via Antigravity)</option><option value="mock">Offline mock (testing)</option></select>
-      </label>
-      <label>Fallback
-        <select data-key="fallbackProvider" data-nullable><option value="">None</option><option value="gemini">Gemini (Antigravity)</option><option value="claude">Claude</option></select>
-      </label>
-      <label>Model
+      <div class="brain">
+        <label>Primary brain
+          <select id="primaryBrain" data-key="provider"><option value="claude">Claude (Pro/Max subscription)</option><option value="gemini">Gemini (Google AI Pro, via Antigravity)</option><option value="mock">Offline mock (testing)</option></select>
+        </label>
+        <div class="slots" data-brain-slots="primary"></div>
+      </div>
+      <div class="brain">
+        <label>Secondary brain
+          <select id="secondaryBrain" data-key="fallbackProvider" data-nullable><option value="">None</option><option value="claude">Claude (Pro/Max subscription)</option><option value="gemini">Gemini (Google AI Pro, via Antigravity)</option></select>
+        </label>
+        <p class="hint">Takes over when the primary is unavailable: signed out, or its plan's limit is reached.</p>
+        <div class="slots" data-brain-slots="secondary"></div>
+      </div>
+      <label>Which slot
         <select data-key="modelTier">
-          <option value="auto">Auto: Haiku for quick things, Sonnet normally, Opus when asked to think hard</option>
-          <option value="fast">Always fast (Haiku / Flash)</option><option value="balanced">Always balanced (Sonnet)</option><option value="deep">Always deep (Opus / Pro)</option>
+          <option value="auto">Auto: Ghost picks for each message</option>
+          <option value="fast">Always Light</option><option value="balanced">Always Balanced</option><option value="deep">Always Heavy</option>
         </select>
       </label>
+      <p class="hint">Light for quick things and PC actions, Balanced normally, Heavy when you ask it to think hard. Light uses the least of your plan.</p>
       <label class="check"><input type="checkbox" data-key="showTimings" /> Show reply timings under the bubble</label>
       <p class="hint">Text: when the first words arrived. Voice: when the first sentence was ready. Heard: when you first heard Ghost.</p>
       <div class="row-buttons">

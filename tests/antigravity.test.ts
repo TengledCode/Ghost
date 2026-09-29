@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { agyHookDecision, agyPaths, parseAgyModels, pickAgyModel, writeAgyPlugin } from '../src/core/providers/agyPlugin';
+import { agyHookDecision, agyModelLabel, agyPaths, parseAgyCatalog, parseAgyModels, pickAgyModel, writeAgyPlugin } from '../src/core/providers/agyPlugin';
 import { AntigravityProvider } from '../src/core/providers/antigravity';
 import type { ProviderEvent, SendRequest } from '../src/core/providers/types';
 
@@ -83,6 +83,18 @@ describe('AntigravityProvider (Gemini on a Google AI Pro subscription)', () => {
     expect(reply(await collect(provider!.send(req('tool:view_file'))))).toBe('view_file allowed.');
   });
 
+  it('uses any model agy offers when Aaron picks one, and lists them for Settings', async () => {
+    const { req, launches } = setup();
+    expect(reply(await collect(provider!.send(req('hi', { model: 'claude-opus-4-6-thinking' }))))).toBe('[claude-opus-4-6-thinking] hi');
+    expect(launches()[0]).toBe('launch model=claude-opus-4-6-thinking conversation=-');
+    const list = await provider!.listModels();
+    expect(list.slice(0, 2)).toEqual([
+      { id: 'flash', label: 'Automatic: newest Gemini Flash (Gemini 3.8 Flash (high))' },
+      { id: 'pro', label: 'Automatic: newest Gemini Pro (Gemini 3.8 Pro (high))' },
+    ]);
+    expect(list.map(m => m.id)).toContain('claude-opus-4-6-thinking');
+  });
+
   it("refuses to run if the safety hooks didn't load", async () => {
     const { req } = setup({ hooks: false });
     const evs = await collect(provider!.send(req('tool:run_command')));
@@ -105,6 +117,15 @@ describe('Antigravity plugin rules', () => {
     for (const name of ['run_command', 'write_to_file', 'replace_file_content', 'browser_click_element', 'generate_image']) expect(agyHookDecision({ name }).decision).toBe('deny');
     expect(agyHookDecision({ name: 'call_mcp_tool', args: { ServerName: 'other_server' } }).decision).toBe('deny');
     expect(agyHookDecision({}).decision).toBe('deny');
+  });
+
+  it('reads the whole catalog and names each model readably', () => {
+    const out = 'Fetching available models...\nMODEL\tDESCRIPTION\ngemini-3.8-flash-high\tFast, state-of-the-art\ngemini-3.8-pro-high\tDeep\nclaude-opus-4-6-thinking\tAnthropic\ngpt-oss-120b-medium\tOpen weights\n';
+    expect(parseAgyCatalog(out)).toEqual(['gemini-3.8-flash-high', 'gemini-3.8-pro-high', 'claude-opus-4-6-thinking', 'gpt-oss-120b-medium']);
+    expect(parseAgyModels(out)).toEqual(['gemini-3.8-flash-high', 'gemini-3.8-pro-high']);
+    expect(agyModelLabel('gemini-3.8-flash-high')).toBe('Gemini 3.8 Flash (high)');
+    expect(agyModelLabel('claude-opus-4-6-thinking')).toBe('Claude Opus 4.6 (thinking)');
+    expect(agyModelLabel('gpt-oss-120b-medium')).toBe('GPT-OSS 120b (medium)');
   });
 
   it('picks the newest model of a family', () => {
