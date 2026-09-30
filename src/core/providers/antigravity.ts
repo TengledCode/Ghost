@@ -74,6 +74,7 @@ export class AntigravityProvider implements Provider {
   }
 
   async *send(req: SendRequest): AsyncIterable<ProviderEvent> {
+    if (req.oneShot) { yield* this.oneShot(req); return; }
     if (this.idleTimer) { clearTimeout(this.idleTimer); this.idleTimer = null; }
     const model = await this.resolveModel(req.model);
     if (this.proc?.alive() && model !== this.model) this.stop(); // switching model: resume in a new process
@@ -152,6 +153,38 @@ export class AntigravityProvider implements Provider {
       req.signal.removeEventListener('abort', onAbort);
       open = false;
       if (!this.keepWarm && this.proc) this.idleTimer = setTimeout(() => this.stop(), this.idleCloseMs);
+    }
+  }
+
+  /**
+   * A standalone call (e.g. filing a conversation into Obsidian) in its own short-lived agy process,
+   * so it never enters the running conversation. No plugin: it needs no tools.
+   */
+  private async *oneShot(req: SendRequest): AsyncIterable<ProviderEvent> {
+    const model = await this.resolveModel(req.model);
+    const args = ['--output-format', 'stream-json', '--input-format', 'stream-json', '--print', ''];
+    if (model) args.push('--model', model);
+    const proc = spawnLive(this.command, args, { cwd: this.paths.workspace });
+    const onAbort = () => proc.kill();
+    req.signal.addEventListener('abort', onAbort, { once: true });
+    try {
+      proc.write({ event: 'user', message: { role: 'user', content: req.prompt } });
+      let text = '';
+      for await (const raw of proc.lines) {
+        let line: AgyLine;
+        try { line = JSON.parse(raw); } catch { continue; }
+        if (line.event === 'step_update' && line.step_update?.step_type === 'agent_response' && line.step_update.text_delta) text += line.step_update.text_delta;
+        if (line.event === 'result') {
+          const r = line.result ?? {};
+          if (r.status === 'SUCCESS') yield { type: 'done', text: text || r.response || '' };
+          else { const message = r.error || proc.stderr().trim() || 'Antigravity returned an error'; yield { type: 'error', message, kind: classifyError(message) }; }
+          return;
+        }
+      }
+      if (!req.signal.aborted) { const message = proc.stderr().trim() || 'Antigravity stopped unexpectedly'; yield { type: 'error', message, kind: classifyError(message) }; }
+    } finally {
+      req.signal.removeEventListener('abort', onAbort);
+      proc.kill();
     }
   }
 

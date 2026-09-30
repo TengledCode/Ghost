@@ -8,10 +8,29 @@ import { tokens } from './store';
 //   data/conversations/<id>.jsonl   one line per message
 //   data/current.json               the open conversation and its Claude session
 
-export interface LogLine { ts: string; role: 'user' | 'assistant'; text: string; provider?: string; model?: string }
+export interface LogLine {
+  ts: string; role: 'user' | 'assistant'; text: string; provider?: string; model?: string;
+  command?: boolean; // a quick instruction ("open notepad") rather than a real exchange
+  actions?: string[]; // what Ghost did on the PC for this reply ("opened Spotify")
+  screen?: string; // what Ghost saw on the screen for this reply
+}
+export type LineMeta = Omit<LogLine, 'ts' | 'role' | 'text'>;
 export interface Current { conversationId: string; claudeSessionId?: string; lastActivity: number }
 
-export class ConversationLog {
+/** Where conversations are kept: locally (below) or in the Obsidian vault (vaultConversations.ts). */
+export interface HistoryStore {
+  readonly current: Current;
+  isStale(idleMs: number): boolean;
+  append(role: LogLine['role'], text: string, meta?: LineMeta): void;
+  setClaudeSession(id: string | undefined): void;
+  lines(conversationId?: string): LogLine[];
+  /** Start a new conversation; returns the id of the one that just ended. */
+  rotate(): string;
+  search(query: string, limit?: number): string[];
+  clear(): void;
+}
+
+export class ConversationLog implements HistoryStore {
   private readonly dir: string;
   private readonly currentFile: string;
   current: Current;
@@ -32,7 +51,7 @@ export class ConversationLog {
   /** True when the open conversation went quiet longer than `idleMs` ago (it should be archived). */
   isStale(idleMs: number): boolean { return this.lines().length > 0 && this.now() - this.current.lastActivity > idleMs; }
 
-  append(role: LogLine['role'], text: string, meta: { provider?: string; model?: string } = {}): void {
+  append(role: LogLine['role'], text: string, meta: LineMeta = {}): void {
     const line: LogLine = { ts: new Date(this.now()).toISOString(), role, text, ...meta };
     appendFileSync(join(this.dir, `${this.current.conversationId}.jsonl`), JSON.stringify(line) + '\n');
     this.current.lastActivity = this.now();
@@ -77,6 +96,16 @@ export class ConversationLog {
     }
     return hits.sort((a, b) => b.score - a.score).slice(0, limit).map(h => h.text);
   }
+
+  /** Conversations still held here (their JSONL files), oldest first. */
+  ids(): string[] {
+    try { return readdirSync(this.dir).filter(f => f.endsWith('.jsonl')).map(f => f.replace(/\.jsonl$/, '')).sort(); } catch { return []; }
+  }
+
+  /** Drop one conversation's file (it has been filed elsewhere, e.g. in the vault). */
+  remove(conversationId: string): void { rmSync(join(this.dir, `${conversationId}.jsonl`), { force: true }); }
+
+  get folder(): string { return this.dir; }
 
   /** Forget every past conversation (lasting facts live elsewhere and are kept). */
   clear(): void {

@@ -25,6 +25,8 @@ const browserApi: GhostApi = {
   dismissed: () => {},
   openSettings: () => window.open('../settings/index.html' + location.search, '_blank'),
   quit: () => {},
+  pickFolder: async title => window.prompt(`${title} (full path)`) || null,
+  openObsidian: url => { location.href = url; },
   onSettings: () => {},
   onSummon: () => {},
   onOrientation: () => {},

@@ -1,5 +1,6 @@
 import { EDGE_VOICES, ELEVENLABS_VOICES, type VoiceOption } from '../../shared/voices';
 import { SLOT_LABELS, THEMES, type BrainId, type Settings, type SlotModels } from '../../shared/settings';
+import type { CoreMessage } from '../../shared/protocol';
 import { bridge } from '../shared/bridge';
 import { CoreClient } from '../shared/coreClient';
 
@@ -39,6 +40,7 @@ function render(): void {
   for (const box of document.querySelectorAll<HTMLInputElement>('[data-hotkey]')) box.value = String(settings[box.dataset.hotkey as 'hotkey' | 'quitHotkey' | 'liveScreenHotkey']).replace(/\+/g, ' + ');
   (document.getElementById('liveScreenAutoOffMinutes') as HTMLInputElement).disabled = !settings.liveScreenAutoOff;
   renderBrains();
+  renderObsidian();
   renderThemes();
   renderVoices('elevenVoices', ELEVENLABS_VOICES, 'elevenlabs', settings.elevenLabsVoiceId);
   renderVoices('edgeVoices', EDGE_VOICES, 'edge', settings.edgeVoice);
@@ -179,6 +181,80 @@ clearBtn.addEventListener('click', () => {
   clearBtn.textContent = 'History cleared';
   setTimeout(() => { clearBtn.textContent = 'Clear conversation history'; }, 2500);
 });
+
+// ---- Obsidian
+type ObsidianStatusInfo = Extract<CoreMessage, { type: 'obsidian_status' }>['status'];
+let obsidian: ObsidianStatusInfo | null = null;
+const vaultSelect = document.getElementById('vaultSelect') as HTMLSelectElement;
+const PICK = '__pick__';
+core.on(m => { if (m.type === 'obsidian_status') { obsidian = m.status; renderObsidian(); } });
+core.send({ type: 'obsidian_status' });
+
+const setObsidian = (patch: Partial<Settings['obsidian']>) => void update({ obsidian: { ...settings.obsidian, ...patch } });
+
+vaultSelect.addEventListener('change', async () => {
+  if (vaultSelect.value !== PICK) { setObsidian({ vaultPath: vaultSelect.value || null }); return; }
+  const path = await bridge.pickFolder('Choose your Obsidian vault folder');
+  if (path) setObsidian({ vaultPath: path }); else renderObsidian();
+});
+const folderInput = document.getElementById('obsFolder') as HTMLInputElement;
+folderInput.addEventListener('change', () => setObsidian({ folder: folderInput.value }));
+for (const box of document.querySelectorAll<HTMLInputElement>('[data-obs]')) {
+  box.addEventListener('change', () => setObsidian({ [box.dataset.obs!]: box.checked } as Partial<Settings['obsidian']>));
+}
+document.getElementById('openObsidian')!.addEventListener('click', () => {
+  const name = obsidian?.connected?.name;
+  if (name) bridge.openObsidian(`obsidian://search?vault=${encodeURIComponent(name)}&query=${encodeURIComponent(`path:"${settings.obsidian.folder}/"`)}`);
+});
+document.getElementById('importHistory')!.addEventListener('click', () => core.send({ type: 'obsidian_import' }));
+const deleteBackupBtn = document.getElementById('deleteBackup') as HTMLButtonElement;
+let deleteArmed = 0;
+deleteBackupBtn.addEventListener('click', () => {
+  if (Date.now() - deleteArmed > 4000) { deleteArmed = Date.now(); deleteBackupBtn.textContent = 'Click again to delete'; return; }
+  core.send({ type: 'obsidian_delete_backup' });
+  deleteArmed = 0;
+  deleteBackupBtn.textContent = 'Delete it';
+});
+
+function renderObsidian(): void {
+  const current = settings.obsidian.vaultPath;
+  const vaults = obsidian?.vaults ?? [];
+  const options: [string, string][] = [['', 'Not connected: keep history on this PC']];
+  for (const v of vaults) options.push([v.path, `${v.name}${v.open ? ' (open in Obsidian)' : ''}`]);
+  if (current && !vaults.some(v => v.path === current)) options.push([current, current]);
+  options.push([PICK, 'Choose a folder…']);
+  vaultSelect.replaceChildren(...options.map(([value, label]) => new Option(label, value, false, value === (current ?? ''))));
+
+  const status = document.getElementById('vaultStatus')!;
+  const c = obsidian?.connected;
+  status.textContent = !current
+    ? (vaults.length ? 'Pick your vault to move Ghost\'s history into Obsidian. A backup of the local copy is kept.' : "Obsidian doesn't seem to be set up on this PC yet. You can still choose a vault folder.")
+    : obsidian?.error ?? (c ? `Connected to ${c.name} · ${c.notes.toLocaleString()} notes${c.waiting ? ' · some changes waiting to be written' : ''}` : 'Connecting…');
+
+  (document.getElementById('obsidianOptions') as HTMLElement).hidden = !current;
+  if (document.activeElement !== folderInput) folderInput.value = settings.obsidian.folder;
+  for (const box of document.querySelectorAll<HTMLInputElement>('[data-obs]')) box.checked = !!settings.obsidian[box.dataset.obs as keyof Settings['obsidian']];
+
+  const imp = obsidian?.import;
+  const importStatus = document.getElementById('importStatus')!;
+  importStatus.textContent = !imp ? '' : {
+    conversations: `Importing your history: ${imp.done} of ${imp.total} conversations…`,
+    facts: 'Importing what Ghost knows about you…',
+    paused: `Import paused at ${imp.done} of ${imp.total}: no brain was available to summarise. It continues automatically, or press Import.`,
+    finished: imp.total ? `Your earlier history is in Obsidian (${imp.total} conversation${imp.total === 1 ? '' : 's'}).` : '',
+  }[imp.phase];
+  (document.getElementById('importHistory') as HTMLElement).hidden = imp?.phase !== 'paused';
+
+  const backup = obsidian?.backupBytes;
+  (document.getElementById('backupRow') as HTMLElement).hidden = !current || backup == null;
+  if (backup != null) {
+    const size = backup > 1e6 ? `${(backup / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(backup / 1e3))} KB`;
+    document.getElementById('backupText')!.textContent = `The old local copy of your history is kept as a backup (${size}). Once you've checked your notes in Obsidian:`;
+  }
+  document.getElementById('clearHint')!.textContent = current
+    ? "Conversations are notes in Obsidian, so Ghost picks up after a restart and can recall past chats. Clearing moves Ghost's conversation notes to Obsidian's trash; your Memory notes are kept."
+    : 'Conversations are kept on this PC so Ghost can pick up after a restart and recall past chats. Clearing keeps the lasting facts it has learned about you.';
+}
 
 // Hotkey capture → Electron accelerator syntax (summon and quit share the same capture).
 for (const box of document.querySelectorAll<HTMLInputElement>('[data-hotkey]')) {

@@ -26,6 +26,10 @@ export type ClientMessage =
   | { type: 'toggle_live_screen' }
   // Settings asks which models a brain offers (for the Light / Balanced / Heavy dropdowns).
   | { type: 'list_models'; provider: string }
+  // Settings → Obsidian
+  | { type: 'obsidian_status' }
+  | { type: 'obsidian_import' }
+  | { type: 'obsidian_delete_backup' }
   // Sent by the MCP bridge process on behalf of the model.
   | { type: 'tool_call'; id: string; tool: string; args: Record<string, unknown> };
 
@@ -46,10 +50,19 @@ export type CoreMessage =
   | { type: 'provider'; active: string; primary: string; reason: 'limit' | 'auth' | 'missing' | 'other' | null }
   | { type: 'tool_result'; id: string; ok: boolean; result: string }
   | { type: 'models'; provider: string; models: { id: string; label: string }[]; error?: string }
+  | { type: 'obsidian_status'; status: ObsidianStatusInfo }
   // How long a reply took: ms from the message to its first text and to its first synthesised audio.
   | { type: 'timing'; turnId: string; firstTextMs?: number; firstAudioMs?: number };
 
 export type TtsEngineId = 'elevenlabs' | 'edge' | 'none';
+
+export interface ObsidianStatusInfo {
+  vaults: { path: string; name: string; open: boolean }[]; // vaults Obsidian knows about on this PC
+  connected: { name: string; path: string; notes: number; waiting: boolean } | null;
+  error?: string;
+  import: { done: number; total: number; phase: 'conversations' | 'facts' | 'finished' | 'paused' } | null;
+  backupBytes: number | null; // the pre-Obsidian local copy, until Aaron deletes it
+}
 
 export function parseMessage<T>(raw: unknown): T | null {
   try {

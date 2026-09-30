@@ -4,11 +4,23 @@ import type { Settings } from '../shared/settings';
 const FALLBACK = `You are {{assistant}}, {{user}}'s personal companion.`;
 
 /** Stable persona. The Claude CLI records the system prompt when the session starts, so keep per-turn data out of it. */
-export function buildPersona(personaPath: string, s: Pick<Settings, 'assistantName' | 'userName'>): string {
+export function buildPersona(personaPath: string, s: Pick<Settings, 'assistantName' | 'userName'> & { obsidian?: Settings['obsidian'] }): string {
   let template = FALLBACK;
   try { template = readFileSync(personaPath, 'utf8'); } catch { /* use fallback */ }
+  if (s.obsidian?.vaultPath) template += OBSIDIAN_SECTION(s.obsidian);
   return template.replaceAll('{{assistant}}', s.assistantName).replaceAll('{{user}}', s.userName);
 }
+
+/** Only when an Obsidian vault is connected (Settings → Obsidian). */
+const OBSIDIAN_SECTION = (o: Settings['obsidian']) => `
+
+## Obsidian
+
+- {{user}} keeps his notes in Obsidian, and your conversations and memory are saved there too (in the "${o.folder}" folder). \`recall\` searches them.
+${o.readVault ? `- For questions about his own notes, projects or plans, search his vault with \`vault_search\` and read notes with \`vault_read\`. Mention which note you found something in.
+` : ''}${o.writeVault ? `- You can add to or create notes with \`vault_write\` when he asks ("add this to my Ideas note"). He confirms each write, so say what you'll write. Prefer appending to existing notes.
+` : ''}- When you looked at a screenshot to answer, end your reply with a brief description of what was on the screen in a <screen>…</screen> tag, e.g. <screen>VS Code, a TypeScript error in main.ts</screen>. It is saved in the transcript, never shown or spoken.
+`;
 
 /** Per-turn context goes in the user message: current time, relevant memories. */
 export function buildTurnPrompt(

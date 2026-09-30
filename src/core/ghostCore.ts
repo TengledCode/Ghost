@@ -9,8 +9,14 @@ import type { ProviderId, Settings } from '../shared/settings';
 import { classify, describe } from './approvals/classify';
 import { pickGreeting } from './greeting';
 import { isPureCommand, parseScreenCommand } from './liveScreen';
-import { ConversationLog } from './memory/conversations';
-import { MemoryStore } from './memory/store';
+import { ConversationLog, type HistoryStore } from './memory/conversations';
+import { MemoryStore, type FactStore } from './memory/store';
+import { ObsidianConnection } from './obsidian/connection';
+import { backupInfo } from './obsidian/importer';
+import { detectVaults } from './obsidian/vault';
+import type { ObsidianStatusInfo } from '../shared/protocol';
+import { ScreenNoteFilter } from './screenNoteFilter';
+import { actionLabel, isCommandTurn } from './turnKind';
 import { OpenerFilter } from './openerFilter';
 import { buildPersona, buildTurnPrompt } from './persona';
 import { PresenceStore } from './presence';
@@ -47,6 +53,7 @@ interface Client { ws: WebSocket; role: ClientRole | null }
 interface Turn {
   id: string; abort: AbortController; spoken: number; audioSent: number; audioDone: boolean; textDone: boolean;
   startedAt: number; firstText?: number; firstAudio?: number;
+  tools: string[]; actions: string[]; // tools the brain used, and what Ghost did on the PC
 }
 
 const PRIMARY_RETRY_MS = 15 * 60_000; // while fallen back, try the primary again at most this often
@@ -61,7 +68,8 @@ export class GhostCore {
   private state: GhostState = 'idle';
   private turn: Turn | null = null;
   private sessionId: string | undefined;
-  readonly log: ConversationLog;
+  /** Conversations: in the Obsidian vault when one is connected, otherwise on this PC. */
+  log!: HistoryStore;
   private approvals = new Map<string, (ok: boolean) => void>();
   private idleTimer: NodeJS.Timeout | null = null;
   private liveScreen = false; // always off at start: never silently watching after a restart
@@ -69,9 +77,11 @@ export class GhostCore {
   private liveOffAt: number | undefined;
   private fallback: { reason: 'limit' | 'auth' | 'missing' | 'other'; retryAt: number; active: ProviderId } | null = null;
   private speechQueue: Promise<void> = Promise.resolve();
-  readonly memory: MemoryStore;
+  memory!: FactStore;
   readonly reminders: ReminderScheduler;
-  private executor: ToolExecutor;
+  private executor!: ToolExecutor;
+  private obsidian: ObsidianConnection | null = null;
+  private obsidianKey = '';
   private workspace: string;
   private personaFile: string;
   private mcpConfigPath: string;
@@ -86,11 +96,9 @@ export class GhostCore {
     this.personaFile = join(o.dataDir, 'persona.generated.md');
     this.mcpConfigPath = join(o.dataDir, 'ghost-mcp.json');
     mkdirSync(this.workspace, { recursive: true });
-    this.memory = new MemoryStore(join(o.dataDir, 'memory.json'));
     this.reminders = new ReminderScheduler(join(o.dataDir, 'reminders.json'), r => this.fireReminder(r.id, r.text));
-    this.log = new ConversationLog(o.dataDir);
+    this.connectStores();
     this.sessionId = this.log.current.claudeSessionId; // resume the Claude conversation after a restart
-    this.executor = new ToolExecutor(o.host, this.memory, this.reminders, this.log);
     this.presence = new PresenceStore(join(o.dataDir, 'presence.json'));
     this.agy = agyPaths(join(o.dataDir, 'agy'));
     o.tts.onFallback = reason => this.broadcast({ type: 'notice', level: 'info', text: `Voice switched to Edge (${reason}).` });
@@ -108,12 +116,77 @@ export class GhostCore {
     this.port = (this.wss!.address() as AddressInfo).port;
     this.wss!.on('connection', ws => this.onConnection(ws));
     this.writeCliConfig();
+    this.obsidian?.start();
     this.reminders.start();
     // Pick up where we left off, or file away a conversation that went quiet while Ghost was closed.
     if (this.log.isStale(SESSION_IDLE_MS)) this.rotateConversation();
     this.warmBrains();
     this.presenceTimer = setInterval(() => this.presence.update({ lastSeen: Date.now() }), 5 * 60_000);
     this.presenceTimer.unref?.();
+  }
+
+  // ---------------------------------------------------------------- Obsidian
+
+  /** History and memory live in the Obsidian vault when one is chosen in Settings, otherwise locally. */
+  private connectStores(): void {
+    const s = this.o.settings();
+    this.obsidian?.stop();
+    this.obsidian = null;
+    const buffer = new ConversationLog(this.o.dataDir);
+    if (s.obsidian.vaultPath) {
+      this.obsidian = new ObsidianConnection(s.obsidian.vaultPath, {
+        dataDir: this.o.dataDir, buffer, settings: this.o.settings,
+        ask: prompt => this.quickAsk(prompt),
+        notify: (level, text) => this.notify(level, text),
+        onStatus: () => this.broadcast({ type: 'obsidian_status', status: this.obsidianStatus() }),
+      });
+      this.log = this.obsidian.conversations;
+      this.memory = this.obsidian.memory;
+    } else {
+      this.log = buffer;
+      this.memory = new MemoryStore(join(this.o.dataDir, 'memory.json'));
+    }
+    this.obsidianKey = `${s.obsidian.vaultPath}|${s.obsidian.folder}`;
+    this.executor = new ToolExecutor(this.o.host, this.memory, this.reminders, this.log, this.obsidian?.tools);
+  }
+
+  /** Settings → Obsidian changed: switch vault or folder, and refresh the persona's Obsidian section. */
+  obsidianChanged(): void {
+    const s = this.o.settings();
+    if (`${s.obsidian.vaultPath}|${s.obsidian.folder}` !== this.obsidianKey) {
+      this.connectStores();
+      this.obsidian?.start();
+    }
+    this.writeCliConfig();
+    this.broadcast({ type: 'obsidian_status', status: this.obsidianStatus() });
+  }
+
+  private obsidianStatus(): ObsidianStatusInfo {
+    return this.obsidian?.status() ?? { vaults: detectVaults(), connected: null, import: null, backupBytes: backupInfo(this.o.dataDir)?.bytes ?? null };
+  }
+
+  /** One short model call for housekeeping (filing notes), on the fast slot of whichever brain answers. */
+  private async quickAsk(prompt: string): Promise<string> {
+    const s = this.o.settings();
+    const order = [s.provider, s.fallbackProvider].filter((p, i, a): p is ProviderId => !!p && a.indexOf(p) === i);
+    let lastError = 'no brain available';
+    for (const pid of order) {
+      const provider = this.o.providers[pid];
+      if (!provider) continue;
+      let text = '';
+      let failed = false;
+      try {
+        for await (const ev of provider.send({
+          prompt, model: modelFor(pid, 'fast', s.brainModels), persona: '', personaFile: this.personaFile, mcpConfigPath: this.mcpConfigPath,
+          workspace: this.workspace, signal: AbortSignal.timeout(180_000), oneShot: true,
+        })) {
+          if (ev.type === 'done') text = ev.text;
+          if (ev.type === 'error') { failed = true; lastError = ev.message; }
+        }
+      } catch (e) { failed = true; lastError = String((e as Error).message ?? e); }
+      if (!failed && text.trim()) return text;
+    }
+    throw new Error(lastError);
   }
 
   /** Start the brains' CLIs now, so the first message doesn't wait for them to boot. */
@@ -144,6 +217,7 @@ export class GhostCore {
     this.clearLiveTimer();
     if (this.presenceTimer) clearInterval(this.presenceTimer);
     this.presence.update({ lastSeen: Date.now() });
+    this.obsidian?.stop();
     this.stopBrains();
     this.turn?.abort.abort();
     this.reminders.stop();
@@ -220,8 +294,13 @@ export class GhostCore {
         this.memory.clearEpisodes();
         this.setSession(undefined);
         this.resetGemini();
-        this.broadcast({ type: 'notice', level: 'info', text: 'Conversation history cleared. Lasting facts are kept.' });
+        this.broadcast({ type: 'notice', level: 'info', text: this.obsidian
+          ? "Conversation notes moved to Obsidian's trash. Your Memory notes are kept."
+          : 'Conversation history cleared. Lasting facts are kept.' });
         return;
+      case 'obsidian_status': this.send(client, { type: 'obsidian_status', status: this.obsidianStatus() }); return;
+      case 'obsidian_import': void this.obsidian?.importHistory(); return;
+      case 'obsidian_delete_backup': this.obsidian?.deleteBackup(); this.broadcast({ type: 'obsidian_status', status: this.obsidianStatus() }); return;
       case 'voice_preview': return this.voicePreview(msg.engine, msg.voice, msg.text);
       case 'list_models': {
         const provider = this.o.providers[msg.provider as ProviderId];
@@ -308,7 +387,7 @@ export class GhostCore {
     if (screenCmd === 'on' && !this.liveScreen) this.setLiveScreen(true, false);
     if (this.liveScreen) this.armLiveTimer(); // the auto-off timer counts quiet time, so a message resets it
 
-    const turn: Turn = { id: randomUUID(), abort: new AbortController(), spoken: 0, audioSent: 0, audioDone: false, textDone: false, startedAt: Date.now() };
+    const turn: Turn = { id: randomUUID(), abort: new AbortController(), spoken: 0, audioSent: 0, audioDone: false, textDone: false, startedAt: Date.now(), tools: [], actions: [] };
     this.turn = turn;
     this.setState('thinking');
     this.presence.update({ lastSeen: Date.now() });
@@ -330,6 +409,9 @@ export class GhostCore {
     if (this.fallback && Date.now() < this.fallback.retryAt && order.length > 1) order = order.slice(1);
     const splitter = new SentenceSplitter(true);
     const opener = new OpenerFilter(s.userName); // no "Certainly, Aaron." before the answer
+    const screenNote = new ScreenNoteFilter(); // "<screen>…</screen>" goes to the Obsidian transcript, not the bubble
+    const clean = (t: string) => screenNote.push(opener.push(t));
+    const flushText = () => { const rest = screenNote.push(opener.flush()); return rest + screenNote.flush(); };
     let reply = '';
     let sawText = false;
     const emit = (text: string) => {
@@ -357,14 +439,15 @@ export class GhostCore {
             sawText = true;
             this.markText(turn);
             if (this.state === 'searching') this.setState('thinking');
-            emit(opener.push(ev.text));
+            emit(clean(ev.text));
           } else if (ev.type === 'tool_start') {
+            turn.tools.push(ev.name);
             this.setState('searching', TOOL_LABEL[ev.name] ?? prettyTool(ev.name));
           } else if (ev.type === 'tool_end') {
             if (this.state === 'searching') this.setState('thinking');
           } else if (ev.type === 'done') {
             if (ev.sessionId && pid === 'claude') this.setSession(ev.sessionId);
-            if (!sawText && ev.text) { sawText = true; this.markText(turn); emit(opener.push(ev.text)); }
+            if (!sawText && ev.text) { sawText = true; this.markText(turn); emit(clean(ev.text)); }
           } else if (ev.type === 'error') {
             failed = ev;
           }
@@ -379,11 +462,12 @@ export class GhostCore {
           this.broadcast({ type: 'provider', active: pid, primary: s.provider, reason: null });
           this.broadcast({ type: 'notice', level: 'info', text: `Back on ${brainName(pid)}.` });
         }
-        emit(opener.flush());
+        emit(flushText());
         for (const seg of splitter.flush()) this.queueSpeech(turn, seg);
         this.googleInSync = pid === 'gemini';
-        this.log.append('user', message);
-        this.log.append('assistant', reply, { provider: pid, model: model || 'default' });
+        const command = isCommandTurn(message, turn.tools, turn.actions, reply);
+        this.log.append('user', message, { command });
+        this.log.append('assistant', reply, { provider: pid, model: model || 'default', command, actions: turn.actions, screen: screenNote.screen });
         this.broadcast({ type: 'turn_end', turnId: turn.id, text: reply, provider: pid, model: model || 'default' });
         turn.textDone = true;
         this.markText(turn);
@@ -392,7 +476,7 @@ export class GhostCore {
       }
       // Fall back to the next provider only if nothing has been said yet.
       if (sawText || attempt === order.length - 1) {
-        emit(opener.flush());
+        emit(flushText());
         this.reportError(turn, pid, failed);
         return;
       }
@@ -493,6 +577,8 @@ export class GhostCore {
     try {
       const result = await this.executor.run(tool as ToolName, args);
       reply(true, result);
+      const label = actionLabel(tool, args);
+      if (label && this.turn) this.turn.actions.push(label);
     } catch (e) {
       reply(false, `Failed: ${String((e as Error).message ?? e)}`);
     } finally {
@@ -613,8 +699,9 @@ export class GhostCore {
     this.say(line);
   }
 
-  /** Condense a finished conversation into a short episode for long-term memory, using the cheapest tier. */
+  /** File a finished conversation: as a note in Obsidian, or (locally) as a short episode summary. */
   private async archiveConversation(conversationId: string): Promise<void> {
+    if (this.obsidian) { await this.obsidian.close(conversationId); return; }
     const s = this.o.settings();
     const lines = this.log.lines(conversationId).map(l => `${l.role === 'user' ? s.userName : s.assistantName}: ${l.text}`);
     if (lines.length < 6) return;

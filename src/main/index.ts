@@ -1,4 +1,4 @@
-import { app, BrowserWindow, globalShortcut, ipcMain, Menu, nativeImage, shell, Tray } from 'electron';
+import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, shell, Tray } from 'electron';
 import { join } from 'node:path';
 import { GhostCore } from '../core/ghostCore';
 import { ClaudeLiveProvider } from '../core/providers/claudeLive';
@@ -65,6 +65,12 @@ app.whenReady().then(async () => {
   ipcMain.on('ghost:dismissed', () => overlay.dismissed());
   ipcMain.on('ghost:open-settings', () => openSettingsWindow());
   ipcMain.on('ghost:quit', () => app.quit());
+  ipcMain.handle('ghost:pick-folder', async (_e, title: string) => {
+    const r = await dialog.showOpenDialog({ title, properties: ['openDirectory'] });
+    return r.canceled ? null : r.filePaths[0] ?? null;
+  });
+  // Only Obsidian links (obsidian://…) from the Settings window.
+  ipcMain.on('ghost:open-obsidian', (_e, url: string) => { if (/^obsidian:\/\//.test(url)) void shell.openExternal(url); });
 
   // ---- Hotkey, login item, fullscreen
   const bindHotkeys = (s: Settings) => {
@@ -101,6 +107,7 @@ app.whenReady().then(async () => {
     if (next.hideOnFullscreen !== prev.hideOnFullscreen) { fullscreen.stop(); overlay.setFullscreenHidden(false); if (next.hideOnFullscreen) fullscreen.start(); }
     if (next.size !== prev.size || next.corner !== prev.corner || next.cornerDisplayId !== prev.cornerDisplayId || next.customPosition !== prev.customPosition) overlay.place();
     if (next.userName !== prev.userName || next.assistantName !== prev.assistantName) core.writeCliConfig();
+    if (JSON.stringify(next.obsidian) !== JSON.stringify(prev.obsidian)) core.obsidianChanged();
     overlay.win.webContents.send('ghost:settings', next);
   });
 

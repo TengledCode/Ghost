@@ -15,14 +15,28 @@ export function tokens(text: string): string[] {
   return (text.toLowerCase().match(/[\p{L}\p{N}']+/gu) ?? []).filter(t => t.length > 1 && !STOP.has(t));
 }
 
-export class MemoryStore {
+export type MemoryTopic = 'About me' | 'People' | 'Preferences' | 'Plans & routines' | 'Other';
+export const MEMORY_TOPICS: MemoryTopic[] = ['About me', 'People', 'Preferences', 'Plans & routines', 'Other'];
+
+/** Lasting facts: kept locally (below) or as Memory notes in the Obsidian vault (vaultMemory.ts). */
+export interface FactStore {
+  remember(text: string, topic?: MemoryTopic): Fact;
+  forget(idOrText: string): number;
+  addEpisode(summary: string): void;
+  recall(query: string, limit?: number): string[];
+  contextFor(message: string, coreLimit?: number): string[];
+  list(): Fact[];
+  clearEpisodes(): void;
+}
+
+export class MemoryStore implements FactStore {
   private data: MemoryFile = { facts: [], episodes: [] };
 
   constructor(private readonly file: string) {
     try { this.data = { facts: [], episodes: [], ...JSON.parse(readFileSync(file, 'utf8')) }; } catch { /* first run */ }
   }
 
-  remember(text: string): Fact {
+  remember(text: string, _topic?: MemoryTopic): Fact {
     const clean = text.trim();
     const dup = this.data.facts.find(f => f.text.toLowerCase() === clean.toLowerCase());
     if (dup) return dup;

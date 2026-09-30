@@ -58,7 +58,20 @@ The ElevenLabs free tier gives about 20 minutes of speech a month. When it runs 
 
 ## 5. Where things live
 
-`%APPDATA%\Ghost\`: `settings.json`, `secrets.json` (ElevenLabs key, encrypted with your Windows login), and `data\` (`memory.json`, `reminders.json`, and the CLI working folder). Delete `data\memory.json` to wipe Ghost's memory.
+`%APPDATA%\Ghost\` holds:
+- `settings.json`;
+- `secrets.json` (ElevenLabs key, encrypted with your Windows login);
+- `data\` (reminders, the open conversation's working copy, and the CLI working folder).
+
+**With Obsidian connected** (Settings → Obsidian → Vault), your history lives in the vault's `Ghost` folder:
+- `Ghost/Conversations/<month>/<date> <title>.md`: one note per conversation, linked from that day's Daily Note.
+- `Ghost/Memory/*.md`: what Ghost knows, by topic. Edit or delete bullets freely.
+
+Quick commands ("open Spotify") don't get notes; they appear as a line under **Ghost** in the Daily Note.
+
+**The first time you connect,** Ghost moves your existing history into the vault and keeps the old local copy as a backup. Delete it from Settings once you've checked your notes.
+
+**Without Obsidian,** everything stays in `data\` (`conversations\`, `memory.json`).
 
 ## 6. Troubleshooting
 
@@ -99,4 +112,10 @@ The ElevenLabs free tier gives about 20 minutes of speech a month. When it runs 
 - [ ] Replies start with the answer: no "Very good" / "Certainly, Aaron." openers, and no "Noted." while it thinks
 - [ ] Bluetooth: Settings → Voice → Test first word, stay quiet, and "one" is heard in full; no hum from the keep-alive tone
 - [ ] Settings → Brain → Show reply timings: the bubble shows "text · voice · heard" times. The second message of a session answers noticeably faster than a cold start used to
+- [ ] Obsidian: Settings → Obsidian → pick your vault. The import message appears, and `Ghost/Conversations` and `Ghost/Memory` fill in. Check:
+  - Properties, [[links]] to your existing notes (they show in backlinks and the graph) and tags;
+  - the Ghost section in today's Daily Note;
+  - after checking, press "Delete it" for the old local copy.
+- [ ] Obsidian: have a real conversation, then press "Start a new conversation". The note is renamed to a proper title with a summary; "open notepad" on its own only adds a Daily Note line
+- [ ] Obsidian: change a bullet in `Ghost/Memory/People.md`, then ask Ghost about it (it knows the new version); "add a note to my Ideas note: …" shows a confirm card
 - [ ] Provider switch: if Claude hits its limit, Ghost says so once, answers with Gemini, and shows an amber "on Gemini · Claude limit reached" chip until Claude is back

@@ -16,6 +16,8 @@ const api = {
   dismissed: () => ipcRenderer.send('ghost:dismissed'),
   openSettings: () => ipcRenderer.send('ghost:open-settings'),
   quit: () => ipcRenderer.send('ghost:quit'),
+  pickFolder: (title: string): Promise<string | null> => ipcRenderer.invoke('ghost:pick-folder', title),
+  openObsidian: (url: string) => ipcRenderer.send('ghost:open-obsidian', url),
   onSettings: (cb: (s: Settings) => void): void => { ipcRenderer.on('ghost:settings', (_e, s) => cb(s)); },
   onSummon: (cb: () => void): void => { ipcRenderer.on('ghost:summon', () => cb()); },
   onOrientation: (cb: (c: Corner) => void): void => { ipcRenderer.on('ghost:orientation', (_e, c) => cb(c)); },

@@ -1,8 +1,9 @@
 import { spawn } from 'node:child_process';
 import { appendFile, mkdir, readdir, writeFile } from 'node:fs/promises';
 import { basename, dirname, extname, isAbsolute, join } from 'node:path';
-import type { ConversationLog } from '../memory/conversations';
-import type { MemoryStore } from '../memory/store';
+import type { HistoryStore } from '../memory/conversations';
+import type { FactStore, MemoryTopic } from '../memory/store';
+import type { VaultTools } from '../obsidian/vaultTools';
 import type { ReminderScheduler } from '../reminders/scheduler';
 import type { ToolName } from './definitions';
 
@@ -14,6 +15,7 @@ export interface Host {
 }
 
 const isWin = process.platform === 'win32';
+const NO_VAULT = "Obsidian isn't connected. Aaron can choose his vault in Settings → Obsidian.";
 const psQuote = (s: string) => `'${s.replace(/'/g, "''")}'`;
 
 export function runPowerShell(script: string, timeoutMs = 60_000): Promise<{ code: number | null; out: string }> {
@@ -56,9 +58,10 @@ async function findStartMenuShortcut(name: string): Promise<string | null> {
 export class ToolExecutor {
   constructor(
     private readonly host: Host,
-    private readonly memory: MemoryStore,
+    private readonly memory: FactStore,
     private readonly reminders: ReminderScheduler,
-    private readonly history?: Pick<ConversationLog, 'search'>,
+    private readonly history?: Pick<HistoryStore, 'search'>,
+    private readonly vault?: VaultTools,
   ) {}
 
   async run(tool: ToolName, a: Record<string, any>): Promise<string> {
@@ -124,7 +127,7 @@ export class ToolExecutor {
       case 'cancel_reminder':
         return this.reminders.cancel(String(a.id)) ? 'Cancelled.' : 'No reminder with that id.';
       case 'remember': {
-        const f = this.memory.remember(String(a.fact));
+        const f = this.memory.remember(String(a.fact), a.topic as MemoryTopic | undefined);
         return `Remembered (${f.id}).`;
       }
       case 'recall': {
@@ -137,6 +140,13 @@ export class ToolExecutor {
       case 'forget': {
         const n = this.memory.forget(String(a.match));
         return n ? `Forgot ${n} item(s).` : 'Nothing matched.';
+      }
+      case 'vault_search': return this.vault ? this.vault.search(String(a.query)) : NO_VAULT;
+      case 'vault_read': return this.vault ? this.vault.read(String(a.path)) : NO_VAULT;
+      case 'vault_write': {
+        if (!this.vault) return NO_VAULT;
+        const mode = ['create', 'append', 'replace'].includes(String(a.mode)) ? a.mode as 'create' | 'append' | 'replace' : 'append';
+        return this.vault.write(String(a.path), String(a.content), mode);
       }
     }
   }

@@ -82,6 +82,30 @@
     </section>
 
     <section>
+      <h2>Obsidian</h2>
+      <p class="hint">Keep Ghost's conversations and memory in your Obsidian vault, as notes you can read, search, link and edit. Ghost follows your edits.</p>
+      <label>Vault <select id="vaultSelect"></select></label>
+      <p class="hint" id="vaultStatus"></p>
+      <div id="obsidianOptions" class="brain">
+        <label>Ghost's folder <input type="text" id="obsFolder" spellcheck="false" /></label>
+        <label class="check"><input type="checkbox" data-obs="dailyLinks" /> Link each conversation from that day's Daily Note</label>
+        <label class="check"><input type="checkbox" data-obs="linkNotes" /> Link names and topics to your existing notes</label>
+        <label class="check"><input type="checkbox" data-obs="topicTags" /> Add topic tags, reusing the tags you already use</label>
+        <label class="check"><input type="checkbox" data-obs="readVault" /> Let Ghost search and read your notes</label>
+        <label class="check"><input type="checkbox" data-obs="writeVault" /> Let Ghost add to and create notes (it asks you each time)</label>
+        <div class="row-buttons">
+          <button type="button" id="openObsidian">Show Ghost's notes in Obsidian</button>
+          <button type="button" id="importHistory" hidden>Import existing history</button>
+        </div>
+        <p class="hint" id="importStatus"></p>
+        <div class="row-buttons" id="backupRow" hidden>
+          <span class="hint" id="backupText"></span>
+          <button type="button" id="deleteBackup" class="danger">Delete it</button>
+        </div>
+      </div>
+    </section>
+
+    <section>
       <h2>Voice</h2>
       <label class="check"><input type="checkbox" data-key="voiceEnabled" /> Speak replies</label>
       <label>Engine

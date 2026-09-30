@@ -41,10 +41,30 @@ export const TOOL_DEFS = {
   cancel_reminder: { description: 'Cancel a reminder by id.', shape: { id: z.string() } },
   remember: {
     description: 'Store a lasting fact about Aaron (preferences, people, plans, routines). Keep it short and self-contained.',
-    shape: { fact: z.string() },
+    shape: {
+      fact: z.string(),
+      topic: z.enum(['About me', 'People', 'Preferences', 'Plans & routines', 'Other']).optional()
+        .describe('"People" for facts about other people; "Plans & routines" for plans, schedules and habits'),
+    },
   },
   recall: { description: 'Search long-term memory: stored facts, summaries of past conversations, and what was actually said in them (with dates). Use it for questions like "what did we decide about X".', shape: { query: z.string() } },
   forget: { description: 'Delete memories by id or matching text.', shape: { match: z.string() } },
+  vault_search: {
+    description: "Search Aaron's Obsidian notes by keywords. Returns note paths with a matching line.",
+    shape: { query: z.string() },
+  },
+  vault_read: {
+    description: "Read one of Aaron's Obsidian notes, by path (as returned by vault_search) or note title.",
+    shape: { path: z.string() },
+  },
+  vault_write: {
+    description: "Create a note, add to the end of one, or replace one, in Aaron's Obsidian vault. Always requires his confirmation. Prefer append for existing notes.",
+    shape: {
+      path: z.string().describe('Note path in the vault, e.g. "Ideas.md" or "Projects/Ghost.md", or an existing note title'),
+      content: z.string().describe('Markdown to write'),
+      mode: z.enum(['create', 'append', 'replace']),
+    },
+  },
 } as const;
 
 export type ToolName = keyof typeof TOOL_DEFS;

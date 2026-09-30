@@ -30,6 +30,21 @@ export const THEMES: Record<string, ThemeColors> = {
   frost: { shell: '#eef4f8', edge: '#9fe8ff', eye: '#bff4ff' },
 };
 
+/** Obsidian: where Ghost keeps its conversations and memory (see src/core/obsidian). */
+export interface ObsidianSettings {
+  vaultPath: string | null; // null = keep everything locally, as before
+  folder: string; // Ghost's folder inside the vault
+  dailyLinks: boolean; // link each conversation from that day's Daily Note
+  linkNotes: boolean; // turn mentions of existing notes into [[links]]
+  topicTags: boolean; // add topic tags (reusing the vault's own) besides #ghost
+  readVault: boolean; // Ghost may search and read the rest of the vault
+  writeVault: boolean; // Ghost may create and edit notes (always with confirmation)
+}
+
+export const DEFAULT_OBSIDIAN: ObsidianSettings = {
+  vaultPath: null, folder: 'Ghost', dailyLinks: true, linkNotes: true, topicTags: true, readVault: true, writeVault: true,
+};
+
 export interface Settings {
   userName: string;
   assistantName: string;
@@ -58,6 +73,7 @@ export interface Settings {
   modelTier: ModelTier;
   brainModels: Record<BrainId, SlotModels>;
   showTimings: boolean; // show how long each reply took under the bubble
+  obsidian: ObsidianSettings;
   // Voice
   voiceEnabled: boolean;
   ttsEngine: Exclude<TtsEngineId, 'none'>;
@@ -97,6 +113,7 @@ export const DEFAULT_SETTINGS: Settings = {
   modelTier: 'auto',
   brainModels: DEFAULT_BRAIN_MODELS,
   showTimings: false,
+  obsidian: DEFAULT_OBSIDIAN,
   voiceEnabled: true,
   ttsEngine: 'elevenlabs',
   elevenLabsVoiceId: 'TX3LPaxmHKxFdv7VOQHJ', // Liam; change in settings after auditioning
@@ -126,6 +143,8 @@ export function mergeSettings(stored: Partial<Settings> | null | undefined): Set
     gemini: { ...DEFAULT_BRAIN_MODELS.gemini, ...saved.gemini },
   };
   if (merged.fallbackProvider === merged.provider) merged.fallbackProvider = null; // a brain can't be its own backup
+  merged.obsidian = { ...DEFAULT_OBSIDIAN, ...(stored?.obsidian ?? {}) };
+  merged.obsidian.folder = merged.obsidian.folder.replace(/[\\/:*?"<>|]+/g, '').trim() || 'Ghost';
   return merged;
 }
 

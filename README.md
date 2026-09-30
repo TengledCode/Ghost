@@ -20,7 +20,12 @@ It runs on **your existing subscriptions, not API keys.** Ghost drives the offic
   - **Looks:** every state has its own choreography, with five colour themes plus a custom one and a "classic orb" skin.
   - **Performance:** adaptive render quality.
 - **Sees your screen when you want it to.** Live screen view (Ctrl+Alt+V, or "watch my screen") attaches a snapshot of the monitor under your cursor to each message, with Ghost left out of the picture and a LIVE tag while it's on. There's an optional auto-off timer. "What's on my screen?" takes a one-off look.
-- **Remembers.** Conversations survive restarts (it resumes the same Claude session), and past chats stay searchable on your PC, so you can ask what you decided last week. Settings can clear the history while keeping the facts it has learned.
+- **Remembers, in Obsidian.** Connect your vault and Ghost's history lives there as notes:
+  - **Conversations:** each gets a note with a title, summary, key points and the full transcript (folded), linked from that day's Daily Note.
+  - **Links, tags and Properties:** people and topics link to your existing notes, and tags reuse the ones you already have.
+  - **Memory notes:** what Ghost knows about you is filed by topic (About me, People, Preferences, Plans & routines). Edit a bullet and Ghost follows.
+  - **Your other notes:** Ghost can search and read them, and add to them after you confirm.
+  - **Continuity:** conversations survive restarts either way, and without a vault everything stays on your PC as before.
 - **Stays out of the way.** Click-through when idle, corner snap or free drag across monitors, size and opacity sliders, auto-hide over fullscreen games (voice and reminders keep working), a `Ctrl+Space` summon hotkey, and start at login.
 - **Safe by default.** Opening apps, URLs, searching, reminders and memory run instantly. Running commands, writing, deleting or closing apps shows a confirm card (auto-denied after 60 s).
 - **Ready for a phone later.** The brain (core) and the UI talk over a token-protected local WebSocket, so a phone client can later speak the same protocol (see `src/shared/protocol.ts`).
