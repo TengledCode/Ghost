@@ -1,4 +1,5 @@
 import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, shell, Tray } from 'electron';
+import { execFileSync, spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { GhostCore } from '../core/ghostCore';
 import { ClaudeLiveProvider } from '../core/providers/claudeLive';
@@ -14,6 +15,7 @@ import { OverlayWindow } from './overlayWindow';
 import { SettingsStore } from './settingsStore';
 import { captureScreen } from './screenCapture';
 import { openSettingsWindow } from './settingsWindow';
+import { readBuildInfo, Updater, type BuildInfo } from './updater';
 
 if (!app.requestSingleInstanceLock()) app.quit();
 app.setAppUserModelId('com.aaron.ghost');
@@ -111,6 +113,27 @@ app.whenReady().then(async () => {
     overlay.win.webContents.send('ghost:settings', next);
   });
 
+  // ---- Updates (Settings → Updates): from the folder this copy was built from
+  const updater = new Updater({
+    info: app.isPackaged ? readBuildInfo(join(__dirname, '..', 'build-info.json')) : sourceInfo(app.getAppPath()),
+    version: app.getVersion(),
+    installable: app.isPackaged && process.platform === 'win32',
+    logFile: join(app.getPath('userData'), 'data', 'update.log'),
+    install: installer => {
+      // Let Ghost quit first, then install silently and start the new version.
+      spawn('cmd.exe', ['/d', '/s', '/c', `"ping -n 3 127.0.0.1 >nul & start "" "${installer}" /S --force-run"`], {
+        detached: true, stdio: 'ignore', windowsHide: true, windowsVerbatimArguments: true,
+      }).unref();
+      setTimeout(() => app.quit(), 300);
+    },
+  });
+  updater.on('status', status => { for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send('ghost:update', status); });
+  ipcMain.handle('ghost:update-status', () => updater.current);
+  ipcMain.handle('ghost:update-check', () => updater.check());
+  ipcMain.on('ghost:update-run', () => { void updater.update(); });
+  setTimeout(() => void updater.check(), 60_000).unref();
+  setInterval(() => void updater.check(), 4 * 3600_000).unref();
+
   // ---- Tray
   const icon = nativeImage.createFromPath(resource('resources', 'tray.png'));
   tray = new Tray(icon.isEmpty() ? nativeImage.createEmpty() : icon);
@@ -130,3 +153,11 @@ app.whenReady().then(async () => {
 
 // A tray app: closing windows doesn't quit.
 app.on('window-all-closed', () => { /* keep running in the tray */ });
+
+/** Running from source (npm run dev): the repo itself is the source. */
+function sourceInfo(dir: string): BuildInfo | null {
+  try {
+    const git = (...args: string[]) => execFileSync('git', args, { cwd: dir, encoding: 'utf8' }).trim();
+    return { sourceDir: dir, branch: git('rev-parse', '--abbrev-ref', 'HEAD'), commit: git('rev-parse', 'HEAD') };
+  } catch { return null; }
+}

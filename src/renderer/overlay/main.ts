@@ -368,6 +368,11 @@ input.addEventListener('keydown', e => {
 });
 
 form.querySelector('.gear')!.addEventListener('click', () => bridge.openSettings());
+// A quiet dot on the gear when an update is ready (details in Settings → Updates).
+const gear = form.querySelector('.gear') as HTMLElement;
+const showUpdate = (s: { state: string }) => { gear.classList.toggle('has-update', s.state === 'available'); gear.title = s.state === 'available' ? 'Settings · an update is ready' : 'Settings'; };
+bridge.onUpdate(showUpdate);
+void bridge.updateStatus().then(showUpdate);
 
 // ------------------------------------------------------------------ approvals
 

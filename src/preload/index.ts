@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { Corner, Settings } from '../shared/settings';
+import type { UpdateStatus } from '../main/updater';
 
 export interface Bootstrap { url: string; token: string; settings: Settings; hasElevenLabsKey: boolean; orientation?: Corner }
 
@@ -18,6 +19,10 @@ const api = {
   quit: () => ipcRenderer.send('ghost:quit'),
   pickFolder: (title: string): Promise<string | null> => ipcRenderer.invoke('ghost:pick-folder', title),
   openObsidian: (url: string) => ipcRenderer.send('ghost:open-obsidian', url),
+  updateStatus: (): Promise<UpdateStatus> => ipcRenderer.invoke('ghost:update-status'),
+  checkForUpdates: (): Promise<UpdateStatus> => ipcRenderer.invoke('ghost:update-check'),
+  runUpdate: () => ipcRenderer.send('ghost:update-run'),
+  onUpdate: (cb: (s: UpdateStatus) => void): void => { ipcRenderer.on('ghost:update', (_e, s) => cb(s)); },
   onSettings: (cb: (s: Settings) => void): void => { ipcRenderer.on('ghost:settings', (_e, s) => cb(s)); },
   onSummon: (cb: () => void): void => { ipcRenderer.on('ghost:summon', () => cb()); },
   onOrientation: (cb: (c: Corner) => void): void => { ipcRenderer.on('ghost:orientation', (_e, c) => cb(c)); },

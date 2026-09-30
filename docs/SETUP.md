@@ -37,6 +37,12 @@ npm run dist:win     # creates dist\Ghost Setup 0.1.0.exe
 
 Run the installer. "Start with Windows" is on by default (settings → Behaviour). Login-start only applies to the installed app, not `npm run dev`.
 
+**Updating later:** Settings → Updates. Ghost checks every few hours, and a small dot on the ⚙ gear means an update is ready. Press **Update Ghost** and it does the rest:
+1. pulls the changes and installs packages;
+2. rebuilds, installs silently and restarts, in about a minute.
+
+Your settings, history and notes are kept. If a step fails, nothing is installed and Settings says why (the full log is in `%APPDATA%\Ghost\data\update.log`). Only copies built with `npm run dist:win` can update themselves.
+
 ## 3. Pick your voice
 
 Open settings (right-click the shell, the ⚙ button, or the tray icon), go to **Voice**, and press **Preview** on each voice. The eye pulses and the Ghost filter applies, just like a real reply. Choose one ElevenLabs voice and one Edge fallback voice, then tune the **Ghost filter** slider: around 30–45 % gives a subtle synthetic shimmer, and 100 % is fully robotic.

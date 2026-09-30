@@ -266,6 +266,36 @@ function renderObsidian(): void {
     : 'Conversations are kept on this PC so Ghost can pick up after a restart and recall past chats. Clearing keeps the lasting facts it has learned about you.';
 }
 
+// ---- Updates
+type UpdateStatus = Awaited<ReturnType<typeof bridge.updateStatus>>;
+const updateRun = document.getElementById('updateRun') as HTMLButtonElement;
+const updateCheck = document.getElementById('updateCheck') as HTMLButtonElement;
+function renderUpdate(u: UpdateStatus): void {
+  const ago = u.checkedAt ? ` · checked ${new Date(u.checkedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : '';
+  document.getElementById('updateVersion')!.textContent = u.state === 'unavailable'
+    ? "Updates aren't available for this copy (it wasn't built with npm run dist:win)."
+    : `Ghost ${u.version}${u.commit ? ` (${u.commit})` : ''}${ago}`;
+  const n = u.changes.length;
+  document.getElementById('updateState')!.textContent = {
+    unavailable: '', idle: '', checking: 'Checking for updates…', 'up-to-date': 'Ghost is up to date.',
+    available: `${n} update${n === 1 ? '' : 's'} available:`, updating: `${u.step ?? 'Updating'}…`, error: u.error ?? 'Something went wrong.',
+  }[u.state];
+  const list = document.getElementById('updateChanges')!;
+  list.hidden = u.state !== 'available';
+  list.replaceChildren(...u.changes.slice(0, 12).map(c => Object.assign(document.createElement('li'), { textContent: c })));
+  const bar = document.getElementById('updateProgress') as HTMLProgressElement;
+  bar.hidden = u.state !== 'updating';
+  bar.value = u.progress ?? 0;
+  updateRun.hidden = !(u.state === 'available' || (u.state === 'error' && n > 0));
+  updateRun.disabled = !u.canInstall;
+  updateRun.title = u.canInstall ? '' : 'Running from source: use git pull and npm run dev instead.';
+  updateCheck.disabled = u.state === 'checking' || u.state === 'updating' || u.state === 'unavailable';
+}
+bridge.onUpdate(renderUpdate);
+void bridge.updateStatus().then(renderUpdate);
+updateCheck.addEventListener('click', () => void bridge.checkForUpdates().then(renderUpdate));
+updateRun.addEventListener('click', () => bridge.runUpdate());
+
 // Hotkey capture → Electron accelerator syntax (summon and quit share the same capture).
 for (const box of document.querySelectorAll<HTMLInputElement>('[data-hotkey]')) {
   box.addEventListener('keydown', e => {

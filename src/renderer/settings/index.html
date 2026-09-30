@@ -175,6 +175,19 @@
       <label class="check"><input type="checkbox" id="liveScreenAutoOff" data-key="liveScreenAutoOff" /> Switch off automatically</label>
       <label>After <span class="inline-num"><input type="number" id="liveScreenAutoOffMinutes" min="5" max="240" step="5" data-key="liveScreenAutoOffMinutes" data-num /> minutes without a message</span></label>
     </section>
+
+    <section>
+      <h2>Updates</h2>
+      <p class="hint" id="updateVersion"></p>
+      <p id="updateState"></p>
+      <ul class="hint" id="updateChanges" hidden></ul>
+      <progress id="updateProgress" max="1" value="0" hidden></progress>
+      <div class="row-buttons">
+        <button type="button" id="updateCheck">Check now</button>
+        <button type="button" id="updateRun" hidden>Update Ghost</button>
+      </div>
+      <p class="hint">Updating downloads the changes, rebuilds Ghost from its folder and restarts it, about a minute in all. Your settings, history and notes are kept. If anything fails, nothing is installed.</p>
+    </section>
   </main>
   <script type="module" src="./main.ts"></script>
 </body>

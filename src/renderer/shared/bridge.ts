@@ -27,6 +27,11 @@ const browserApi: GhostApi = {
   quit: () => {},
   pickFolder: async title => window.prompt(`${title} (full path)`) || null,
   openObsidian: url => { location.href = url; },
+  // The browser preview can't update itself.
+  updateStatus: async () => ({ state: 'unavailable', version: 'preview', commit: '', changes: [], canInstall: false }),
+  checkForUpdates: async () => ({ state: 'unavailable', version: 'preview', commit: '', changes: [], canInstall: false }),
+  runUpdate: () => {},
+  onUpdate: () => {},
   onSettings: () => {},
   onSummon: () => {},
   onOrientation: () => {},
