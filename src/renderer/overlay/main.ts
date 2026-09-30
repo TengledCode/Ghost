@@ -55,8 +55,11 @@ function renderMeta(): void {
   const sec = (ms?: number) => (ms === undefined ? '–' : `${(ms / 1000).toFixed(1)}s`);
   const parts = [modelLabel];
   if (settings.showTimings && timing.text !== undefined) {
-    parts.push(`text ${sec(timing.text)} · voice ${sec(timing.voice)} · heard ${sec(timing.heard)}`);
+    parts.push(settings.voiceEnabled
+      ? `text ${sec(timing.text)} · voice ${sec(timing.voice)} · heard ${sec(timing.heard)}`
+      : `text ${sec(timing.text)} · voice off`);
   }
+  else if (!settings.voiceEnabled && modelLabel) parts.push('voice off'); // so a silent reply is never a mystery
   bubbleMeta.textContent = parts.filter(Boolean).join(' · ');
 }
 const history: { who: 'user' | 'ghost'; text: string }[] = [];
@@ -302,7 +305,7 @@ function closeInput(): void {
   form.hidden = true;
   input.value = '';
   core.send({ type: 'typing', active: false });
-  shell?.setLean(0);
+  shell?.setFocus(null);
   bridge.dismissed();
   refreshInteractivity();
 }
@@ -319,7 +322,7 @@ form.addEventListener('submit', e => {
   thankedThisTurn = mood === 'happy';
   core.send({ type: 'user_message', text });
   input.value = '';
-  shell?.setLean(0);
+  shell?.setFocus(null); // done typing: back to thinking about it
   replyText = '';
   showBubble('…');
   sentAt = performance.now();
@@ -328,10 +331,31 @@ form.addEventListener('submit', e => {
   renderMeta();
 });
 
+// Ghost watches the text caret while Aaron types: his eye settles on the box and follows the words.
+const measure = document.createElement('canvas').getContext('2d')!;
+function caretPoint(): { x: number; y: number } {
+  const r = input.getBoundingClientRect();
+  const cs = getComputedStyle(input);
+  measure.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+  const before = input.value.slice(0, input.selectionStart ?? input.value.length);
+  const padL = parseFloat(cs.paddingLeft) || 0, padR = parseFloat(cs.paddingRight) || 0;
+  const x = r.left + padL + Math.max(0, Math.min(measure.measureText(before).width - input.scrollLeft, r.width - padL - padR));
+  return { x, y: r.top + r.height / 2 };
+}
+function watchCaret(): void {
+  if (!shell || document.activeElement !== input || form.hidden) return;
+  const s = shellEl.getBoundingClientRect();
+  const p = caretPoint();
+  shell.setFocus({ dx: p.x - (s.left + s.width / 2), dy: p.y - (s.top + s.height / 2) });
+}
+input.addEventListener('focus', () => requestAnimationFrame(watchCaret));
+input.addEventListener('blur', () => shell?.setFocus(null));
+for (const ev of ['keyup', 'click', 'select'] as const) input.addEventListener(ev, watchCaret);
+
 let typingTimer = 0;
 input.addEventListener('input', () => {
   core.send({ type: 'typing', active: input.value.length > 0 });
-  shell?.setLean(input.value ? (orientation.endsWith('right') ? -1 : 1) : 0);
+  watchCaret();
   clearTimeout(typingTimer);
   typingTimer = window.setTimeout(() => core.send({ type: 'typing', active: false }), 8000);
 });

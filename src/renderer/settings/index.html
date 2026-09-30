@@ -86,6 +86,14 @@
       <p class="hint">Keep Ghost's conversations and memory in your Obsidian vault, as notes you can read, search, link and edit. Ghost follows your edits.</p>
       <label>Vault <select id="vaultSelect"></select></label>
       <p class="hint" id="vaultStatus"></p>
+      <div id="starterCard" class="brain" hidden>
+        <strong id="starterTitle">Your vault is nearly empty. Set up a simple structure?</strong>
+        <p class="hint" id="starterText">Daily notes in <b>Daily/</b>, new notes land in <b>Inbox/</b>, a note per person in <b>People/</b> (starting with the people Ghost already knows), and a <b>Home</b> note linking it all. Nothing you already have is changed.</p>
+        <div class="row-buttons" id="starterButtons">
+          <button type="button" id="starterGo">Set it up</button>
+          <button type="button" id="starterNo">No thanks</button>
+        </div>
+      </div>
       <div id="obsidianOptions" class="brain">
         <label>Ghost's folder <input type="text" id="obsFolder" spellcheck="false" /></label>
         <label class="check"><input type="checkbox" data-obs="dailyLinks" /> Link each conversation from that day's Daily Note</label>

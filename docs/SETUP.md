@@ -63,6 +63,17 @@ The ElevenLabs free tier gives about 20 minutes of speech a month. When it runs 
 - `secrets.json` (ElevenLabs key, encrypted with your Windows login);
 - `data\` (reminders, the open conversation's working copy, and the CLI working folder).
 
+**New to Obsidian?** Make one vault for your whole life, not just for Ghost: Ghost's notes link into yours, and it keeps to its own `Ghost` folder.
+1. In Obsidian, open the vault switcher (bottom-left) and choose **Create new vault**, e.g. `Documents\Aaron`.
+2. In Ghost, go to Settings → Obsidian and pick the new vault.
+3. Press **Set it up**. Ghost creates:
+   - Daily notes in `Daily/` (with a template);
+   - `Inbox/` for new notes;
+   - `People/`, with a note for everyone Ghost already knows;
+   - a `Home` note linking it all.
+   It also switches Obsidian's settings to match.
+4. Restart Obsidian so it picks up the new settings.
+
 **With Obsidian connected** (Settings → Obsidian → Vault), your history lives in the vault's `Ghost` folder:
 - `Ghost/Conversations/<month>/<date> <title>.md`: one note per conversation, linked from that day's Daily Note.
 - `Ghost/Memory/*.md`: what Ghost knows, by topic. Edit or delete bullets freely.

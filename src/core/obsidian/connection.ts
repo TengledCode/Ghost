@@ -1,3 +1,4 @@
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { ConversationLog } from '../memory/conversations';
 import { VaultConversations } from '../memory/vaultConversations';
@@ -6,6 +7,7 @@ import type { Settings } from '../../shared/settings';
 import { closeConversation, type CloseDeps } from './closer';
 import { backupInfo, deleteBackup, hasLocalHistory, importLocalHistory, importState, type ImportProgress } from './importer';
 import { Linker } from './linker';
+import { isNearlyEmpty, setupStarter } from './starter';
 import type { Names } from './markdown';
 import { detectVaults, ObsidianVault, type DetectedVault } from './vault';
 import { VaultIndex } from './vaultIndex';
@@ -21,6 +23,7 @@ export interface ObsidianStatus {
   error?: string;
   import: ImportProgress | null;
   backupBytes: number | null;
+  starter: 'offer' | 'done' | null; // the one-click starter layout for a nearly empty vault
 }
 
 export interface ConnectionOptions {
@@ -46,6 +49,7 @@ export class ObsidianConnection {
   private queue: Promise<unknown> = Promise.resolve();
   private progress: ImportProgress | null = null;
   private warnedOffline = false;
+  private indexed = false; // the first full index has finished (until then, "nearly empty" isn't known)
 
   constructor(vaultPath: string, private readonly o: ConnectionOptions) {
     const s = () => o.settings().obsidian;
@@ -71,7 +75,7 @@ export class ObsidianConnection {
     this.checkAvailable();
     // Index the vault first (in the background), then file anything left over from last time and
     // bring in old local history (once).
-    void this.enqueue(async () => { await this.index.refreshAsync(); this.o.onStatus(); });
+    void this.enqueue(async () => { await this.index.refreshAsync(); this.indexed = true; this.o.onStatus(); });
     for (const id of this.conversations.unfiled()) this.close(id);
     if (hasLocalHistory(this.o.dataDir, this.conversations.current.conversationId)) this.importHistory();
   }
@@ -103,6 +107,19 @@ export class ObsidianConnection {
 
   deleteBackup(): void { deleteBackup(this.o.dataDir); this.o.onStatus(); }
 
+  /** Create the starter layout (Daily/, Inbox/, People/, Home, Obsidian settings), then link Ghost's notes to it. */
+  setupStarter(): Promise<unknown> {
+    return this.enqueue(async () => {
+      let people: string[] = [];
+      try { people = parsePeople(await this.o.ask(peoplePrompt(this.memory.list().map(f => f.text)))); } catch { /* no brain: skip the people notes */ }
+      const r = setupStarter(this.vault, this.index, { ghostFolder: this.o.settings().obsidian.folder, people });
+      this.setStarterState('done');
+      this.o.notify('info', `Your vault is set up${r.people.length ? `, with notes for ${r.people.length} ${r.people.length === 1 ? 'person' : 'people'} Ghost knows` : ''}. Restart Obsidian so it picks up the new settings.`);
+    });
+  }
+
+  dismissStarter(): void { this.setStarterState('dismissed'); this.o.onStatus(); }
+
   status(): ObsidianStatus {
     const available = this.vault.available();
     const st = importState(this.o.dataDir);
@@ -112,7 +129,25 @@ export class ObsidianConnection {
       error: available ? undefined : `Can't reach the vault folder (${this.vault.root}). Ghost keeps notes waiting and writes them when it's back.`,
       import: this.progress ?? (st.finished ? { done: st.done.length, total: st.done.length, phase: 'finished' } : null),
       backupBytes: backupInfo(this.o.dataDir)?.bytes ?? null,
+      starter: this.starterStatus(),
     };
+  }
+
+  private starterStatus(): ObsidianStatus['starter'] {
+    const state = this.starterStates()[this.vault.root];
+    if (state === 'done') return 'done';
+    if (state === 'dismissed' || !this.vault.available() || !this.index.size && !this.indexed) return null;
+    return isNearlyEmpty(this.index, this.o.settings().obsidian.folder) ? 'offer' : null;
+  }
+
+  private starterStates(): Record<string, 'done' | 'dismissed'> {
+    try { return JSON.parse(readFileSync(join(this.o.dataDir, 'obsidian-starter.json'), 'utf8')); } catch { return {}; }
+  }
+
+  private setStarterState(state: 'done' | 'dismissed'): void {
+    const all = this.starterStates();
+    all[this.vault.root] = state;
+    try { writeFileSync(join(this.o.dataDir, 'obsidian-starter.json'), JSON.stringify(all, null, 2)); } catch { /* best effort */ }
   }
 
   private names(): Names {
@@ -144,4 +179,17 @@ export class ObsidianConnection {
     this.warnedOffline = !ok;
     this.o.onStatus();
   }
+}
+
+function peoplePrompt(facts: string[]): string {
+  return [
+    'List the names of the people mentioned in these facts (not the person they are about). Reply with a JSON array of names only, e.g. ["Sam", "Mia"]. Reply [] if there are none.',
+    '',
+    ...facts.map(f => `- ${f}`),
+  ].join('\n');
+}
+
+function parsePeople(reply: string): string[] {
+  const list = JSON.parse(reply.slice(reply.indexOf('['), reply.lastIndexOf(']') + 1)) as unknown[];
+  return [...new Set(list.map(x => String(x).trim()).filter(n => n && n.length <= 40))].slice(0, 30);
 }

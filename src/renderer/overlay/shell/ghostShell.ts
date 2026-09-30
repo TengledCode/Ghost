@@ -82,7 +82,7 @@ export class GhostShell {
   // Gaze inputs
   private cursorPx: { dx: number; dy: number } | null = null;
   private cursorAt = -1e9;
-  private lean = 0;
+  private focus: { dx: number; dy: number } | null = null; // what Aaron is typing: the caret, relative to the shell centre
   private curiousLook = { yaw: 0, pitch: 0, roll: 0, until: 0 };
   private mood: { kind: Mood; until: number } | null = null;
   private dozing = false;
@@ -200,8 +200,14 @@ export class GhostShell {
     }
   }
 
-  /** Lean towards the input bar while Aaron types (-1 left, +1 right, 0 none). */
-  setLean(direction: number): void { this.lean = direction; }
+  /**
+   * While Aaron types, Ghost watches the text caret (CSS px from the shell's centre), so his eye
+   * settles on the box and drifts along the words as they appear. null when not typing.
+   */
+  setFocus(point: { dx: number; dy: number } | null): void {
+    if (point && !this.focus) this.wake(false);
+    this.focus = point;
+  }
 
   setBands(b: [number, number, number]): void { this.bands = b; }
 
@@ -298,14 +304,20 @@ export class GhostShell {
     const p = this.pose;
     const mood = this.mood?.kind;
 
-    // ---- where to look: approval card > searching sweep > input bar > cursor > idle glances
+    // ---- where to look: approval card > searching sweep > what Aaron is typing > cursor > idle glances
     const cursorFresh = !!this.cursorPx && t - this.cursorAt < 2.5;
     const target = this.target;
     let lookingAtSomething = true;
     let rollT = 0;
     if (this.state === 'approval') target.set(0, 1.4, 1.2);
     else if (this.state === 'searching') { target.set(Math.sin(t * 2.2) * 1.4, Math.sin(t * 1.3) * 0.35, LOOK_PLANE_Z); }
-    else if (this.lean) target.set(this.lean * 0.9, 1.1, 1.3);
+    else if (this.focus && !this.dozing) {
+      // Text is close, so a shorter viewing distance than for the screen-wide cursor: moving along
+      // the input sweeps the gaze gently, like reading along.
+      const g = lookAt(this.focus.dx, this.focus.dy, 0.95, 340);
+      target.set(Math.sin(g.yaw) * Math.cos(g.pitch), -Math.sin(g.pitch), Math.cos(g.yaw) * Math.cos(g.pitch)).multiplyScalar(1.6);
+      rollT = -Math.atan2(target.x, 3) * 0.15;
+    }
     else if (cursorFresh && !this.dozing) {
       // A direction across the whole screen (not clamped to this small canvas), so every part of
       // the screen maps to a distinct gaze.

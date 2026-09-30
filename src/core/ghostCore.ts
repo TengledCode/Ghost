@@ -300,6 +300,8 @@ export class GhostCore {
         return;
       case 'obsidian_status': this.send(client, { type: 'obsidian_status', status: this.obsidianStatus() }); return;
       case 'obsidian_import': void this.obsidian?.importHistory(); return;
+      case 'obsidian_starter': void this.obsidian?.setupStarter().then(() => this.broadcast({ type: 'obsidian_status', status: this.obsidianStatus() })); return;
+      case 'obsidian_starter_dismiss': this.obsidian?.dismissStarter(); return;
       case 'obsidian_delete_backup': this.obsidian?.deleteBackup(); this.broadcast({ type: 'obsidian_status', status: this.obsidianStatus() }); return;
       case 'voice_preview': return this.voicePreview(msg.engine, msg.voice, msg.text);
       case 'list_models': {

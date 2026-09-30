@@ -207,6 +207,9 @@ document.getElementById('openObsidian')!.addEventListener('click', () => {
   if (name) bridge.openObsidian(`obsidian://search?vault=${encodeURIComponent(name)}&query=${encodeURIComponent(`path:"${settings.obsidian.folder}/"`)}`);
 });
 document.getElementById('importHistory')!.addEventListener('click', () => core.send({ type: 'obsidian_import' }));
+let starterBusy = false;
+document.getElementById('starterGo')!.addEventListener('click', () => { starterBusy = true; core.send({ type: 'obsidian_starter' }); renderObsidian(); });
+document.getElementById('starterNo')!.addEventListener('click', () => core.send({ type: 'obsidian_starter_dismiss' }));
 const deleteBackupBtn = document.getElementById('deleteBackup') as HTMLButtonElement;
 let deleteArmed = 0;
 deleteBackupBtn.addEventListener('click', () => {
@@ -234,6 +237,13 @@ function renderObsidian(): void {
   (document.getElementById('obsidianOptions') as HTMLElement).hidden = !current;
   if (document.activeElement !== folderInput) folderInput.value = settings.obsidian.folder;
   for (const box of document.querySelectorAll<HTMLInputElement>('[data-obs]')) box.checked = !!settings.obsidian[box.dataset.obs as keyof Settings['obsidian']];
+
+  const starter = current ? obsidian?.starter : null;
+  if (starter === 'done') starterBusy = false;
+  (document.getElementById('starterCard') as HTMLElement).hidden = !starter && !starterBusy;
+  (document.getElementById('starterButtons') as HTMLElement).hidden = starter !== 'offer' || starterBusy;
+  document.getElementById('starterTitle')!.textContent = starterBusy ? 'Setting up your vault…' : starter === 'done' ? 'Your vault is set up.' : 'Your vault is nearly empty. Set up a simple structure?';
+  if (starter === 'done') document.getElementById('starterText')!.textContent = 'Restart Obsidian (or reopen the vault) so it picks up the new settings. Start from the Home note.';
 
   const imp = obsidian?.import;
   const importStatus = document.getElementById('importStatus')!;

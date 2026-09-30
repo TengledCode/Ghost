@@ -348,3 +348,61 @@ describe('finding vaults', () => {
     expect(detectVaults(join(cfg, 'missing'))).toEqual([]);
   });
 });
+
+import { isNearlyEmpty, relinkGhostNotes, setupStarter } from '../src/core/obsidian/starter';
+
+describe('starter layout for a nearly empty vault', () => {
+  it('sets up folders, notes and Obsidian settings without overwriting anything, and links Ghost notes to new people notes', async () => {
+    const v = makeVault();
+    v.put('Home.md', '# My own home\n');
+    v.put('.obsidian/app.json', JSON.stringify({ newFileLocation: 'current', theme: 'obsidian' }));
+    // Ghost already knows about Mia (no note yet) from memory and a filed conversation.
+    v.memory.remember("Mia's birthday is 2 May", 'People');
+    v.conversations.append('user', 'Plan dinner with Mia');
+    v.conversations.append('assistant', 'Booked for Friday.');
+    await closeConversation(v.deps(filing({ title: 'Dinner plans', summary: 'Aaron planned dinner with Mia.', people: ['Mia'] })), v.conversations.rotate());
+    expect(isNearlyEmpty(v.index, 'Ghost')).toBe(true);
+
+    const r = setupStarter(v.vault, v.index, { ghostFolder: 'Ghost', people: ['Mia', 'Sam'] });
+    expect(r.created).toEqual(expect.arrayContaining(['Templates/Daily.md', 'Inbox/Welcome to your Inbox.md']));
+    expect(r.created).not.toContain('Home.md');
+    expect(v.read('Home.md')).toBe('# My own home\n'); // kept
+    expect(r.people).toEqual(['People/Mia.md']); // Sam already has a note
+    expect(JSON.parse(v.read('.obsidian/app.json'))).toEqual({ newFileLocation: 'current', theme: 'obsidian', newFileFolderPath: 'Inbox' });
+    expect(JSON.parse(v.read('.obsidian/daily-notes.json'))).toEqual({ folder: 'Daily', format: 'YYYY-MM-DD', template: 'Templates/Daily' });
+    expect(JSON.parse(v.read('.obsidian/templates.json'))).toEqual({ folder: 'Templates' });
+    expect(JSON.parse(v.read('.obsidian/core-plugins.json'))).toEqual(['file-explorer', 'daily-notes', 'templates']);
+
+    // Ghost's notes now link to Mia; the transcript is left exactly as it was.
+    expect(r.relinked).toBeGreaterThanOrEqual(2);
+    expect(v.read('Ghost/Memory/People.md')).toContain("- [[Mia]]'s birthday is 2 May");
+    const [note] = v.files('Ghost/Conversations');
+    const text = v.read(`Ghost/Conversations/${note}`);
+    expect(text).toContain('Aaron planned dinner with [[Mia]].');
+    expect(text).toContain('> **');
+    expect(text).toMatch(/Plan dinner with Mia$/m);
+
+    // A day's note now follows the new settings and template.
+    addToDailyNote(v.vault, new Date(2026, 9, 1), '- x');
+    expect(v.read('Daily/2026-10-01.md')).toBe('# Thursday 1 October 2026\n\n## Plan\n- \n\n## Notes\n\n## Ghost\n- x\n');
+    expect(relinkGhostNotes(v.vault, v.index, 'Ghost')).toBe(0); // nothing left to link
+  });
+
+  it("switches plugins on in either settings format, and leaves Obsidian's defaults alone", () => {
+    const v = makeVault();
+    v.put('.obsidian/core-plugins.json', JSON.stringify({ 'daily-notes': false, graph: true }));
+    setupStarter(v.vault, v.index, { ghostFolder: 'Ghost', people: [] });
+    expect(JSON.parse(v.read('.obsidian/core-plugins.json'))).toEqual({ 'daily-notes': true, graph: true, templates: true });
+    const w = makeVault();
+    w.vault.remove('.obsidian/core-plugins.json');
+    setupStarter(w.vault, w.index, { ghostFolder: 'Ghost', people: [] });
+    expect(existsSync(join(w.root, '.obsidian/core-plugins.json'))).toBe(false);
+  });
+
+  it('only offers itself when the vault is nearly empty', () => {
+    const v = makeVault();
+    for (let i = 0; i < 25; i++) v.put(`Notes/n${i}.md`, `# ${i}`);
+    v.index.refresh();
+    expect(isNearlyEmpty(v.index, 'Ghost')).toBe(false);
+  });
+});

@@ -30,6 +30,8 @@ export type ClientMessage =
   | { type: 'obsidian_status' }
   | { type: 'obsidian_import' }
   | { type: 'obsidian_delete_backup' }
+  | { type: 'obsidian_starter' }
+  | { type: 'obsidian_starter_dismiss' }
   // Sent by the MCP bridge process on behalf of the model.
   | { type: 'tool_call'; id: string; tool: string; args: Record<string, unknown> };
 
@@ -62,6 +64,7 @@ export interface ObsidianStatusInfo {
   error?: string;
   import: { done: number; total: number; phase: 'conversations' | 'facts' | 'finished' | 'paused' } | null;
   backupBytes: number | null; // the pre-Obsidian local copy, until Aaron deletes it
+  starter?: 'offer' | 'done' | null; // the one-click starter layout for a nearly empty vault
 }
 
 export function parseMessage<T>(raw: unknown): T | null {
