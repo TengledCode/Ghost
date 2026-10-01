@@ -53,12 +53,15 @@ function render(): void {
   }
   for (const box of document.querySelectorAll<HTMLInputElement>('[data-hotkey]')) box.value = String(settings[box.dataset.hotkey as 'hotkey' | 'quitHotkey' | 'liveScreenHotkey']).replace(/\+/g, ' + ');
   (document.getElementById('liveScreenAutoOffMinutes') as HTMLInputElement).disabled = !settings.liveScreenAutoOff;
+  (document.getElementById('relaunchRow') as HTMLElement).hidden = settings.compatibleDrawing === !!boot.compatibleDrawing;
   renderBrains();
   renderObsidian();
   renderThemes();
   renderVoices('elevenVoices', ELEVENLABS_VOICES, 'elevenlabs', settings.elevenLabsVoiceId);
   renderVoices('edgeVoices', EDGE_VOICES, 'edge', settings.edgeVoice);
 }
+
+document.getElementById('relaunch')!.addEventListener('click', () => bridge.relaunch());
 
 // ---- Live screen view: the button flips it; the core tells every window when it changes.
 const liveToggle = document.getElementById('liveToggle') as HTMLButtonElement;

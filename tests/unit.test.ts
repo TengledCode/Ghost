@@ -73,6 +73,9 @@ describe('router', () => {
     expect(mergeSettings({ provider: 'gemini', fallbackProvider: 'gemini' }).fallbackProvider).toBeNull();
     expect(mergeSettings({ provider: 'gemini', fallbackProvider: 'claude' }).fallbackProvider).toBe('claude');
   });
+  it('draws the standard way unless compatible drawing is chosen', () => {
+    expect(mergeSettings({}).compatibleDrawing).toBe(false);
+  });
   it('carries the old fullscreen checkbox over to the new choice', () => {
     expect(mergeSettings({}).fullscreenHide).toBe('all');
     expect(mergeSettings({ hideOnFullscreen: false } as never).fullscreenHide).toBe('never');

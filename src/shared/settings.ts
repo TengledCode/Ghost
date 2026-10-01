@@ -59,6 +59,7 @@ export interface Settings {
   customTheme: ThemeColors;
   skin: Skin;
   renderQuality: RenderQuality;
+  compatibleDrawing: boolean; // draw without DirectComposition (applies after a restart)
   // Behaviour
   hotkey: string;
   quitHotkey: string;
@@ -101,6 +102,7 @@ export const DEFAULT_SETTINGS: Settings = {
   customTheme: THEMES.classic,
   skin: 'ghost-shell',
   renderQuality: 'auto',
+  compatibleDrawing: false,
   hotkey: 'Control+Space',
   quitHotkey: 'Control+Alt+Q',
   liveScreenHotkey: 'Control+Alt+V',

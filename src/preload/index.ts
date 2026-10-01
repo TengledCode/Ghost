@@ -2,7 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { Corner, Settings } from '../shared/settings';
 import type { UpdateStatus } from '../main/updater';
 
-export interface Bootstrap { url: string; token: string; settings: Settings; hasElevenLabsKey: boolean; orientation?: Corner }
+export interface Bootstrap { url: string; token: string; settings: Settings; compatibleDrawing?: boolean; hasElevenLabsKey: boolean; orientation?: Corner }
 
 const api = {
   bootstrap: (): Promise<Bootstrap> => ipcRenderer.invoke('ghost:bootstrap'),
@@ -17,6 +17,7 @@ const api = {
   dismissed: () => ipcRenderer.send('ghost:dismissed'),
   openSettings: () => ipcRenderer.send('ghost:open-settings'),
   quit: () => ipcRenderer.send('ghost:quit'),
+  relaunch: () => ipcRenderer.send('ghost:relaunch'),
   pickFolder: (title: string): Promise<string | null> => ipcRenderer.invoke('ghost:pick-folder', title),
   openObsidian: (url: string) => ipcRenderer.send('ghost:open-obsidian', url),
   updateStatus: (): Promise<UpdateStatus> => ipcRenderer.invoke('ghost:update-status'),

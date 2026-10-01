@@ -25,6 +25,7 @@ const browserApi: GhostApi = {
   dismissed: () => {},
   openSettings: () => window.open('../settings/index.html' + location.search, '_blank'),
   quit: () => {},
+  relaunch: () => location.reload(),
   pickFolder: async title => window.prompt(`${title} (full path)`) || null,
   openObsidian: url => { location.href = url; },
   // The browser preview can't update itself.
