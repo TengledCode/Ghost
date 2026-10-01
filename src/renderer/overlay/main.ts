@@ -524,6 +524,9 @@ const reportShellRect = () => {
 };
 new ResizeObserver(() => requestAnimationFrame(reportShellRect)).observe(stage);
 new MutationObserver(() => requestAnimationFrame(reportShellRect)).observe(stage, { attributes: true, attributeFilter: ['data-orient'] });
+// Switching skin moves the shell inside the window (the 3D shell keeps a glow margin, the orb doesn't),
+// so report it again; otherwise the window stays placed for the old spot and the orb hangs off screen.
+new MutationObserver(() => requestAnimationFrame(reportShellRect)).observe(shellEl, { attributes: true, attributeFilter: ['data-skin'] });
 requestAnimationFrame(reportShellRect);
 shellEl.addEventListener('contextmenu', e => { e.preventDefault(); bridge.openSettings(); });
 

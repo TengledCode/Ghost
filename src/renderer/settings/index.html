@@ -50,20 +50,6 @@
     <section data-tab="main">
       <h2>Voice</h2>
       <label class="check"><input type="checkbox" data-key="voiceEnabled" /> Speak replies</label>
-      <label>Engine
-        <select data-key="ttsEngine"><option value="elevenlabs">ElevenLabs (free tier, falls back to Edge)</option><option value="edge">Edge neural (free, unlimited)</option></select>
-      </label>
-      <label>ElevenLabs key <input type="password" id="elevenKey" placeholder="Paste your free-tier API key" /><button type="button" id="saveKey">Save</button></label>
-      <p class="hint" id="keyStatus"></p>
-      <div class="voices"><h3>ElevenLabs voices</h3><div id="elevenVoices"></div></div>
-      <div class="voices"><h3>Edge voices (fallback)</h3><div id="edgeVoices"></div></div>
-      <label>Character
-        <select data-key="voiceCharacter">
-          <option value="natural">Natural: the voice as it is, lightly polished</option>
-          <option value="companion">Companion: a small synthetic companion</option>
-          <option value="drone">Drone: clearly a little machine</option>
-        </select>
-      </label>
       <label>Volume <input type="range" min="0" max="1" step="0.05" data-key="volume" data-num /><output></output></label>
     </section>
 
@@ -129,6 +115,15 @@
     </section>
 
     <section data-tab="main">
+      <h2>Live screen view</h2>
+      <p class="hint">While live view is on, each message includes a snapshot of the monitor under your cursor, so you can just ask "what's this error?". Ghost leaves itself out of the picture, and a red LIVE tag shows whenever it's on. You can also type "watch my screen" or "stop watching".</p>
+      <div class="row-buttons live-row"><button type="button" id="liveToggle">Turn on live view</button><span id="liveStatus">Off</span></div>
+      <label>Toggle hotkey <input id="liveScreenHotkey" data-hotkey="liveScreenHotkey" readonly /></label>
+      <label class="check"><input type="checkbox" id="liveScreenAutoOff" data-key="liveScreenAutoOff" /> Switch off automatically</label>
+      <label>After <span class="inline-num"><input type="number" id="liveScreenAutoOffMinutes" min="5" max="240" step="5" data-key="liveScreenAutoOffMinutes" data-num /> minutes without a message</span></label>
+    </section>
+
+    <section data-tab="main">
       <h2>Updates</h2>
       <p class="hint" id="updateVersion"></p>
       <p id="updateState"></p>
@@ -154,7 +149,21 @@
     </section>
 
     <section data-tab="more">
-      <h2>Voice tuning</h2>
+      <h2>Voice</h2>
+      <label>Engine
+        <select data-key="ttsEngine"><option value="elevenlabs">ElevenLabs (free tier, falls back to Edge)</option><option value="edge">Edge neural (free, unlimited)</option></select>
+      </label>
+      <label>ElevenLabs key <input type="password" id="elevenKey" placeholder="Paste your free-tier API key" /><button type="button" id="saveKey">Save</button></label>
+      <p class="hint" id="keyStatus"></p>
+      <div class="voices"><h3>ElevenLabs voices</h3><div id="elevenVoices"></div></div>
+      <div class="voices"><h3>Edge voices (fallback)</h3><div id="edgeVoices"></div></div>
+      <label>Character
+        <select data-key="voiceCharacter">
+          <option value="natural">Natural: the voice as it is, lightly polished</option>
+          <option value="companion">Companion: a small synthetic companion</option>
+          <option value="drone">Drone: clearly a little machine</option>
+        </select>
+      </label>
       <label>ElevenLabs model
         <select data-key="elevenLabsModel">
           <option value="eleven_flash_v2_5">Flash v2.5: fastest, plainest delivery</option>
@@ -207,14 +216,6 @@
         <label class="check"><input type="checkbox" data-obs="readVault" /> Let Ghost search and read your notes</label>
         <label class="check"><input type="checkbox" data-obs="writeVault" /> Let Ghost add to and create notes (it asks you each time)</label>
       </div>
-    </section>
-
-    <section data-tab="more">
-      <h2>Live screen view</h2>
-      <p class="hint">While live view is on, each message includes a snapshot of the monitor under your cursor, so you can just ask "what's this error?". Ghost leaves itself out of the picture, and a red LIVE tag shows whenever it's on. You can also type "watch my screen" or "stop watching".</p>
-      <label>Toggle hotkey <input id="liveScreenHotkey" data-hotkey="liveScreenHotkey" readonly /></label>
-      <label class="check"><input type="checkbox" id="liveScreenAutoOff" data-key="liveScreenAutoOff" /> Switch off automatically</label>
-      <label>After <span class="inline-num"><input type="number" id="liveScreenAutoOffMinutes" min="5" max="240" step="5" data-key="liveScreenAutoOffMinutes" data-num /> minutes without a message</span></label>
     </section>
 
     <section data-tab="more">

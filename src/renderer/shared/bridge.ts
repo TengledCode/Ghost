@@ -21,7 +21,7 @@ const browserApi: GhostApi = {
   dragArm: () => {},
   dragStart: () => {},
   dragEnd: () => {},
-  shellRect: () => {},
+  shellRect: r => { (window as unknown as { lastShellRect: unknown }).lastShellRect = r; }, // preview: inspectable
   dismissed: () => {},
   openSettings: () => window.open('../settings/index.html' + location.search, '_blank'),
   quit: () => {},

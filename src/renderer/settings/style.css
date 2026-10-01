@@ -49,3 +49,6 @@ input:disabled { opacity: .45; }
 .tabs button:hover { opacity: 1; }
 .tabs button[aria-selected="true"] { opacity: 1; color: var(--text); border-bottom-color: var(--accent, currentColor); }
 [data-tab][hidden], [hidden] { display: none !important; }
+.live-row { align-items: center; }
+#liveStatus { color: var(--muted); font-size: 12.5px; }
+#liveStatus.on { color: #ff6b6b; font-weight: 600; }

@@ -60,6 +60,17 @@ function render(): void {
   renderVoices('edgeVoices', EDGE_VOICES, 'edge', settings.edgeVoice);
 }
 
+// ---- Live screen view: the button flips it; the core tells every window when it changes.
+const liveToggle = document.getElementById('liveToggle') as HTMLButtonElement;
+const liveStatus = document.getElementById('liveStatus')!;
+core.on(m => {
+  if (m.type !== 'live_screen') return;
+  liveToggle.textContent = m.on ? 'Turn off live view' : 'Turn on live view';
+  liveStatus.classList.toggle('on', m.on);
+  liveStatus.textContent = !m.on ? 'Off' : m.offAt ? `On · switches off at ${new Date(m.offAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} if quiet` : 'On';
+});
+liveToggle.addEventListener('click', () => core.send({ type: 'toggle_live_screen' }));
+
 // ---- Brain: each brain's Light / Balanced / Heavy slots list the models that brain offers.
 type ModelList = { id: string; label: string }[];
 const modelLists = new Map<string, ModelList | 'loading' | { error: string }>();
