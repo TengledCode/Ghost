@@ -5,6 +5,9 @@ Handoff from the cloud sessions that built Ghost, so a local session can carry s
 ## Who and how
 
 - **Aaron** (use they/them) builds and uses Ghost on a Windows PC. Repo: `C:\Users\AaronTengRyzen\Ghost`, branch `claude/bold-planck-b1n6bl`.
+- **Stay in sync with GitHub:** Aaron works both locally and in cloud sessions on the same branch.
+  - **Before starting work,** run `git pull origin claude/bold-planck-b1n6bl`.
+  - **When done,** make sure everything is committed and pushed, so the next session (local or cloud) starts from the latest code.
 - Commit and push after each change. Aaron installs new versions with **Settings → Updates** (git pull → npm install → `npm run dist:win` → silent install), or by running those steps by hand.
 - Explain things plainly and briefly. Ask Aaron before big or design-level changes. Make one change at a time and say what changed.
 - **Test in the real app before pushing**, and say plainly what you could not test. A pushed change that broke Ghost on Windows cost Aaron a lot of time once (see "Compatible drawing" below).
