@@ -128,10 +128,10 @@ app.whenReady().then(async () => {
     installable: app.isPackaged && process.platform === 'win32',
     logFile: join(app.getPath('userData'), 'data', 'update.log'),
     install: installer => {
-      // Let Ghost quit first, then install silently and start the new version.
-      spawn('cmd.exe', ['/d', '/s', '/c', `"ping -n 3 127.0.0.1 >nul & start "" "${installer}" /S --force-run"`], {
-        detached: true, stdio: 'ignore', windowsHide: true, windowsVerbatimArguments: true,
-      }).unref();
+      // The installer is a windowless app that closes the running Ghost itself before replacing it,
+      // installs silently (/S) and starts the new version (--force-run). Started directly, so no
+      // console window flashes up.
+      spawn(installer, ['/S', '--force-run'], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
       setTimeout(() => app.quit(), 300);
     },
   });
