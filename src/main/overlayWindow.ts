@@ -1,6 +1,7 @@
 import { BrowserWindow, screen } from 'electron';
 import { join } from 'node:path';
 import type { Corner, Settings } from '../shared/settings';
+import { log } from './log';
 import { cornerWindowPosition, orientationForShell, SHELL_PAD, snapShell, windowSize, type Rect } from './placement';
 
 export class OverlayWindow {
@@ -38,6 +39,13 @@ export class OverlayWindow {
       },
     });
     this.win.setAlwaysOnTop(true, 'screen-saver');
+    // Ghost only goes away when the app quits. A stray close (Alt+F4 landing on the overlay, another
+    // app closing windows) is ignored instead of leaving Ghost gone with only the tray icon left.
+    this.win.on('close', e => { if (!this.allowClose) { e.preventDefault(); log('overlay close blocked'); } });
+    // If the page's renderer dies (e.g. the graphics driver resets when a heavy app like Photos
+    // closes), bring Ghost straight back.
+    this.win.webContents.on('render-process-gone', (_e, d) => { log('overlay renderer gone', d); this.recover(); });
+    this.win.webContents.on('unresponsive', () => { log('overlay unresponsive'); this.recover(5000); });
     this.win.setVisibleOnAllWorkspaces(true);
     this.win.setIgnoreMouseEvents(true, { forward: true });
     this.place();
@@ -63,6 +71,22 @@ export class OverlayWindow {
   }
 
   stopCursorFeed(): void { if (this.cursorTimer) clearInterval(this.cursorTimer); this.cursorTimer = null; }
+
+  /** Set when the app is quitting: only then may the overlay close. */
+  allowClose = false;
+  private recovering: NodeJS.Timeout | null = null;
+
+  /** Reload the overlay after a crash (debounced); the core keeps all state, so nothing is lost. */
+  recover(delayMs = 800): void {
+    if (this.win.isDestroyed() || this.recovering) return;
+    this.recovering = setTimeout(() => {
+      this.recovering = null;
+      if (this.win.isDestroyed()) return;
+      log('overlay reloaded');
+      this.win.webContents.reload();
+      if (!this.win.isVisible()) this.win.showInactive();
+    }, delayMs);
+  }
 
   load(): void {
     if (process.env.ELECTRON_RENDERER_URL) void this.win.loadURL(`${process.env.ELECTRON_RENDERER_URL}/overlay/index.html`);

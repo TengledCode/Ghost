@@ -10,6 +10,7 @@ import { ElevenLabsTts } from '../core/tts/elevenlabs';
 import { TtsService } from '../core/tts/service';
 import type { Settings } from '../shared/settings';
 import { ForegroundWatcher, hwndOf } from './foregroundWatcher';
+import { initLog, log } from './log';
 import { FullscreenWatcher } from './fullscreenWatcher';
 import { OverlayWindow } from './overlayWindow';
 import { SettingsStore } from './settingsStore';
@@ -25,6 +26,8 @@ const resource = (...p: string[]) => (app.isPackaged ? join(process.resourcesPat
 let tray: Tray | null = null;
 
 app.whenReady().then(async () => {
+  initLog(join(app.getPath('userData'), 'data', 'ghost.log'));
+  log('start', { version: app.getVersion() });
   const store = new SettingsStore();
   const settings = () => store.get();
 
@@ -53,6 +56,11 @@ app.whenReady().then(async () => {
 
   const overlay = new OverlayWindow(settings, patch => store.update(patch));
   overlay.load();
+  // The GPU process can die when the graphics driver resets (e.g. closing a heavy app like Photos);
+  // Electron restarts it, and the overlay reloads so the 3D shell is drawn again.
+  app.on('child-process-gone', (_e, d) => { log('child process gone', d); if (d.type === 'GPU') overlay.recover(1200); });
+  app.on('before-quit', () => { overlay.allowClose = true; });
+  ipcMain.on('ghost:log', (_e, event: string, detail?: unknown) => log(`overlay: ${event}`, detail ?? ''));
   overlay.startCursorFeed();
 
   // ---- IPC used by the overlay and settings renderers

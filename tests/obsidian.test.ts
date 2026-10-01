@@ -383,8 +383,8 @@ describe('starter layout for a nearly empty vault', () => {
     expect(text).toMatch(/Plan dinner with Mia$/m);
 
     // A day's note now follows the new settings and template.
-    addToDailyNote(v.vault, new Date(2026, 9, 1), '- x');
-    expect(v.read('Daily/2026-10-01.md')).toBe('# Thursday 1 October 2026\n\n## Plan\n- \n\n## Notes\n\n## Ghost\n- x\n');
+    addToDailyNote(v.vault, new Date(2031, 0, 15), '- x'); // a day nothing else has written to
+    expect(v.read('Daily/2031-01-15.md')).toBe('# Wednesday 15 January 2031\n\n## Plan\n- \n\n## Notes\n\n## Ghost\n- x\n');
     expect(relinkGhostNotes(v.vault, v.index, 'Ghost')).toBe(0); // nothing left to link
   });
 

@@ -88,3 +88,18 @@ describe('true idle', () => {
     expect(isIdle({ ...base, quietMs: 2000 })).toBe(false);
   });
 });
+
+import { attentionPoint, relativeTo } from '../src/renderer/overlay/attention';
+
+describe("where Ghost's attention goes", () => {
+  const box = (left: number, top: number) => ({ left, top, width: 20, height: 10 });
+  it('prefers the Allow button, then the caret, then a brief glance; never a fixed direction', () => {
+    const now = 1000;
+    expect(attentionPoint({ approve: box(0, 300), caret: { x: 5, y: 5 }, glance: null, now })).toEqual({ x: 10, y: 305 });
+    expect(attentionPoint({ approve: null, caret: { x: 5, y: 5 }, glance: { box: box(0, 0), until: 2000 }, now })).toEqual({ x: 5, y: 5 });
+    expect(attentionPoint({ approve: null, caret: null, glance: { box: box(0, 0), until: 2000 }, now })).toEqual({ x: 10, y: 5 });
+    expect(attentionPoint({ approve: null, caret: null, glance: { box: box(0, 0), until: 900 }, now })).toBeNull(); // glance over
+    expect(attentionPoint({ approve: null, caret: null, glance: null, now })).toBeNull();
+    expect(relativeTo({ x: 10, y: 305 }, { left: 0, top: 0, width: 100, height: 100 })).toEqual({ dx: -40, dy: 255 });
+  });
+});

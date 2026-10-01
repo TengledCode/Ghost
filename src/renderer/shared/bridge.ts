@@ -31,6 +31,7 @@ const browserApi: GhostApi = {
   updateStatus: async () => ({ state: 'unavailable', version: 'preview', commit: '', changes: [], canInstall: false }),
   checkForUpdates: async () => ({ state: 'unavailable', version: 'preview', commit: '', changes: [], canInstall: false }),
   runUpdate: () => {},
+  log: (event, detail) => console.info('[ghost]', event, detail ?? ''),
   onUpdate: () => {},
   onSettings: () => {},
   onSummon: () => {},

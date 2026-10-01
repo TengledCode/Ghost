@@ -62,7 +62,7 @@ export function flourishFor(prev: GhostState, next: GhostState): Flourish {
   if (next === 'searching') { f.splitKick = 4; f.spinKick = -4; }
   if (next === 'done') { f.nod = 1; f.flash = 1; f.splitKick = -3; } // snap shut, nod
   if (next === 'error') f.shake = 1;
-  if (next === 'approval') f.nod = -0.5;
+  if (next === 'approval') f.flash = 0.4; // a little flare of attention; the gaze itself goes to the card
   return f;
 }
 

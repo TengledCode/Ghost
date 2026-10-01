@@ -201,8 +201,8 @@ export class GhostShell {
   }
 
   /**
-   * While Aaron types, Ghost watches the text caret (CSS px from the shell's centre), so his eye
-   * settles on the box and drifts along the words as they appear. null when not typing.
+   * What deserves Ghost's attention right now (CSS px from the shell's centre), from the overlay:
+   * the Allow button, the text caret, or something that just appeared. null when nothing does.
    */
   setFocus(point: { dx: number; dy: number } | null): void {
     if (point && !this.focus) this.wake(false);
@@ -304,20 +304,22 @@ export class GhostShell {
     const p = this.pose;
     const mood = this.mood?.kind;
 
-    // ---- where to look: approval card > searching sweep > what Aaron is typing > cursor > idle glances
+    // ---- where to look: what the overlay says needs attention > searching sweep > cursor > idle glances
     const cursorFresh = !!this.cursorPx && t - this.cursorAt < 2.5;
     const target = this.target;
     let lookingAtSomething = true;
     let rollT = 0;
-    if (this.state === 'approval') target.set(0, 1.4, 1.2);
-    else if (this.state === 'searching') { target.set(Math.sin(t * 2.2) * 1.4, Math.sin(t * 1.3) * 0.35, LOOK_PLANE_Z); }
-    else if (this.focus && !this.dozing) {
+    // The overlay decides what deserves attention (attention.ts) from where things really are on
+    // screen; nothing here assumes the UI is above or below.
+    if (this.focus && !this.dozing) {
       // Text is close, so a shorter viewing distance than for the screen-wide cursor: moving along
       // the input sweeps the gaze gently, like reading along.
       const g = lookAt(this.focus.dx, this.focus.dy, 0.95, 340);
       target.set(Math.sin(g.yaw) * Math.cos(g.pitch), -Math.sin(g.pitch), Math.cos(g.yaw) * Math.cos(g.pitch)).multiplyScalar(1.6);
       rollT = -Math.atan2(target.x, 3) * 0.15;
     }
+    else if (this.state === 'approval') target.set(0, 0, 2); // (only until the overlay reports the card)
+    else if (this.state === 'searching') { target.set(Math.sin(t * 2.2) * 1.4, Math.sin(t * 1.3) * 0.35, LOOK_PLANE_Z); }
     else if (cursorFresh && !this.dozing) {
       // A direction across the whole screen (not clamped to this small canvas), so every part of
       // the screen maps to a distinct gaze.

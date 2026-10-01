@@ -22,6 +22,7 @@ const api = {
   updateStatus: (): Promise<UpdateStatus> => ipcRenderer.invoke('ghost:update-status'),
   checkForUpdates: (): Promise<UpdateStatus> => ipcRenderer.invoke('ghost:update-check'),
   runUpdate: () => ipcRenderer.send('ghost:update-run'),
+  log: (event: string, detail?: unknown) => ipcRenderer.send('ghost:log', event, detail),
   onUpdate: (cb: (s: UpdateStatus) => void): void => { ipcRenderer.on('ghost:update', (_e, s) => cb(s)); },
   onSettings: (cb: (s: Settings) => void): void => { ipcRenderer.on('ghost:settings', (_e, s) => cb(s)); },
   onSummon: (cb: () => void): void => { ipcRenderer.on('ghost:summon', () => cb()); },

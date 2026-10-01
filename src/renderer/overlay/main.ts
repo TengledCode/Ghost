@@ -8,6 +8,7 @@ import { GhostShell } from './shell/ghostShell';
 import { moodFromMessage } from './shell/motion';
 import { isIdle } from './idle';
 import { Subtitles } from './subtitles';
+import { attentionPoint, GLANCE_MS, relativeTo, type Box } from './attention';
 
 type VoiceOrbEl = HTMLElement & { state: string; connect(n: AudioNode): Promise<void>; bands?: number[] };
 
@@ -79,7 +80,7 @@ player.onChunkStart = (turnId, seq, at, duration) => {
 };
 player.onFinished = turnId => { subtitles.revealAll(turnId); core.send({ type: 'playback_finished', turnId }); };
 (function tickSubtitles() { requestAnimationFrame(tickSubtitles); subtitles.tick(); })();
-if (!inElectron) (window as unknown as { ghostDebug: object }).ghostDebug = { player, subtitles, GhostFilter }; // browser preview: inspectable
+if (!inElectron) (window as unknown as { ghostDebug: object }).ghostDebug = { player, subtitles, GhostFilter, showConfirm: (id: string, text: string) => showConfirm(id, text), showNotice: (t: string) => showNotice(t) }; // browser preview: inspectable
 await customElements.whenDefined('voice-orb').catch(() => {});
 // The orb taps the processed voice, so the eye pulses with what Aaron actually hears.
 voiceOrb.connect?.(player.master).catch(() => {});
@@ -97,9 +98,43 @@ bridge.onCursor((x, y) => {
   shell.setCursor(x - (r.left + r.width / 2), y - (r.top + r.height / 2));
 });
 // The shell's mouth movement follows the voice as it plays.
+let lastPoint = { x: -1, y: -1 }; // last cursor position over the window (declared before the cursor feed uses it)
+
+// Ghost watches the text caret while Aaron types: his eye settles on the box and follows the words.
+const measure = document.createElement('canvas').getContext('2d')!;
+function caretPoint(): { x: number; y: number } {
+  const r = input.getBoundingClientRect();
+  const cs = getComputedStyle(input);
+  measure.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+  const before = input.value.slice(0, input.selectionStart ?? input.value.length);
+  const padL = parseFloat(cs.paddingLeft) || 0, padR = parseFloat(cs.paddingRight) || 0;
+  const x = r.left + padL + Math.max(0, Math.min(measure.measureText(before).width - input.scrollLeft, r.width - padL - padR));
+  return { x, y: r.top + r.height / 2 };
+}
+
+// What Ghost looks at, measured from the page every frame (see attention.ts): the Allow button while
+// he waits for an answer, the caret while you type, a brief glance at anything that just appeared.
+let glance: { el: HTMLElement; until: number } | null = null;
+function glanceAt(el: HTMLElement): void { glance = { el, until: performance.now() + GLANCE_MS }; }
+const visible = (el: HTMLElement) => !el.hidden && el.getClientRects().length > 0;
+const boxOf = (el: Element): Box => { const r = el.getBoundingClientRect(); return { left: r.left, top: r.top, width: r.width, height: r.height }; };
+function attend(): void {
+  if (!shell) return;
+  const allow = confirmEl.querySelector('.allow');
+  const typing = document.activeElement === input && !form.hidden;
+  const point = attentionPoint({
+    approve: pendingApproval && visible(confirmEl) && allow ? boxOf(allow) : null,
+    caret: typing ? caretPoint() : null,
+    glance: glance && visible(glance.el) ? { box: boxOf(glance.el), until: glance.until } : null,
+    now: performance.now(),
+  });
+  shell.setFocus(point ? relativeTo(point, boxOf(shellEl)) : null);
+}
+
 (function feedVoice() {
   requestAnimationFrame(feedVoice);
   shell?.setBands(player.bands());
+  attend();
 })();
 if (!inElectron) setOrientation((new URLSearchParams(location.search).get('orient') as Corner) ?? 'bottom-right');
 
@@ -126,6 +161,13 @@ function applySettings(s: Settings): void {
     try {
       shell = new GhostShell(shellEl, theme, s.renderQuality);
       if (!materialised) { materialised = true; shell.materialise(); } // the startup entrance, once
+      // A graphics driver reset (e.g. when a heavy app like Photos closes) loses the 3D context;
+      // without this Ghost would stay invisible. Reload and he materialises again.
+      shellEl.querySelector('canvas')?.addEventListener('webglcontextlost', e => {
+        e.preventDefault();
+        bridge.log('webgl context lost');
+        setTimeout(() => location.reload(), 1500);
+      }, { once: true });
       shell.setState(state);
       shell.setLiveScreen(!liveTag.hidden); // a skin switch keeps the live tint
       if (!inElectron) (window as unknown as { ghostShell: GhostShell }).ghostShell = shell; // browser preview: inspectable
@@ -206,6 +248,7 @@ core.on((m: CoreMessage) => {
       const turnId = `reminder-${m.id}`;
       if (!settings.voiceEnabled) showBubble(m.text);
       else setTimeout(() => { if (subtitles.activeTurn !== turnId) showBubble(m.text); }, 3000);
+      glanceAt(bubble); // a reminder appearing catches his eye
       history.push({ who: 'ghost', text: m.text });
       renderHistory();
       break;
@@ -286,6 +329,7 @@ function showNotice(text: string, level: 'info' | 'warn' | 'error' = 'info'): vo
   noticeEl.textContent = text;
   noticeEl.className = level;
   noticeEl.hidden = false;
+  glanceAt(noticeEl);
   clearTimeout(noticeTimer);
   noticeTimer = window.setTimeout(hideNotice, level === 'error' ? 9000 : 4500);
 }
@@ -305,7 +349,6 @@ function closeInput(): void {
   form.hidden = true;
   input.value = '';
   core.send({ type: 'typing', active: false });
-  shell?.setFocus(null);
   bridge.dismissed();
   refreshInteractivity();
 }
@@ -322,7 +365,6 @@ form.addEventListener('submit', e => {
   thankedThisTurn = mood === 'happy';
   core.send({ type: 'user_message', text });
   input.value = '';
-  shell?.setFocus(null); // done typing: back to thinking about it
   replyText = '';
   showBubble('…');
   sentAt = performance.now();
@@ -331,31 +373,9 @@ form.addEventListener('submit', e => {
   renderMeta();
 });
 
-// Ghost watches the text caret while Aaron types: his eye settles on the box and follows the words.
-const measure = document.createElement('canvas').getContext('2d')!;
-function caretPoint(): { x: number; y: number } {
-  const r = input.getBoundingClientRect();
-  const cs = getComputedStyle(input);
-  measure.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
-  const before = input.value.slice(0, input.selectionStart ?? input.value.length);
-  const padL = parseFloat(cs.paddingLeft) || 0, padR = parseFloat(cs.paddingRight) || 0;
-  const x = r.left + padL + Math.max(0, Math.min(measure.measureText(before).width - input.scrollLeft, r.width - padL - padR));
-  return { x, y: r.top + r.height / 2 };
-}
-function watchCaret(): void {
-  if (!shell || document.activeElement !== input || form.hidden) return;
-  const s = shellEl.getBoundingClientRect();
-  const p = caretPoint();
-  shell.setFocus({ dx: p.x - (s.left + s.width / 2), dy: p.y - (s.top + s.height / 2) });
-}
-input.addEventListener('focus', () => requestAnimationFrame(watchCaret));
-input.addEventListener('blur', () => shell?.setFocus(null));
-for (const ev of ['keyup', 'click', 'select'] as const) input.addEventListener(ev, watchCaret);
-
 let typingTimer = 0;
 input.addEventListener('input', () => {
   core.send({ type: 'typing', active: input.value.length > 0 });
-  watchCaret();
   clearTimeout(typingTimer);
   typingTimer = window.setTimeout(() => core.send({ type: 'typing', active: false }), 8000);
 });
@@ -400,7 +420,6 @@ confirmEl.addEventListener('keydown', e => { if (e.key === 'Escape') answer(fals
 let interactive = false;
 let hoverSince = 0;
 let altDown = false;
-let lastPoint = { x: -1, y: -1 };
 
 function wantsMouse(x: number, y: number): boolean {
   const el = document.elementFromPoint(x, y);
