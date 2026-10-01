@@ -213,6 +213,14 @@ export class OverlayWindow {
     setTimeout(() => { if (!this.win.isDestroyed() && !(this.hiddenForFullscreen && !this.summoned)) this.win.setOpacity(1); }, 16);
   }
 
+  private burst: NodeJS.Timeout[] = [];
+
+  /** Redraw repeatedly over the next ~¾ s (a closing app's animation), restarting if called again. */
+  refreshBurst(): void {
+    for (const t of this.burst) clearTimeout(t);
+    this.burst = [0, 90, 180, 270, 380, 500, 650, 800].map(ms => setTimeout(() => this.refresh(), ms));
+  }
+
   /**
    * Another app came to the front. Windows can quietly drop a window's always-on-top status when a
    * fullscreen-style app (e.g. Photos) closes, leaving Ghost behind other windows, so re-assert it.

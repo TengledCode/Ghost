@@ -113,10 +113,10 @@ app.whenReady().then(async () => {
       if (overlay.win.isDestroyed()) return;
       overlay.win.webContents.send('ghost:elsewhere');
       overlay.keepOnTop();
-      // Make sure it's drawn: closing an app like Photos can make Windows drop Ghost's image. Once
-      // now, and once more in case that happens a moment later, during the app's closing animation.
-      overlay.refresh();
-      setTimeout(() => overlay.refresh(), 250);
+      // Make sure it's drawn: closing an app like Photos makes Windows drop Ghost's image at some
+      // point during its closing animation, after focus has already moved. Redraw through that whole
+      // stretch, so whenever it happens he's back within about a tenth of a second.
+      overlay.refreshBurst();
     },
   );
   setInterval(() => overlay.checkHealth(), 5000).unref();
