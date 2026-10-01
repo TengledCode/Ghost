@@ -196,7 +196,40 @@ export class OverlayWindow {
     if (this.hiddenForFullscreen) this.win.setOpacity(0);
   }
 
+  /**
+   * Another app came to the front. Windows can quietly drop a window's always-on-top status when a
+   * fullscreen-style app (e.g. Photos) closes, leaving Ghost behind other windows, so re-assert it.
+   */
+  keepOnTop(): void {
+    if (this.win.isDestroyed()) return;
+    if (!this.win.isAlwaysOnTop()) log('overlay had lost always-on-top; restored');
+    this.win.setAlwaysOnTop(true, 'screen-saver');
+    this.win.moveTop();
+  }
+
+  /**
+   * Every few seconds: is Ghost actually there? Anything wrong (hidden, see-through while not over
+   * a fullscreen app, not on top, off every screen) is logged and put right.
+   */
+  checkHealth(): void {
+    if (this.win.isDestroyed()) return;
+    const problems: string[] = [];
+    if (!this.win.isVisible()) { problems.push('not visible'); this.win.showInactive(); }
+    if (!this.hiddenForFullscreen && this.win.getOpacity() < 0.05) { problems.push('transparent while not hidden for fullscreen'); this.win.setOpacity(1); }
+    if (!this.win.isAlwaysOnTop()) { problems.push('not on top'); this.win.setAlwaysOnTop(true, 'screen-saver'); }
+    const b = this.win.getBounds();
+    const s = this.shellRect;
+    const shell = { x: b.x + s.x, y: b.y + s.y, width: s.width, height: s.height };
+    const onScreen = screen.getAllDisplays().some(d => {
+      const w = d.workArea;
+      return shell.x < w.x + w.width && shell.x + shell.width > w.x && shell.y < w.y + w.height && shell.y + shell.height > w.y;
+    });
+    if (!onScreen) { problems.push(`off-screen at ${b.x},${b.y}`); this.place(); }
+    if (problems.length) log('overlay health', problems.join('; '));
+  }
+
   setFullscreenHidden(hidden: boolean): void {
+    log(hidden ? 'hidden: a fullscreen app is in front' : 'shown again: fullscreen app gone', this.summoned ? '(summoned, stays visible)' : '');
     this.hiddenForFullscreen = hidden;
     if (this.summoned) return;
     // Opacity rather than hide(), so the renderer keeps playing voice and reminders.

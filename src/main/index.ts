@@ -105,8 +105,13 @@ app.whenReady().then(async () => {
   // Clicking into another app sends Ghost to its idle look straight away.
   const foreground = new ForegroundWatcher(
     () => BrowserWindow.getAllWindows().filter(w => !w.isDestroyed()).map(w => hwndOf(w.getNativeWindowHandle())),
-    () => { if (!overlay.win.isDestroyed()) overlay.win.webContents.send('ghost:elsewhere'); },
+    () => {
+      if (overlay.win.isDestroyed()) return;
+      overlay.win.webContents.send('ghost:elsewhere');
+      overlay.keepOnTop();
+    },
   );
+  setInterval(() => overlay.checkHealth(), 5000).unref();
   foreground.start();
   app.on('will-quit', () => foreground.stop());
 
