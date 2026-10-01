@@ -8,16 +8,67 @@
 </head>
 <body>
   <main>
-    <header><h1>Ghost</h1><p class="sub">Your companion's settings. Changes apply immediately.</p></header>
+    <header>
+      <h1>Ghost</h1><p class="sub">Your companion's settings. Changes apply immediately.</p>
+      <nav class="tabs" role="tablist">
+        <button type="button" role="tab" data-tab-button="main">Settings</button>
+        <button type="button" role="tab" data-tab-button="more">Additional settings</button>
+      </nav>
+    </header>
 
-    <section>
-      <h2>Identity</h2>
+    <!-- ===================== Settings: the everyday ones ===================== -->
+
+    <section data-tab="main">
+      <h2>You and Ghost</h2>
       <label>Your name <input data-key="userName" /></label>
       <label>Companion's name <input data-key="assistantName" /></label>
     </section>
 
-    <section>
-      <h2>Placement</h2>
+    <section data-tab="main">
+      <h2>Brain</h2>
+      <label>Primary brain
+        <select id="primaryBrain" data-key="provider"><option value="claude">Claude (Pro/Max subscription)</option><option value="gemini">Gemini (Google AI Pro, via Antigravity)</option><option value="mock">Offline mock (testing)</option></select>
+      </label>
+      <label>Secondary brain
+        <select id="secondaryBrain" data-key="fallbackProvider" data-nullable><option value="">None</option><option value="claude">Claude (Pro/Max subscription)</option><option value="gemini">Gemini (Google AI Pro, via Antigravity)</option></select>
+      </label>
+      <p class="hint">The secondary takes over when the primary is unavailable: signed out, or its plan's limit is reached.</p>
+      <label>Which slot
+        <select data-key="modelTier">
+          <option value="auto">Auto: Ghost picks for each message</option>
+          <option value="fast">Always Light</option><option value="balanced">Always Balanced</option><option value="deep">Always Heavy</option>
+        </select>
+      </label>
+      <p class="hint">Light for quick things and PC actions, Balanced normally, Heavy when you ask it to think hard. Light uses the least of your plan. The model in each slot is set in Additional settings.</p>
+      <div class="row-buttons">
+        <button type="button" id="newConversation">Start a new conversation</button>
+        <button type="button" id="clearHistory" class="danger">Clear conversation history</button>
+      </div>
+      <p class="hint" id="clearHint">Conversations are kept on this PC so Ghost can pick up after a restart and recall past chats. Clearing keeps the lasting facts it has learned about you.</p>
+    </section>
+
+    <section data-tab="main">
+      <h2>Voice</h2>
+      <label class="check"><input type="checkbox" data-key="voiceEnabled" /> Speak replies</label>
+      <label>Engine
+        <select data-key="ttsEngine"><option value="elevenlabs">ElevenLabs (free tier, falls back to Edge)</option><option value="edge">Edge neural (free, unlimited)</option></select>
+      </label>
+      <label>ElevenLabs key <input type="password" id="elevenKey" placeholder="Paste your free-tier API key" /><button type="button" id="saveKey">Save</button></label>
+      <p class="hint" id="keyStatus"></p>
+      <div class="voices"><h3>ElevenLabs voices</h3><div id="elevenVoices"></div></div>
+      <div class="voices"><h3>Edge voices (fallback)</h3><div id="edgeVoices"></div></div>
+      <label>Character
+        <select data-key="voiceCharacter">
+          <option value="natural">Natural: the voice as it is, lightly polished</option>
+          <option value="companion">Companion: a small synthetic companion</option>
+          <option value="drone">Drone: clearly a little machine</option>
+        </select>
+      </label>
+      <label>Volume <input type="range" min="0" max="1" step="0.05" data-key="volume" data-num /><output></output></label>
+    </section>
+
+    <section data-tab="main">
+      <h2>Where and how Ghost appears</h2>
       <label>Corner
         <select data-key="corner">
           <option value="bottom-right">Bottom right</option><option value="bottom-left">Bottom left</option>
@@ -28,20 +79,6 @@
       <label>Size <input type="range" min="90" max="420" step="10" data-key="size" data-num /><output></output></label>
       <label>Idle opacity <input type="range" min="0.2" max="1" step="0.05" data-key="idleOpacity" data-num /><output></output></label>
       <p class="hint">How see-through Ghost and its text boxes become when you're not using them (a few seconds untouched, or after you click away).</p>
-      <label class="check"><input type="checkbox" data-key="clickThroughWhenIdle" /> Click-through when idle (hover briefly or hold Alt to grab it)</label>
-    </section>
-
-    <section>
-      <h2>Look</h2>
-      <label>Skin
-        <select data-key="skin"><option value="ghost-shell">Ghost shell (3D)</option><option value="classic-orb">Classic orb</option></select>
-      </label>
-      <label>Render quality
-        <select data-key="renderQuality">
-          <option value="auto">Adaptive: full effects, steps down if frames slow</option>
-          <option value="high">High</option><option value="medium">Medium</option><option value="low">Low: no glow effects, 30 fps</option>
-        </select>
-      </label>
       <div class="themes" id="themes"></div>
       <div class="custom-theme" id="customTheme">
         <label>Shell <input type="color" data-custom="shell" /></label>
@@ -50,38 +87,7 @@
       </div>
     </section>
 
-    <section>
-      <h2>Brain</h2>
-      <div class="brain">
-        <label>Primary brain
-          <select id="primaryBrain" data-key="provider"><option value="claude">Claude (Pro/Max subscription)</option><option value="gemini">Gemini (Google AI Pro, via Antigravity)</option><option value="mock">Offline mock (testing)</option></select>
-        </label>
-        <div class="slots" data-brain-slots="primary"></div>
-      </div>
-      <div class="brain">
-        <label>Secondary brain
-          <select id="secondaryBrain" data-key="fallbackProvider" data-nullable><option value="">None</option><option value="claude">Claude (Pro/Max subscription)</option><option value="gemini">Gemini (Google AI Pro, via Antigravity)</option></select>
-        </label>
-        <p class="hint">Takes over when the primary is unavailable: signed out, or its plan's limit is reached.</p>
-        <div class="slots" data-brain-slots="secondary"></div>
-      </div>
-      <label>Which slot
-        <select data-key="modelTier">
-          <option value="auto">Auto: Ghost picks for each message</option>
-          <option value="fast">Always Light</option><option value="balanced">Always Balanced</option><option value="deep">Always Heavy</option>
-        </select>
-      </label>
-      <p class="hint">Light for quick things and PC actions, Balanced normally, Heavy when you ask it to think hard. Light uses the least of your plan.</p>
-      <label class="check"><input type="checkbox" data-key="showTimings" /> Show reply timings under the bubble</label>
-      <p class="hint">Text: when the first words arrived. Voice: when the first sentence was ready. Heard: when you first heard Ghost.</p>
-      <div class="row-buttons">
-        <button type="button" id="newConversation">Start a new conversation</button>
-        <button type="button" id="clearHistory" class="danger">Clear conversation history</button>
-      </div>
-      <p class="hint" id="clearHint">Conversations are kept on this PC so Ghost can pick up after a restart and recall past chats. Clearing keeps the lasting facts it has learned about you.</p>
-    </section>
-
-    <section>
+    <section data-tab="main">
       <h2>Obsidian</h2>
       <p class="hint">Keep Ghost's conversations and memory in your Obsidian vault, as notes you can read, search, link and edit. Ghost follows your edits.</p>
       <label>Vault <select id="vaultSelect"></select></label>
@@ -94,13 +100,7 @@
           <button type="button" id="starterNo">No thanks</button>
         </div>
       </div>
-      <div id="obsidianOptions" class="brain">
-        <label>Ghost's folder <input type="text" id="obsFolder" spellcheck="false" /></label>
-        <label class="check"><input type="checkbox" data-obs="dailyLinks" /> Link each conversation from that day's Daily Note</label>
-        <label class="check"><input type="checkbox" data-obs="linkNotes" /> Link names and topics to your existing notes</label>
-        <label class="check"><input type="checkbox" data-obs="topicTags" /> Add topic tags, reusing the tags you already use</label>
-        <label class="check"><input type="checkbox" data-obs="readVault" /> Let Ghost search and read your notes</label>
-        <label class="check"><input type="checkbox" data-obs="writeVault" /> Let Ghost add to and create notes (it asks you each time)</label>
+      <div id="obsidianActions">
         <div class="row-buttons">
           <button type="button" id="openObsidian">Show Ghost's notes in Obsidian</button>
           <button type="button" id="importHistory" hidden>Import existing history</button>
@@ -113,14 +113,48 @@
       </div>
     </section>
 
-    <section>
-      <h2>Voice</h2>
-      <label class="check"><input type="checkbox" data-key="voiceEnabled" /> Speak replies</label>
-      <label>Engine
-        <select data-key="ttsEngine"><option value="elevenlabs">ElevenLabs (free tier, falls back to Edge)</option><option value="edge">Edge neural (free, unlimited)</option></select>
+    <section data-tab="main">
+      <h2>Behaviour</h2>
+      <label class="check"><input type="checkbox" data-key="launchAtLogin" /> Start with Windows</label>
+      <label>Over fullscreen apps
+        <select data-key="fullscreenHide">
+          <option value="all">Hide over any fullscreen app or presentation</option>
+          <option value="games">Hide over fullscreen games only</option>
+          <option value="never">Never hide</option>
+        </select>
       </label>
-      <label>ElevenLabs key <input type="password" id="elevenKey" placeholder="Paste your free-tier API key" /><button type="button" id="saveKey">Save</button></label>
-      <p class="hint" id="keyStatus"></p>
+      <p class="hint">While hidden, Ghost's voice and reminders keep working. "Games only" keeps Ghost visible during screen recordings and presentations.</p>
+      <label>Summon hotkey <input id="hotkey" data-hotkey="hotkey" readonly /></label>
+      <p class="hint">Click the box, then press the new combination (it needs Ctrl, Alt or Shift).</p>
+    </section>
+
+    <section data-tab="main">
+      <h2>Updates</h2>
+      <p class="hint" id="updateVersion"></p>
+      <p id="updateState"></p>
+      <ul class="hint" id="updateChanges" hidden></ul>
+      <progress id="updateProgress" max="1" value="0" hidden></progress>
+      <div class="row-buttons">
+        <button type="button" id="updateCheck">Check now</button>
+        <button type="button" id="updateRun" hidden>Update Ghost</button>
+      </div>
+      <p class="hint">Updating downloads the changes, rebuilds Ghost from its folder and restarts it, about a minute in all. Your settings, history and notes are kept. If anything fails, nothing is installed.</p>
+      <button type="button" id="quit" class="danger">Quit Ghost</button>
+    </section>
+
+    <!-- ===================== Additional settings: fine-tuning ===================== -->
+
+    <section data-tab="more">
+      <h2>Models</h2>
+      <p class="hint">Which model each brain uses for Light, Balanced and Heavy.</p>
+      <div class="brain"><strong data-brain-name="primary"></strong><div class="slots" data-brain-slots="primary"></div></div>
+      <div class="brain" data-brain-card="secondary"><strong data-brain-name="secondary"></strong><div class="slots" data-brain-slots="secondary"></div></div>
+      <label class="check"><input type="checkbox" data-key="showTimings" /> Show reply timings under the bubble</label>
+      <p class="hint">Text: when the first words arrived. Voice: when the first sentence was ready. Heard: when you first heard Ghost.</p>
+    </section>
+
+    <section data-tab="more">
+      <h2>Voice tuning</h2>
       <label>ElevenLabs model
         <select data-key="elevenLabsModel">
           <option value="eleven_flash_v2_5">Flash v2.5: fastest, plainest delivery</option>
@@ -128,22 +162,12 @@
           <option value="eleven_v3">v3: most expressive, slowest, 2× credits</option>
         </select>
       </label>
-      <div class="voices"><h3>ElevenLabs voices</h3><div id="elevenVoices"></div></div>
       <label>Any ElevenLabs voice <input type="text" id="customVoice" data-key="elevenLabsVoiceId" placeholder="Paste a voice ID" spellcheck="false" /><button type="button" id="previewCustomVoice">Preview</button></label>
       <p class="hint">For a voice that doesn't sound like every narrator: on elevenlabs.io open Voices → Voice Library (or Voice Design to make one from a description), add it to My Voices, then copy its ID here.</p>
       <label>Steadiness <input type="range" min="0" max="1" step="0.05" data-key="voiceStability" data-num /><output></output></label>
       <label>Style <input type="range" min="0" max="1" step="0.05" data-key="voiceStyle" data-num /><output></output></label>
       <p class="hint">Lower steadiness sounds livelier and less monotone; higher is calmer and more even. Style exaggerates the voice's own character (not used by v3).</p>
-      <div class="voices"><h3>Edge voices (fallback)</h3><div id="edgeVoices"></div></div>
-      <label>Character
-        <select data-key="voiceCharacter">
-          <option value="natural">Natural: the voice as it is, lightly polished</option>
-          <option value="companion">Companion: a small synthetic companion</option>
-          <option value="drone">Drone: clearly a little machine</option>
-        </select>
-      </label>
       <label>Filter amount <input type="range" min="0" max="1" step="0.05" data-key="ghostFilter" data-num /><output></output></label>
-      <label>Volume <input type="range" min="0" max="1" step="0.05" data-key="volume" data-num /><output></output></label>
       <label>Keep audio awake
         <select id="audioKeepAlive" data-key="audioKeepAlive">
           <option value="while-talking">While Ghost is talking (recommended)</option>
@@ -158,17 +182,34 @@
       </div>
     </section>
 
-    <section>
-      <h2>Behaviour</h2>
-      <label>Summon hotkey <input id="hotkey" data-hotkey="hotkey" readonly /></label>
-      <label>Quit hotkey <input id="quitHotkey" data-hotkey="quitHotkey" readonly /></label>
-      <p class="hint">Click a box, then press the new combination (it needs Ctrl, Alt or Shift).</p>
-      <label class="check"><input type="checkbox" data-key="launchAtLogin" /> Start with Windows</label>
-      <label class="check"><input type="checkbox" data-key="hideOnFullscreen" /> Hide over fullscreen games and apps (voice and reminders keep working)</label>
-      <button type="button" id="quit" class="danger">Quit Ghost</button>
+    <section data-tab="more">
+      <h2>Look and feel</h2>
+      <label>Skin
+        <select data-key="skin"><option value="ghost-shell">Ghost shell (3D)</option><option value="classic-orb">Classic orb</option></select>
+      </label>
+      <label>Render quality
+        <select data-key="renderQuality">
+          <option value="auto">Adaptive: full effects, steps down if frames slow</option>
+          <option value="high">High</option><option value="medium">Medium</option><option value="low">Low: no glow effects, 30 fps</option>
+        </select>
+      </label>
+      <label class="check"><input type="checkbox" data-key="clickThroughWhenIdle" /> Click-through when idle (hover briefly or hold Alt to grab it)</label>
     </section>
 
-    <section>
+    <section data-tab="more">
+      <h2>Obsidian options</h2>
+      <p class="hint" id="obsidianOptionsHint">Connect a vault (Settings → Obsidian) to use these.</p>
+      <div id="obsidianOptions" class="brain">
+        <label>Ghost's folder <input type="text" id="obsFolder" spellcheck="false" /></label>
+        <label class="check"><input type="checkbox" data-obs="dailyLinks" /> Link each conversation from that day's Daily Note</label>
+        <label class="check"><input type="checkbox" data-obs="linkNotes" /> Link names and topics to your existing notes</label>
+        <label class="check"><input type="checkbox" data-obs="topicTags" /> Add topic tags, reusing the tags you already use</label>
+        <label class="check"><input type="checkbox" data-obs="readVault" /> Let Ghost search and read your notes</label>
+        <label class="check"><input type="checkbox" data-obs="writeVault" /> Let Ghost add to and create notes (it asks you each time)</label>
+      </div>
+    </section>
+
+    <section data-tab="more">
       <h2>Live screen view</h2>
       <p class="hint">While live view is on, each message includes a snapshot of the monitor under your cursor, so you can just ask "what's this error?". Ghost leaves itself out of the picture, and a red LIVE tag shows whenever it's on. You can also type "watch my screen" or "stop watching".</p>
       <label>Toggle hotkey <input id="liveScreenHotkey" data-hotkey="liveScreenHotkey" readonly /></label>
@@ -176,17 +217,10 @@
       <label>After <span class="inline-num"><input type="number" id="liveScreenAutoOffMinutes" min="5" max="240" step="5" data-key="liveScreenAutoOffMinutes" data-num /> minutes without a message</span></label>
     </section>
 
-    <section>
-      <h2>Updates</h2>
-      <p class="hint" id="updateVersion"></p>
-      <p id="updateState"></p>
-      <ul class="hint" id="updateChanges" hidden></ul>
-      <progress id="updateProgress" max="1" value="0" hidden></progress>
-      <div class="row-buttons">
-        <button type="button" id="updateCheck">Check now</button>
-        <button type="button" id="updateRun" hidden>Update Ghost</button>
-      </div>
-      <p class="hint">Updating downloads the changes, rebuilds Ghost from its folder and restarts it, about a minute in all. Your settings, history and notes are kept. If anything fails, nothing is installed.</p>
+    <section data-tab="more">
+      <h2>Other hotkeys</h2>
+      <label>Quit hotkey <input id="quitHotkey" data-hotkey="quitHotkey" readonly /></label>
+      <p class="hint">Click the box, then press the new combination (it needs Ctrl, Alt or Shift).</p>
     </section>
   </main>
   <script type="module" src="./main.ts"></script>

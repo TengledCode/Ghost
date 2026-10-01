@@ -13,6 +13,20 @@ async function update(patch: Partial<Settings>): Promise<void> {
   render();
 }
 
+// Two tabs: everyday settings, and the finer ones under "Additional settings". The open tab is remembered.
+const TAB_KEY = 'ghost.settings.tab';
+function showTab(name: string): void {
+  if (!document.querySelector(`[data-tab-button="${name}"]`)) name = 'main';
+  for (const b of document.querySelectorAll<HTMLButtonElement>('[data-tab-button]')) b.setAttribute('aria-selected', String(b.dataset.tabButton === name));
+  for (const sec of document.querySelectorAll<HTMLElement>('[data-tab]')) sec.hidden = sec.dataset.tab !== name;
+  try { localStorage.setItem(TAB_KEY, name); } catch { /* not remembered */ }
+}
+for (const b of document.querySelectorAll<HTMLButtonElement>('[data-tab-button]')) b.addEventListener('click', () => { showTab(b.dataset.tabButton!); window.scrollTo(0, 0); });
+let savedTab: string | null = null;
+try { savedTab = localStorage.getItem(TAB_KEY); } catch { /* default */ }
+const firstTab = new URLSearchParams(location.search).get('tab') ?? savedTab ?? 'main';
+showTab(firstTab);
+
 // Generic bindings: data-key inputs map straight onto settings fields.
 for (const el of document.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-key]')) {
   const key = el.dataset.key as keyof Settings;
@@ -59,7 +73,12 @@ function renderBrains(): void {
   // A brain can't back itself up.
   for (const opt of (document.getElementById('secondaryBrain') as HTMLSelectElement).options) opt.disabled = !!opt.value && opt.value === settings.provider;
   const pairs: [string, string | null][] = [['primary', settings.provider], ['secondary', settings.fallbackProvider]];
+  const names: Record<string, string> = { claude: 'Claude', gemini: 'Gemini', mock: 'Offline mock' };
   for (const [which, brain] of pairs) {
+    const nameEl = document.querySelector<HTMLElement>(`[data-brain-name="${which}"]`);
+    if (nameEl) nameEl.textContent = `${which === 'primary' ? 'Primary' : 'Secondary'} · ${brain ? names[brain] ?? brain : 'none'}`;
+    const card = document.querySelector<HTMLElement>(`[data-brain-card="${which}"]`);
+    if (card) card.hidden = !brain || brain === 'mock';
     const wrap = document.querySelector<HTMLElement>(`[data-brain-slots="${which}"]`)!;
     if (!brain || brain === 'mock') { wrap.hidden = true; wrap.replaceChildren(); continue; }
     wrap.hidden = false;
@@ -235,6 +254,8 @@ function renderObsidian(): void {
     : obsidian?.error ?? (c ? `Connected to ${c.name} · ${c.notes.toLocaleString()} notes${c.waiting ? ' · some changes waiting to be written' : ''}` : 'Connecting…');
 
   (document.getElementById('obsidianOptions') as HTMLElement).hidden = !current;
+  (document.getElementById('obsidianOptionsHint') as HTMLElement).hidden = !!current;
+  (document.getElementById('obsidianActions') as HTMLElement).hidden = !current;
   if (document.activeElement !== folderInput) folderInput.value = settings.obsidian.folder;
   for (const box of document.querySelectorAll<HTMLInputElement>('[data-obs]')) box.checked = !!settings.obsidian[box.dataset.obs as keyof Settings['obsidian']];
 

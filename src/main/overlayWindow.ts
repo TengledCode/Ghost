@@ -2,6 +2,7 @@ import { BrowserWindow, screen } from 'electron';
 import { join } from 'node:path';
 import type { Corner, Settings } from '../shared/settings';
 import { log } from './log';
+import { QUNS_NAMES } from './fullscreenWatcher';
 import { cornerWindowPosition, orientationForShell, SHELL_PAD, snapShell, windowSize, type Rect } from './placement';
 
 export class OverlayWindow {
@@ -266,8 +267,10 @@ export class OverlayWindow {
     if (problems.length) log('overlay health', problems.join('; '));
   }
 
-  setFullscreenHidden(hidden: boolean): void {
-    log(hidden ? 'hidden: a fullscreen app is in front' : 'shown again: fullscreen app gone', this.summoned ? '(summoned, stays visible)' : '');
+  setFullscreenHidden(hidden: boolean, code?: number): void {
+    if (!hidden && !this.hiddenForFullscreen) return;
+    const why = code !== undefined ? ` (Windows reports ${QUNS_NAMES[code] ?? 'state'}, code ${code})` : '';
+    log(hidden ? `hidden: a fullscreen app is in front${why}` : `shown again${why}`, this.summoned ? '(summoned, stays visible)' : '');
     this.hiddenForFullscreen = hidden;
     if (this.summoned) return;
     // Opacity rather than hide(), so the renderer keeps playing voice and reminders.

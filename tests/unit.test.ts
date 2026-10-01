@@ -15,6 +15,7 @@ import { TtsService } from '../src/core/tts/service';
 import { TtsError, type TtsEngine } from '../src/core/tts/types';
 import { cornerPosition, MARGIN, nearestCorner, windowSize } from '../src/main/placement';
 import { mergeSettings } from '../src/shared/settings';
+import { shouldHide } from '../src/main/fullscreenWatcher';
 
 const tmp = () => mkdtempSync(join(tmpdir(), 'ghost-'));
 const lines = (f: string) => readFileSync(join(__dirname, 'fixtures', f), 'utf8').trim().split('\n');
@@ -71,6 +72,20 @@ describe('router', () => {
   it("won't let a brain be its own backup", () => {
     expect(mergeSettings({ provider: 'gemini', fallbackProvider: 'gemini' }).fallbackProvider).toBeNull();
     expect(mergeSettings({ provider: 'gemini', fallbackProvider: 'claude' }).fallbackProvider).toBe('claude');
+  });
+  it('carries the old fullscreen checkbox over to the new choice', () => {
+    expect(mergeSettings({}).fullscreenHide).toBe('all');
+    expect(mergeSettings({ hideOnFullscreen: false } as never).fullscreenHide).toBe('never');
+    expect(mergeSettings({ hideOnFullscreen: true } as never).fullscreenHide).toBe('all');
+    expect(mergeSettings({ hideOnFullscreen: false, fullscreenHide: 'games' } as never).fullscreenHide).toBe('games');
+    expect('hideOnFullscreen' in mergeSettings({ hideOnFullscreen: true } as never)).toBe(false);
+  });
+  it('hides only for the fullscreen states the chosen mode covers', () => {
+    expect(shouldHide('all', 2)).toBe(true); // a fullscreen app (some screen recorders report this)
+    expect(shouldHide('games', 2)).toBe(false);
+    expect(shouldHide('games', 3)).toBe(true);
+    expect(shouldHide('never', 3)).toBe(false);
+    expect(shouldHide('all', 5)).toBe(false);
   });
 });
 

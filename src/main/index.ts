@@ -105,8 +105,9 @@ app.whenReady().then(async () => {
   bindHotkeys(settings());
   const applyLogin = (on: boolean) => { if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: on, args: ['--hidden-start'] }); };
   applyLogin(settings().launchAtLogin);
-  const fullscreen = new FullscreenWatcher(isFull => overlay.setFullscreenHidden(isFull));
-  if (settings().hideOnFullscreen) fullscreen.start();
+  const fullscreen = new FullscreenWatcher((hide, code) => overlay.setFullscreenHidden(hide, code));
+  fullscreen.start(settings().fullscreenHide);
+  log('fullscreen hiding:', settings().fullscreenHide);
   // Clicking into another app sends Ghost to its idle look straight away.
   const foreground = new ForegroundWatcher(
     () => BrowserWindow.getAllWindows().filter(w => !w.isDestroyed()).map(w => hwndOf(w.getNativeWindowHandle())),
@@ -137,7 +138,12 @@ app.whenReady().then(async () => {
     if (next.hotkey !== prev.hotkey || next.quitHotkey !== prev.quitHotkey || next.liveScreenHotkey !== prev.liveScreenHotkey) bindHotkeys(next);
     if (next.liveScreenAutoOff !== prev.liveScreenAutoOff || next.liveScreenAutoOffMinutes !== prev.liveScreenAutoOffMinutes) core.settingsChanged();
     if (next.launchAtLogin !== prev.launchAtLogin) applyLogin(next.launchAtLogin);
-    if (next.hideOnFullscreen !== prev.hideOnFullscreen) { fullscreen.stop(); overlay.setFullscreenHidden(false); if (next.hideOnFullscreen) fullscreen.start(); }
+    if (next.fullscreenHide !== prev.fullscreenHide) {
+      fullscreen.stop();
+      overlay.setFullscreenHidden(false);
+      fullscreen.start(next.fullscreenHide);
+      log('fullscreen hiding:', next.fullscreenHide);
+    }
     if (next.size !== prev.size || next.corner !== prev.corner || next.cornerDisplayId !== prev.cornerDisplayId || next.customPosition !== prev.customPosition) overlay.place();
     if (next.userName !== prev.userName || next.assistantName !== prev.assistantName) core.writeCliConfig();
     if (JSON.stringify(next.obsidian) !== JSON.stringify(prev.obsidian)) core.obsidianChanged();

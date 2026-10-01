@@ -66,7 +66,7 @@ export interface Settings {
   liveScreenAutoOff: boolean; // switch live screen view off after a quiet spell
   liveScreenAutoOffMinutes: number;
   launchAtLogin: boolean;
-  hideOnFullscreen: boolean;
+  fullscreenHide: FullscreenHide; // when to step aside for fullscreen apps
   // Brain
   provider: ProviderId;
   fallbackProvider: ProviderId | null;
@@ -107,7 +107,7 @@ export const DEFAULT_SETTINGS: Settings = {
   liveScreenAutoOff: false,
   liveScreenAutoOffMinutes: 30,
   launchAtLogin: true,
-  hideOnFullscreen: true,
+  fullscreenHide: 'all',
   provider: 'claude',
   fallbackProvider: 'gemini',
   modelTier: 'auto',
@@ -127,6 +127,10 @@ export const DEFAULT_SETTINGS: Settings = {
   audioKeepAlive: 'while-talking',
 };
 
+/** all: any fullscreen app, video or presentation (including some screen recorders); games: fullscreen
+ * Direct3D games only; never: Ghost always stays on screen. */
+export type FullscreenHide = 'all' | 'games' | 'never';
+
 export function mergeSettings(stored: Partial<Settings> | null | undefined): Settings {
   const merged = { ...DEFAULT_SETTINGS, ...(stored ?? {}) };
   merged.size = clamp(merged.size, 90, 420);
@@ -136,6 +140,9 @@ export function mergeSettings(stored: Partial<Settings> | null | undefined): Set
   merged.voiceStability = clamp(merged.voiceStability, 0, 1);
   merged.voiceStyle = clamp(merged.voiceStyle, 0, 1);
   merged.elevenLabsVoiceId = String(merged.elevenLabsVoiceId ?? '').trim() || DEFAULT_SETTINGS.elevenLabsVoiceId;
+  const legacy = stored as { hideOnFullscreen?: boolean } | null | undefined;
+  if (!['all', 'games', 'never'].includes(stored?.fullscreenHide as string)) merged.fullscreenHide = legacy?.hideOnFullscreen === false ? 'never' : 'all';
+  delete (merged as { hideOnFullscreen?: boolean }).hideOnFullscreen;
   merged.liveScreenAutoOffMinutes = Math.round(clamp(merged.liveScreenAutoOffMinutes, 5, 240));
   const saved = (stored?.brainModels ?? {}) as Partial<Record<BrainId, Partial<SlotModels>>>;
   merged.brainModels = {
