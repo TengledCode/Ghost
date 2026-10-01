@@ -11,6 +11,7 @@ import { TtsService } from '../core/tts/service';
 import type { Settings } from '../shared/settings';
 import { ForegroundWatcher, hwndOf } from './foregroundWatcher';
 import { initLog, log } from './log';
+import { WindowEvents } from './windowEvents';
 import { FullscreenWatcher } from './fullscreenWatcher';
 import { OverlayWindow } from './overlayWindow';
 import { SettingsStore } from './settingsStore';
@@ -120,6 +121,15 @@ app.whenReady().then(async () => {
     },
   );
   setInterval(() => overlay.checkHealth(), 5000).unref();
+  // Windows tells Ghost the instant another window hides, closes or cloaks (an app like Photos
+  // closing), so he redraws at that exact moment instead of after a visible blink.
+  const windowEvents = new WindowEvents(name => {
+    if (overlay.win.isDestroyed()) return;
+    if (name === 'foreground') overlay.refreshBurst();
+    else overlay.refreshNow();
+  });
+  log('window events', windowEvents.start() ? 'on' : 'unavailable: using timed redraws only');
+  app.on('will-quit', () => windowEvents.stop());
   foreground.start(60); // quick to notice, so a dropped frame is back before it's seen
   app.on('will-quit', () => foreground.stop());
 

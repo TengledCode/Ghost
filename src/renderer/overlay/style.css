@@ -31,7 +31,7 @@ html, body { margin: 0; height: 100%; background: transparent; overflow: hidden;
 #shell, #stack .panel { transition: opacity .15s ease, background-color .15s ease; }
 #shell > *, #stack .panel { transition: opacity .15s ease, background-color .15s ease; }
 /* The LIVE tag is exempt: when Ghost can see the screen, that must always be obvious. */
-#stage[data-idle] #shell > :not(.live-tag), #stage[data-idle] #stack .panel { opacity: var(--idle-opacity); transition-duration: .8s; }
+#stage[data-idle] #shell > :not(.live-tag):not(.label), #stage[data-idle] #stack .panel { opacity: var(--idle-opacity); transition-duration: .8s; }
 #shell .live-tag { position: absolute; left: 50%; top: -6%; transform: translateX(-50%); display: flex; align-items: center; gap: 5px;
   padding: 2px 8px; border-radius: 999px; font: 600 10px/1.4 "Segoe UI", system-ui, sans-serif; letter-spacing: .12em; color: #fff;
   background: rgba(200, 24, 72, .92); border: 1px solid rgba(255, 140, 170, .6); pointer-events: none; white-space: nowrap; }
@@ -66,6 +66,10 @@ html, body { margin: 0; height: 100%; background: transparent; overflow: hidden;
 #stage[data-state="searching"] #shell .label::after { content: ''; display: inline-block; width: 1.1em; text-align: left; animation: label-dots 1.4s steps(1, end) infinite; }
 @keyframes label-dots { 0% { content: ''; } 25% { content: '.'; } 50% { content: '..'; } 75% { content: '...'; } }
 #stage[data-state="error"] #shell .label { border-color: rgba(255, 110, 110, .45); }
+/* Only while there's something to say: never an empty pill, never while idle or done. */
+#shell .label:empty,
+#stage[data-state="idle"] #shell .label,
+#stage[data-state="done"] #shell .label { display: none; }
 #stage[data-state="approval"] #shell .label { border-color: rgba(255, 196, 107, .5); }
 #stage:not([data-state="idle"]) #shell .label:not(:empty) { opacity: 1; }
 #stage[data-state="approval"] .eye { filter: sepia(1) saturate(3) hue-rotate(-15deg); }

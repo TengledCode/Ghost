@@ -219,9 +219,19 @@ export class OverlayWindow {
    * Redraw every ~2 frames over the next 1.2 s (a closing app's animation), restarting if called
    * again. When Windows drops Ghost's image somewhere in that stretch, the gap is at most ~40 ms.
    */
-  refreshBurst(): void {
+  refreshBurst(steps = 30): void {
     for (const t of this.burst) clearTimeout(t);
-    this.burst = Array.from({ length: 30 }, (_, i) => setTimeout(() => this.refresh(), i * 40));
+    this.burst = Array.from({ length: steps }, (_, i) => setTimeout(() => this.refresh(), i * 40));
+  }
+
+  private lastRefresh = 0;
+
+  /** Another app's window just hid, closed or cloaked: redraw now and for a few frames after (rate-limited). */
+  refreshNow(): void {
+    const now = Date.now();
+    if (now - this.lastRefresh < 30) return;
+    this.lastRefresh = now;
+    this.refreshBurst(8);
   }
 
   /**
