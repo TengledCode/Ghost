@@ -49,7 +49,12 @@ export class OverlayWindow {
     this.win.setVisibleOnAllWorkspaces(true);
     this.win.setIgnoreMouseEvents(true, { forward: true });
     this.place();
-    screen.on('display-metrics-changed', () => this.place());
+    screen.on('display-metrics-changed', (_e, display, changed) => {
+      // e.g. Photos switching the screen into and out of HDR/wide colour for an image
+      log('display changed', { id: display.id, changed });
+      this.place();
+      this.refresh();
+    });
     screen.on('display-removed', () => this.place());
   }
 
@@ -194,6 +199,18 @@ export class OverlayWindow {
   dismissed(): void {
     this.summoned = false;
     if (this.hiddenForFullscreen) this.win.setOpacity(0);
+  }
+
+  /**
+   * Make the compositor redraw Ghost's transparent window: a repaint plus a tiny opacity nudge, which
+   * makes Windows recomposite it. Cheap, and harmless when nothing was wrong.
+   */
+  refresh(): void {
+    if (this.win.isDestroyed()) return;
+    this.win.webContents.invalidate();
+    if (this.hiddenForFullscreen && !this.summoned) return;
+    this.win.setOpacity(0.99);
+    setTimeout(() => { if (!this.win.isDestroyed() && !(this.hiddenForFullscreen && !this.summoned)) this.win.setOpacity(1); }, 60);
   }
 
   /**

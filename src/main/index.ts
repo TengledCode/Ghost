@@ -20,6 +20,10 @@ import { readBuildInfo, Updater, type BuildInfo } from './updater';
 
 if (!app.requestSingleInstanceLock()) app.quit();
 app.setAppUserModelId('com.aaron.ghost');
+// Chromium stops drawing windows it believes are covered ("native window occlusion"). For a
+// transparent always-on-top overlay that check can get stuck after a covering app (e.g. Photos)
+// closes: Ghost's window is still there but draws nothing. Ghost is tiny, so it simply keeps drawing.
+app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
 
 const resource = (...p: string[]) => (app.isPackaged ? join(process.resourcesPath, ...p) : join(app.getAppPath(), ...p));
 
@@ -109,6 +113,7 @@ app.whenReady().then(async () => {
       if (overlay.win.isDestroyed()) return;
       overlay.win.webContents.send('ghost:elsewhere');
       overlay.keepOnTop();
+      overlay.refresh(); // and make sure it's drawn (a closing app like Photos could leave it blank)
     },
   );
   setInterval(() => overlay.checkHealth(), 5000).unref();

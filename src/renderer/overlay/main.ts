@@ -163,6 +163,9 @@ function applySettings(s: Settings): void {
       if (!materialised) { materialised = true; shell.materialise(); } // the startup entrance, once
       // A graphics driver reset (e.g. when a heavy app like Photos closes) loses the 3D context;
       // without this Ghost would stay invisible. Reload and he materialises again.
+      // If the page is ever told it's hidden while Ghost should be on screen, that's the bug that
+      // made him vanish; log it so it can be seen in data/ghost.log.
+      document.addEventListener('visibilitychange', () => bridge.log(`page ${document.visibilityState}`));
       shellEl.querySelector('canvas')?.addEventListener('webglcontextlost', e => {
         e.preventDefault();
         bridge.log('webgl context lost');
