@@ -31,14 +31,30 @@ html, body { margin: 0; height: 100%; background: transparent; overflow: hidden;
 #shell, #stack .panel { transition: opacity .15s ease, background-color .15s ease; }
 #shell > *, #stack .panel { transition: opacity .15s ease, background-color .15s ease; }
 /* The LIVE tag is exempt: when Ghost can see the screen, that must always be obvious. */
-#stage[data-idle] #shell > :not(.live-tag):not(.label), #stage[data-idle] #stack .panel { opacity: var(--idle-opacity); transition-duration: .8s; }
-#shell .live-tag { position: absolute; left: 50%; top: -6%; transform: translateX(-50%); display: flex; align-items: center; gap: 5px;
+#stage[data-idle] #shell > :not(.tags):not(.label), #stage[data-idle] #stack .panel { opacity: var(--idle-opacity); transition-duration: .8s; }
+/* Tags above Ghost (LIVE, REC): side by side, centred over the shell. */
+#shell .tags { position: absolute; left: 50%; top: -6%; transform: translateX(-50%); display: flex; gap: 6px; align-items: center; z-index: 2; pointer-events: none; }
+#shell .live-tag { display: flex; align-items: center; gap: 5px;
   padding: 2px 8px; border-radius: 999px; font: 600 10px/1.4 "Segoe UI", system-ui, sans-serif; letter-spacing: .12em; color: #fff;
-  background: rgba(200, 24, 72, .92); border: 1px solid rgba(255, 140, 170, .6); pointer-events: none; white-space: nowrap; z-index: 2; }
+  background: rgba(200, 24, 72, .92); border: 1px solid rgba(255, 140, 170, .6); pointer-events: none; white-space: nowrap; }
 #shell .live-tag i { width: 6px; height: 6px; border-radius: 50%; background: #fff; animation: live-pulse 1.6s ease-in-out infinite; }
 #shell .live-tag .live-left:not(:empty)::before { content: "· "; opacity: .75; }
 #shell .live-tag .live-left { letter-spacing: .02em; font-weight: 500; }
 @keyframes live-pulse { 50% { opacity: .25; } }
+/* REC: Ghost's panel look with a red edge; the timer, the microphone switch and stop. */
+#shell .rec-tag { display: flex; align-items: center; gap: 4px; padding: 2px 3px 2px 8px; border-radius: 999px; pointer-events: auto; cursor: default;
+  background: var(--panel); border: 1px solid rgba(255, 92, 120, .6); color: var(--text); white-space: nowrap;
+  font: 600 10px/1.4 "Segoe UI", system-ui, sans-serif; letter-spacing: .08em; font-variant-numeric: tabular-nums; }
+#shell .rec-tag i { width: 7px; height: 7px; border-radius: 50%; background: #ff4f6a; box-shadow: 0 0 6px #ff4f6a; animation: live-pulse 1.6s ease-in-out infinite; }
+#shell .rec-tag .rec-time { margin-right: 2px; }
+#shell .rec-tag button { display: grid; place-items: center; width: 20px; height: 20px; padding: 0; border-radius: 50%; border: 1px solid transparent;
+  background: rgba(255, 255, 255, .07); color: var(--muted); cursor: pointer; }
+#shell .rec-tag button:hover { background: rgba(255, 255, 255, .16); color: var(--text); }
+#shell .rec-tag svg { width: 11px; height: 11px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
+#shell .rec-tag .rec-stop svg { fill: currentColor; stroke: none; }
+#shell .rec-tag .rec-stop:hover { color: #ff7a8e; }
+#shell .rec-tag .rec-mic[aria-pressed="true"] { color: var(--edge); border-color: color-mix(in srgb, var(--edge) 55%, transparent); background: color-mix(in srgb, var(--edge) 18%, transparent); }
+#shell .rec-tag .rec-mic.unavailable { opacity: .45; }
 #stage[data-idle] #stack .panel { background-color: rgba(12, 14, 20, 0.12); }
 #shell .eye { position: absolute; inset: 17%; border-radius: 50%; }
 #shell[data-skin="classic-orb"] .eye { inset: 0; }

@@ -129,6 +129,7 @@ Quick commands ("open Spotify") don't get notes; they appear as a line under **G
 - [ ] Replies start with the answer: no "Very good" / "Certainly, Aaron." openers, and no "Noted." while it thinks
 - [ ] Bluetooth: Settings → Voice → Test first word, stay quiet, and "one" is heard in full; no hum from the keep-alive tone
 - [ ] Settings → Brain → Show reply timings: the bubble shows "text · voice · heard" times. The second message of a session answers noticeably faster than a cold start used to
+- [ ] "take a screenshot" saves to Pictures\Ghost (without Ghost in it) and pastes into Paint; "record my screen" shows the REC tag, the mic button says there's no microphone (until you have one), and "stop recording" saves an MP4 in Videos\Ghost that plays with sound
 - [ ] Obsidian: Settings → Obsidian → pick your vault. The import message appears, and `Ghost/Conversations` and `Ghost/Memory` fill in. Check:
   - Properties, [[links]] to your existing notes (they show in backlinks and the graph) and tags;
   - the Ghost section in today's Daily Note;

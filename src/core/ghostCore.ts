@@ -9,6 +9,7 @@ import type { ProviderId, Settings } from '../shared/settings';
 import { classify, describe } from './approvals/classify';
 import { pickGreeting } from './greeting';
 import { isPureCommand, parseScreenCommand } from './liveScreen';
+import { duration, parseCaptureCommand, type CaptureCommand } from './captureCommands';
 import { ConversationLog, type HistoryStore } from './memory/conversations';
 import { MemoryStore, type FactStore } from './memory/store';
 import { ObsidianConnection } from './obsidian/connection';
@@ -27,7 +28,7 @@ import { SentenceSplitter, type Segment } from './sentenceSplitter';
 import { TOOL_DEFS, type ToolName } from './tools/definitions';
 import { CLAUDE_BUILTIN_TOOLS } from './providers/claude';
 import { agyPaths, writeAgyPersona, writeAgyPlugin, type AgyPaths } from './providers/agyPlugin';
-import { ToolExecutor, type Host } from './tools/executor';
+import { ToolExecutor, type Host, type RecordingState } from './tools/executor';
 import { safeReadRoots } from './tools/fileAccess';
 import type { TtsService } from './tts/service';
 
@@ -268,6 +269,8 @@ export class GhostCore {
           this.send(client, { type: 'welcome', name: s.assistantName, userName: s.userName });
           this.send(client, { type: 'state', state: this.state });
           this.send(client, { type: 'live_screen', on: this.liveScreen, offAt: this.liveOffAt });
+          const rec = this.o.host.capture?.recording();
+          if (rec?.on) this.send(client, { type: 'recording', ...rec });
           if (this.fallback) this.send(client, { type: 'provider', active: this.fallback.active, primary: s.provider, reason: this.fallback.reason });
           if (this.o.greetOnStart && !this.greeted) { this.greeted = true; setTimeout(() => this.greet(), 1400); }
         }
@@ -292,6 +295,8 @@ export class GhostCore {
         return;
       case 'new_conversation': return this.newConversation();
       case 'toggle_live_screen': return this.setLiveScreen(!this.liveScreen, true);
+      case 'recording_mic': if (client.role === 'ui') this.o.host.capture?.setRecordingMic(msg.on === true); return;
+      case 'recording_stop': if (client.role === 'ui') return this.captureCommand('stop'); return;
       case 'clear_history':
         this.cancel();
         this.log.clear();
@@ -387,6 +392,8 @@ export class GhostCore {
     if (/^\/(new|reset)$/i.test(message)) return this.newConversation();
     const screenCmd = parseScreenCommand(message);
     if (isPureCommand(message, screenCmd)) return this.setLiveScreen(screenCmd === 'on', true);
+    const captureCmd = parseCaptureCommand(message);
+    if (captureCmd && this.o.host.capture) return this.captureCommand(captureCmd);
     this.cancel();
     const s = this.o.settings();
     if (this.log.isStale(SESSION_IDLE_MS)) this.rotateConversation();
@@ -674,21 +681,56 @@ export class GhostCore {
     this.liveOffAt = undefined;
   }
 
-  /** A short line from Ghost itself (no model call): shown in the bubble and spoken. */
-  private say(text: string): void {
+  /** A short line from Ghost itself (no model call): shown in the bubble and spoken (`speech` if the shown text has a path in it). */
+  private say(text: string, speech = text): void {
     const turnId = `say-${randomUUID()}`;
     this.broadcast({ type: 'text_delta', turnId, text });
     this.broadcast({ type: 'turn_end', turnId, text, provider: 'ghost', model: '' });
-    void this.speakStandalone(turnId, text);
+    void this.speakStandalone(turnId, speech, undefined, text);
   }
 
-  private async speakStandalone(turnId: string, text: string, choice?: Parameters<TtsService['speak']>[1]): Promise<void> {
+  // ---------------------------------------------------------------- screenshots and recording
+
+  /** "take a screenshot", "record my screen", "stop recording" (or the REC tag's stop button): done at once. */
+  private async captureCommand(cmd: Exclude<CaptureCommand, null>): Promise<void> {
+    const capture = this.o.host.capture;
+    if (!capture) return;
+    try {
+      if (cmd === 'screenshot') {
+        const shot = await capture.screenshot();
+        this.say(`Screenshot saved and copied to the clipboard.\n${shot.path}`, 'Screenshot saved and copied to the clipboard.');
+      } else if (cmd === 'record') {
+        if (capture.recording().on) { this.say('Already recording your screen.'); return; }
+        await capture.startRecording();
+        this.say('Recording your screen.');
+      } else {
+        const state = capture.recording();
+        if (!state.on) { this.say("I'm not recording."); return; }
+        const path = await capture.stopRecording();
+        const took = duration(Date.now() - (state.startedAt ?? Date.now()));
+        this.say(`Recording saved (${took}).\n${path}`, 'Recording saved.');
+      }
+    } catch (e) {
+      this.notify('error', `${cmd === 'screenshot' ? "Couldn't take the screenshot" : cmd === 'record' ? "Couldn't start recording" : "Couldn't save the recording"}: ${String((e as Error).message ?? e).slice(0, 200)}`);
+    }
+  }
+
+  /** Tray menu → Stop recording. */
+  stopRecordingFromTray(): void { void this.captureCommand('stop'); }
+
+  /** The recorder's state changed (started, mic switched, stopped): update every Ghost window. */
+  recordingChanged(state: RecordingState): void {
+    this.broadcast({ type: 'recording', ...state });
+    if (state.micError) this.notify('warn', `${state.micError}, so the recording carries on without your voice.`);
+  }
+
+  private async speakStandalone(turnId: string, text: string, choice?: Parameters<TtsService['speak']>[1], display = text): Promise<void> {
     const s = this.o.settings();
     if (!s.voiceEnabled && !turnId.startsWith('preview-')) return;
     try {
       const audio = await this.o.tts.speak(text, choice ?? this.voiceChoice());
       this.setState('speaking');
-      this.broadcast({ type: 'audio', turnId, seq: 0, mime: audio.mime, data: audio.audio.toString('base64'), engine: audio.engine, last: false, display: text });
+      this.broadcast({ type: 'audio', turnId, seq: 0, mime: audio.mime, data: audio.audio.toString('base64'), engine: audio.engine, last: false, display });
       this.broadcast({ type: 'audio', turnId, seq: 1, mime: audio.mime, data: '', engine: 'none', last: true });
     } catch (e) {
       this.broadcast({ type: 'notice', level: 'warn', text: `Voice unavailable: ${String((e as Error).message ?? e)}` });

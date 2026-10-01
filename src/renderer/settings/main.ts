@@ -55,6 +55,8 @@ function render(): void {
   renderVoices('edgeVoices', EDGE_VOICES, 'edge', settings.edgeVoice);
 }
 
+for (const b of document.querySelectorAll<HTMLButtonElement>('[data-open-folder]')) b.addEventListener('click', () => bridge.openCaptureFolder(b.dataset.openFolder as 'screenshots' | 'recordings'));
+
 // ---- Live screen view: the button flips it; the core tells every window when it changes.
 const liveToggle = document.getElementById('liveToggle') as HTMLButtonElement;
 const liveStatus = document.getElementById('liveStatus')!;

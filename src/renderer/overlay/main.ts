@@ -31,6 +31,22 @@ function renderLiveTag(): void {
   liveLeft.textContent = liveOffAt ? `${Math.max(1, Math.ceil((liveOffAt - Date.now()) / 60_000))}m` : '';
 }
 setInterval(() => { if (!liveTag.hidden) renderLiveTag(); }, 15_000);
+
+// REC tag while Ghost records the screen: the running time, a microphone switch and stop.
+const recTag = $('#shell .rec-tag');
+const recTime = $('#shell .rec-time');
+const recMic = $('#shell .rec-mic');
+let recStartedAt = 0;
+function renderRecTime(): void {
+  const s = Math.max(0, Math.floor((Date.now() - recStartedAt) / 1000));
+  recTime.textContent = `REC ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+setInterval(() => { if (!recTag.hidden) renderRecTime(); }, 1000);
+// Its buttons are inside the shell: keep a press on them from starting a drag or opening the input.
+recTag.addEventListener('pointerdown', e => e.stopPropagation());
+recTag.addEventListener('pointerup', e => e.stopPropagation());
+recMic.addEventListener('click', () => core.send({ type: 'recording_mic', on: recMic.getAttribute('aria-pressed') !== 'true' }));
+$('#shell .rec-stop').addEventListener('click', () => core.send({ type: 'recording_stop' }));
 const historyEl = $('#history');
 const form = $('#input') as HTMLFormElement;
 const input = form.querySelector('input')!;
@@ -268,6 +284,15 @@ core.on((m: CoreMessage) => {
       liveOffAt = m.on ? m.offAt : undefined;
       renderLiveTag();
       shell?.setLiveScreen(m.on);
+      break;
+    case 'recording':
+      recTag.hidden = !m.on;
+      recStartedAt = m.startedAt ?? Date.now();
+      recMic.setAttribute('aria-pressed', String(m.mic));
+      recMic.classList.toggle('unavailable', !!m.micError);
+      recMic.title = m.micError ?? (m.mic ? 'Microphone on: click to leave your voice out' : 'Add your microphone');
+      if (m.on) { renderRecTime(); glanceAt(recTag); }
+      refreshInteractivity();
       break;
     case 'provider': {
       // Stays visible for as long as Ghost is running on its fallback brain.

@@ -27,6 +27,7 @@ It runs on **your existing subscriptions, not API keys.** Ghost drives the offic
   - **Your other notes:** Ghost can search and read them, and add to them after you confirm.
   - **Continuity:** conversations survive restarts either way, and without a vault everything stays on your PC as before.
 - **Stays out of the way.** Click-through when idle, corner snap or free drag across monitors, size and opacity sliders, auto-hide over fullscreen games (voice and reminders keep working), a `Ctrl+Space` summon hotkey, and start at login.
+- **Screenshots and screen recording.** "Take a screenshot" saves the monitor under your cursor to Pictures\Ghost and copies it; "record my screen" records it with your PC's sound to Videos\Ghost (MP4). Ghost keeps himself out of both. While recording, a REC tag on Ghost shows the time, a microphone switch and a stop button.
 - **Safe by default.** Opening apps, URLs and documents, searching, reminders and memory run instantly. Running commands, writing, deleting, closing apps, opening programs or scripts, and reading files outside Desktop, Documents, Downloads, the vault and Ghost's own folders show a confirm card (auto-denied after 60 s). The brains' own file tools are switched off or fenced to those folders, so a web page can't trick them into reading private files.
 - **Ready for a phone later.** The brain (core) and the UI talk over a token-protected local WebSocket, so a phone client can later speak the same protocol (see `src/shared/protocol.ts`).
 

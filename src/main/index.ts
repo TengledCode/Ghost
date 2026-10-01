@@ -1,5 +1,6 @@
 import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, shell, Tray } from 'electron';
 import { execFileSync, spawn } from 'node:child_process';
+import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { GhostCore } from '../core/ghostCore';
 import { ClaudeLiveProvider } from '../core/providers/claudeLive';
@@ -15,7 +16,8 @@ import { WindowEvents } from './windowEvents';
 import { FullscreenWatcher } from './fullscreenWatcher';
 import { OverlayWindow } from './overlayWindow';
 import { SettingsStore } from './settingsStore';
-import { captureScreen } from './screenCapture';
+import { captureScreen, saveScreenshot } from './screenCapture';
+import { ScreenRecorder, type RecordingStatus } from './recorder';
 import { openSettingsWindow } from './settingsWindow';
 import { readBuildInfo, Updater, type BuildInfo } from './updater';
 
@@ -47,6 +49,21 @@ app.whenReady().then(async () => {
   const store = new SettingsStore();
   const settings = () => store.get();
 
+  // Screenshots and recordings Aaron asks for land in his own Pictures and Videos folders.
+  const screenshotsDir = join(app.getPath('pictures'), 'Ghost');
+  const recordingsDir = join(app.getPath('videos'), 'Ghost');
+  const hideGhost = (on: boolean) => overlay.hideFromCapture(on);
+  const recorder = new ScreenRecorder({
+    dir: () => recordingsDir,
+    preload: join(__dirname, '../preload/recorder.js'),
+    load: win => {
+      if (process.env.ELECTRON_RENDERER_URL) void win.loadURL(`${process.env.ELECTRON_RENDERER_URL}/recorder/index.html`);
+      else void win.loadFile(join(__dirname, '../renderer/recorder/index.html'));
+    },
+    onStatus: (s: RecordingStatus) => { core.recordingChanged(s); refreshTray(s.on); },
+    hideGhost,
+  });
+
   const mock = process.env.GHOST_PROVIDER === 'mock' || settings().provider === 'mock';
   const core = new GhostCore({
     dataDir: join(app.getPath('userData'), 'data'),
@@ -69,10 +86,18 @@ app.whenReady().then(async () => {
         if (Math.max(width, height) > 1568) img = width >= height ? img.resize({ width: 1568, quality: 'good' }) : img.resize({ height: 1568, quality: 'good' });
         return { data: img.toJPEG(85), mime: 'image/jpeg' };
       },
+      capture: {
+        screenshot: () => saveScreenshot(screenshotsDir, hideGhost),
+        startRecording: () => recorder.start(),
+        stopRecording: () => recorder.stop(),
+        setRecordingMic: on => recorder.setMic(on),
+        recording: () => recorder.current,
+      },
     },
+    readableDirs: [screenshotsDir, recordingsDir],
     settings,
     // Snapshots land in the CLIs' working folder, where the model's file-reading tool can open them.
-    captureScreen: () => captureScreen(join(app.getPath('userData'), 'data', 'workspace', 'screens'), overlay.win),
+    captureScreen: () => captureScreen(join(app.getPath('userData'), 'data', 'workspace', 'screens'), hideGhost),
     onLiveScreen: on => tray?.setToolTip(on ? 'Ghost: watching screen' : 'Ghost'),
     greetOnStart: true,
   });
@@ -102,6 +127,12 @@ app.whenReady().then(async () => {
   ipcMain.handle('ghost:pick-folder', async (_e, title: string) => {
     const r = await dialog.showOpenDialog({ title, properties: ['openDirectory'] });
     return r.canceled ? null : r.filePaths[0] ?? null;
+  });
+  ipcMain.on('ghost:open-capture-folder', (_e, kind: string) => {
+    const dir = kind === 'recordings' ? recordingsDir : kind === 'screenshots' ? screenshotsDir : null;
+    if (!dir) return;
+    mkdirSync(dir, { recursive: true });
+    void shell.openPath(dir);
   });
   // Only Obsidian links (obsidian://…) from the Settings window.
   ipcMain.on('ghost:open-obsidian', (_e, url: string) => { if (/^obsidian:\/\//.test(url)) void shell.openExternal(url); });
@@ -194,16 +225,30 @@ app.whenReady().then(async () => {
   const icon = nativeImage.createFromPath(resource('resources', 'tray.png'));
   tray = new Tray(icon.isEmpty() ? nativeImage.createEmpty() : icon);
   tray.setToolTip('Ghost');
-  tray.setContextMenu(Menu.buildFromTemplate([
-    { label: 'Talk to Ghost', click: () => overlay.summon() },
-    { label: 'New conversation', click: () => core.newConversation() },
-    { label: 'Settings…', click: () => openSettingsWindow() },
-    { type: 'separator' },
-    { label: 'Quit Ghost', click: () => app.quit() },
-  ]));
+  refreshTray(false);
   tray.on('click', () => overlay.summon());
 
+  // The tray menu gains "Stop recording" while a recording runs.
+  function refreshTray(recording: boolean): void {
+    tray?.setContextMenu(Menu.buildFromTemplate([
+      { label: 'Talk to Ghost', click: () => overlay.summon() },
+      ...(recording ? [{ label: 'Stop recording', click: () => core.stopRecordingFromTray() }] : []),
+      { label: 'New conversation', click: () => core.newConversation() },
+      { label: 'Settings…', click: () => openSettingsWindow() },
+      { type: 'separator' as const },
+      { label: 'Quit Ghost', click: () => app.quit() },
+    ]));
+  }
+
   app.on('second-instance', () => overlay.summon());
+  // Quitting mid-recording still saves what was recorded.
+  let savedRecording = false;
+  app.on('before-quit', e => {
+    if (savedRecording || !recorder.current.on) return;
+    e.preventDefault();
+    savedRecording = true;
+    void recorder.stop().catch(() => {}).finally(() => app.quit());
+  });
   app.on('will-quit', () => { globalShortcut.unregisterAll(); fullscreen.stop(); overlay.stopCursorFeed(); core.stop(); });
 });
 

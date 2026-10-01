@@ -24,6 +24,9 @@ export type ClientMessage =
   | { type: 'new_conversation' }
   | { type: 'clear_history' }
   | { type: 'toggle_live_screen' }
+  // The REC tag on Ghost: mix the microphone in or out, or stop and save.
+  | { type: 'recording_mic'; on: boolean }
+  | { type: 'recording_stop' }
   // Settings asks which models a brain offers (for the Light / Balanced / Heavy dropdowns).
   | { type: 'list_models'; provider: string }
   // Settings → Obsidian
@@ -48,6 +51,8 @@ export type CoreMessage =
   | { type: 'notice'; level: 'info' | 'warn' | 'error'; text: string }
   // Live screen view: while on, every message carries a snapshot of the monitor under the cursor.
   | { type: 'live_screen'; on: boolean; offAt?: number }
+  // Screen recording in progress (Ghost shows a REC tag with a timer, a mic switch and a stop button).
+  | { type: 'recording'; on: boolean; startedAt?: number; mic: boolean; micError?: string }
   // Which brain is answering. `reason` is set while Ghost has fallen back from the primary.
   | { type: 'provider'; active: string; primary: string; reason: 'limit' | 'auth' | 'missing' | 'other' | null }
   | { type: 'tool_result'; id: string; ok: boolean; result: string; image?: { data: string; mime: string } }

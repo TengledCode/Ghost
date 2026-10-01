@@ -37,7 +37,16 @@
         <signal-orb state="searching" particles="3500"></signal-orb>
       </div>
       <div class="label" aria-live="polite"></div>
-      <div class="live-tag" hidden title="Live screen view is on: each message includes a snapshot of this monitor"><i></i>LIVE<span class="live-left"></span></div>
+      <div class="tags">
+        <div class="live-tag" hidden title="Live screen view is on: each message includes a snapshot of this monitor"><i></i>LIVE<span class="live-left"></span></div>
+        <div class="rec-tag interactive" hidden title="Recording the screen. Ghost isn't in the video.">
+          <i></i><span class="rec-time">REC</span>
+          <button type="button" class="rec-mic" aria-pressed="false" title="Add your microphone">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5.5" y="1.5" width="5" height="8.5" rx="2.5" /><path d="M3 7.5a5 5 0 0 0 10 0M8 12.5v2.5" /></svg>
+          </button>
+          <button type="button" class="rec-stop" title="Stop and save the recording"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="4" y="4" width="8" height="8" rx="1.5" /></svg></button>
+        </div>
+      </div>
     </div>
   </div>
   <script type="module" src="./main.ts"></script>

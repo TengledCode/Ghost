@@ -16,7 +16,7 @@ export default defineConfig({
   },
   preload: {
     plugins: [externalizeDepsPlugin()],
-    build: { rollupOptions: { input: { index: resolve(__dirname, 'src/preload/index.ts') } } },
+    build: { rollupOptions: { input: { index: resolve(__dirname, 'src/preload/index.ts'), recorder: resolve(__dirname, 'src/preload/recorder.ts') } } },
   },
   renderer: {
     root: resolve(__dirname, 'src/renderer'),
@@ -26,6 +26,7 @@ export default defineConfig({
         input: {
           overlay: resolve(__dirname, 'src/renderer/overlay/index.html'),
           settings: resolve(__dirname, 'src/renderer/settings/index.html'),
+          recorder: resolve(__dirname, 'src/renderer/recorder/index.html'), // hidden: screen recording
         },
       },
     },

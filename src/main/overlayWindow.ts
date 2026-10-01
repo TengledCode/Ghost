@@ -78,6 +78,17 @@ export class OverlayWindow {
 
   stopCursorFeed(): void { if (this.cursorTimer) clearInterval(this.cursorTimer); this.cursorTimer = null; }
 
+  private captureHolds = 0;
+
+  /**
+   * Keep Ghost out of screenshots and recordings while any of them is running (they overlap: a live
+   * view snapshot can happen mid-recording). Ghost stays visible on screen; captures just don't see him.
+   */
+  hideFromCapture(on: boolean): void {
+    this.captureHolds = Math.max(0, this.captureHolds + (on ? 1 : -1));
+    if (!this.win.isDestroyed()) this.win.setContentProtection(this.captureHolds > 0);
+  }
+
   /** Set when the app is quitting: only then may the overlay close. */
   allowClose = false;
   private recovering: NodeJS.Timeout | null = null;

@@ -25,6 +25,15 @@ export const TOOL_DEFS = {
     description: 'Run a PowerShell command and return its output. Always requires Aaron\'s confirmation. Prefer the specific tools when one fits.',
     shape: { command: z.string(), reason: z.string().describe('One short line explaining why, shown on the confirm card') },
   },
+  take_screenshot: {
+    description: "Take a screenshot of the monitor under Aaron's cursor (Ghost left out), save it in Pictures\\Ghost and copy it to the clipboard. Returns the file path.",
+    shape: {},
+  },
+  start_recording: {
+    description: "Start recording the screen under Aaron's cursor with the PC's sound, into Videos\\Ghost. A REC tag on Ghost shows it's running; Aaron can add his microphone there.",
+    shape: {},
+  },
+  stop_recording: { description: 'Stop the screen recording and save it. Returns the file path.', shape: {} },
   read_file: {
     description: "Read a text file, or look at an image (screenshots, photos). Ghost's own folders, the Obsidian vault, Desktop, Documents and Downloads open straight away; anywhere else Aaron confirms first.",
     shape: { path: z.string().describe('Absolute path') },

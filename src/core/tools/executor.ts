@@ -6,6 +6,7 @@ import type { FactStore, MemoryTopic } from '../memory/store';
 import type { VaultTools } from '../obsidian/vaultTools';
 import type { ReminderScheduler } from '../reminders/scheduler';
 import type { ToolName } from './definitions';
+import { duration } from '../captureCommands';
 
 /** Host hooks, injected so the executor can be tested without Electron. */
 export interface Host {
@@ -14,6 +15,17 @@ export interface Host {
   trash(path: string): Promise<void>;
   /** An image file, scaled down to a size a model reads well (Electron's nativeImage). */
   loadImage?(path: string): Promise<{ data: Buffer; mime: string }>;
+  /** Screenshots and screen recordings (absent in tests and the browser preview). */
+  capture?: CaptureHost;
+}
+
+export interface RecordingState { on: boolean; startedAt?: number; mic: boolean; micError?: string }
+export interface CaptureHost {
+  screenshot(): Promise<{ path: string }>;
+  startRecording(): Promise<void>;
+  stopRecording(): Promise<string>; // the saved file
+  setRecordingMic(on: boolean): void;
+  recording(): RecordingState;
 }
 
 /** What a tool hands back to the model: text, and for read_file on a picture, the picture itself. */
@@ -111,6 +123,23 @@ export class ToolExecutor {
       case 'run_command': {
         const r = await runPowerShell(String(a.command));
         return `exit ${r.code}\n${r.out || '(no output)'}`;
+      }
+      case 'take_screenshot': {
+        if (!this.host.capture) return "Screenshots aren't available here.";
+        const shot = await this.host.capture.screenshot();
+        return `Saved the screenshot to ${shot.path} and copied it to the clipboard.`;
+      }
+      case 'start_recording': {
+        if (!this.host.capture) return "Screen recording isn't available here.";
+        if (this.host.capture.recording().on) return 'Already recording the screen.';
+        await this.host.capture.startRecording();
+        return 'Recording the screen with the PC sound (Ghost stays out of the video). It stops when Aaron says "stop recording" or presses stop on the REC tag.';
+      }
+      case 'stop_recording': {
+        if (!this.host.capture?.recording().on) return "Ghost isn't recording.";
+        const started = this.host.capture.recording().startedAt ?? Date.now();
+        const path = await this.host.capture.stopRecording();
+        return `Saved the recording (${duration(Date.now() - started)}) to ${path}.`;
       }
       case 'read_file': return this.readFile(String(a.path ?? ''));
       case 'list_folder': return this.listFolder(String(a.path ?? ''));
