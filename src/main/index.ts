@@ -27,9 +27,15 @@ app.setAppUserModelId('com.aaron.ghost');
 app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
 // Compatible drawing: when an app like Photos closes, Windows' compositor can drop the frame Ghost
 // draws through DirectComposition for a couple of frames (a blink). Without DirectComposition the
-// transparent window is a classic layered window that Windows keeps on its own. Applies at start.
+// transparent window is a classic layered window that Windows keeps on its own. Chromium can only
+// update a layered window from its software compositor (with GPU compositing it shows one frame and
+// then freezes), so compositing moves to the CPU too; WebGL still renders on the GPU. Ghost's window
+// is small, so the copy is cheap. Applies at start.
 const compatibleDrawing = readStoredSettings().compatibleDrawing;
-if (compatibleDrawing) app.commandLine.appendSwitch('disable-direct-composition');
+if (compatibleDrawing) {
+  app.commandLine.appendSwitch('disable-direct-composition');
+  app.commandLine.appendSwitch('disable-gpu-compositing');
+}
 
 const resource = (...p: string[]) => (app.isPackaged ? join(process.resourcesPath, ...p) : join(app.getAppPath(), ...p));
 
