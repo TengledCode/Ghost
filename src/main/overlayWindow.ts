@@ -215,10 +215,13 @@ export class OverlayWindow {
 
   private burst: NodeJS.Timeout[] = [];
 
-  /** Redraw repeatedly over the next ~¾ s (a closing app's animation), restarting if called again. */
+  /**
+   * Redraw every ~2 frames over the next 1.2 s (a closing app's animation), restarting if called
+   * again. When Windows drops Ghost's image somewhere in that stretch, the gap is at most ~40 ms.
+   */
   refreshBurst(): void {
     for (const t of this.burst) clearTimeout(t);
-    this.burst = [0, 90, 180, 270, 380, 500, 650, 800].map(ms => setTimeout(() => this.refresh(), ms));
+    this.burst = Array.from({ length: 30 }, (_, i) => setTimeout(() => this.refresh(), i * 40));
   }
 
   /**
