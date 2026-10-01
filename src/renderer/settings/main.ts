@@ -13,19 +13,14 @@ async function update(patch: Partial<Settings>): Promise<void> {
   render();
 }
 
-// Two tabs: everyday settings, and the finer ones under "Additional settings". The open tab is remembered.
-const TAB_KEY = 'ghost.settings.tab';
+// Two tabs: everyday settings, and the finer ones under "Additional settings". Always opens on Settings.
 function showTab(name: string): void {
   if (!document.querySelector(`[data-tab-button="${name}"]`)) name = 'main';
   for (const b of document.querySelectorAll<HTMLButtonElement>('[data-tab-button]')) b.setAttribute('aria-selected', String(b.dataset.tabButton === name));
   for (const sec of document.querySelectorAll<HTMLElement>('[data-tab]')) sec.hidden = sec.dataset.tab !== name;
-  try { localStorage.setItem(TAB_KEY, name); } catch { /* not remembered */ }
 }
 for (const b of document.querySelectorAll<HTMLButtonElement>('[data-tab-button]')) b.addEventListener('click', () => { showTab(b.dataset.tabButton!); window.scrollTo(0, 0); });
-let savedTab: string | null = null;
-try { savedTab = localStorage.getItem(TAB_KEY); } catch { /* default */ }
-const firstTab = new URLSearchParams(location.search).get('tab') ?? savedTab ?? 'main';
-showTab(firstTab);
+showTab(new URLSearchParams(location.search).get('tab') ?? 'main');
 
 // Generic bindings: data-key inputs map straight onto settings fields.
 for (const el of document.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-key]')) {
