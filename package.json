@@ -14,7 +14,7 @@
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
-    "dist:win": "electron-vite build && node scripts/write-build-info.mjs && electron-builder --win nsis",
+    "dist:win": "electron-vite build && node scripts/write-build-info.mjs && node scripts/clear-old-installers.mjs && electron-builder --win nsis",
     "preview:ui": "node scripts/preview-server.mjs"
   },
   "dependencies": {

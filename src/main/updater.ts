@@ -101,7 +101,7 @@ export class Updater extends EventEmitter {
       const r = await this.run(cmd, args, info.sourceDir);
       this.log(r.out);
       if (r.code !== 0) {
-        return this.set({ state: 'error', step: undefined, progress: undefined, error: explain(label, r.out) });
+        return this.set({ state: 'error', step: undefined, progress: undefined, error: `${explain(label, r.out, r.code)} Full details: ${this.o.logFile}` });
       }
     }
     const installer = newestInstaller(join(info.sourceDir, 'dist'));
@@ -129,13 +129,23 @@ export function newestInstaller(distDir: string): string | null {
   } catch { return null; }
 }
 
-/** A plain-language reason for a failed step, with the useful end of the output. */
-export function explain(step: string, out: string): string {
+/** A plain-language reason for a failed step, with the line that actually says what went wrong. */
+export function explain(step: string, out: string, code?: number | null): string {
   const text = out.trim();
   if (/not a git repository/i.test(text)) return `${step} failed: the Ghost folder it was built from is gone or moved. Rebuild once from its new location.`;
   if (/local changes|would be overwritten|not possible to fast-forward|diverged/i.test(text)) return `${step} failed: your Ghost folder has changes of its own. Open it and run "git status" to see them.`;
-  if (/could not resolve host|unable to access|network|ENOTFOUND|ETIMEDOUT/i.test(text)) return `${step} failed: no connection to GitHub or npm. Check your internet and try again.`;
-  if (/is not recognized|command not found|ENOENT/i.test(text)) return `${step} failed: git or Node.js isn't available to Ghost. Reinstall them, or restart the PC so Ghost sees them.`;
-  const tail = text.split('\n').filter(Boolean).slice(-3).join(' · ');
-  return `${step} failed${tail ? `: ${tail.slice(0, 300)}` : '.'}`;
+  // Only when the command itself couldn't start: an ENOENT inside a build's output is a missing file, not missing Node.
+  if (code === -1 || /'(git|npm|node)(\.\w+)?' is not recognized|\b(git|npm|node): command not found/i.test(text)) return `${step} failed: git or Node.js isn't available to Ghost. Reinstall them, or restart the PC so Ghost sees them.`;
+  if (/could not resolve host|unable to access|ENOTFOUND|ETIMEDOUT|ECONNRESET|getaddrinfo/i.test(text)) return `${step} failed: no connection to GitHub or npm. Check your internet and try again.`;
+  if (/can't open output file|can't clear .*setup/i.test(text)) return `${step} failed: Windows has the previous installer in the dist folder locked (often antivirus still scanning it). Wait a minute and press Update again.`;
+  const detail = errorLines(text);
+  return `${step} failed${detail ? `: ${detail.slice(0, 300)}` : '.'}`;
+}
+
+/** The lines that name the error (electron-builder marks them with ⨯, npm with ERR!), else the last few. */
+export function errorLines(text: string): string {
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
+    .filter(l => !/complete log of this run|^npm (ERR!|error) *$|^npm (ERR!|error) (code|path|command|cwd)\b/i.test(l));
+  const marked = lines.filter(l => /⨯|\berror\b|ERR!|failed|cannot|EPERM|EBUSY|ENOENT/i.test(l));
+  return (marked.length ? marked.slice(0, 3) : lines.slice(-3)).join(' · ');
 }

@@ -63,6 +63,7 @@ describe('Settings → Updates', () => {
     const s = await u.update();
     expect(s.state).toBe('error');
     expect(s.error).toMatch(/Installing packages failed: no connection/);
+    expect(s.error).toMatch(/Full details: .*log$/);
     expect(installed).toBe(false);
   });
 
@@ -76,5 +77,22 @@ describe('Settings → Updates', () => {
     expect(installed).toBe(false);
     expect(explain('Downloading the changes', "error: Your local changes to the following files would be overwritten")).toMatch(/changes of its own/);
     expect(newestInstaller(join(r.root, 'nope'))).toBeNull();
+  });
+
+  it("doesn't blame git or Node for a build error that mentions a missing file", () => {
+    const build = [
+      '> electron-builder --win nsis',
+      '  • building        target=nsis file=dist\\Ghost Setup 0.1.0.exe',
+      "  ⨯ ENOENT: no such file or directory, open 'C:\\Ghost\\build\\icon.ico'",
+      'npm error code 1',
+      'npm error A complete log of this run can be found in: C:\\npm-cache\\_logs\\x.log',
+    ].join('\n');
+    const msg = explain('Building the new version', build, 1);
+    expect(msg).not.toMatch(/isn't available/);
+    expect(msg).toMatch(/⨯ ENOENT: no such file or directory, open .*icon\.ico/);
+    expect(explain('Building the new version', 'spawn npm ENOENT', -1)).toMatch(/isn't available/);
+    const locked = "  ⨯ makensis.exe process failed ERR_ELECTRON_BUILDER_CANNOT_EXECUTE\nError output:\nCan't open output file\n    at ChildProcess.cp.emit (C:\\Ghost\\node_modules\\cross-spawn\\lib\\enoent.js:34:29)";
+    expect(explain('Building the new version', locked, 1)).toMatch(/previous installer .* locked/);
+    expect(explain('Installing packages', "'npm' is not recognized as an internal or external command,", 1)).toMatch(/isn't available/);
   });
 });
