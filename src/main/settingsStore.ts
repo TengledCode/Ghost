@@ -4,11 +4,6 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { mergeSettings, type Settings } from '../shared/settings';
 
-/** The saved settings, readable before the app is ready (for startup switches). */
-export function readStoredSettings(): Settings {
-  try { return mergeSettings(JSON.parse(readFileSync(join(app.getPath('userData'), 'settings.json'), 'utf8'))); } catch { return mergeSettings(null); }
-}
-
 export class SettingsStore extends EventEmitter {
   private current: Settings;
   private readonly file = join(app.getPath('userData'), 'settings.json');

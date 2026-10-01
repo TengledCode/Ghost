@@ -59,7 +59,6 @@ export interface Settings {
   customTheme: ThemeColors;
   skin: Skin;
   renderQuality: RenderQuality;
-  compatibleDrawing: boolean; // draw without DirectComposition (applies after a restart)
   // Behaviour
   hotkey: string;
   quitHotkey: string;
@@ -102,7 +101,6 @@ export const DEFAULT_SETTINGS: Settings = {
   customTheme: THEMES.classic,
   skin: 'ghost-shell',
   renderQuality: 'auto',
-  compatibleDrawing: false,
   hotkey: 'Control+Space',
   quitHotkey: 'Control+Alt+Q',
   liveScreenHotkey: 'Control+Alt+V',
@@ -144,7 +142,8 @@ export function mergeSettings(stored: Partial<Settings> | null | undefined): Set
   merged.elevenLabsVoiceId = String(merged.elevenLabsVoiceId ?? '').trim() || DEFAULT_SETTINGS.elevenLabsVoiceId;
   const legacy = stored as { hideOnFullscreen?: boolean } | null | undefined;
   if (!['all', 'games', 'never'].includes(stored?.fullscreenHide as string)) merged.fullscreenHide = legacy?.hideOnFullscreen === false ? 'never' : 'all';
-  delete (merged as { hideOnFullscreen?: boolean }).hideOnFullscreen;
+  // Settings that no longer exist (compatibleDrawing was an experiment that froze Ghost on Windows).
+  for (const gone of ['hideOnFullscreen', 'compatibleDrawing']) delete (merged as Record<string, unknown>)[gone];
   merged.liveScreenAutoOffMinutes = Math.round(clamp(merged.liveScreenAutoOffMinutes, 5, 240));
   const saved = (stored?.brainModels ?? {}) as Partial<Record<BrainId, Partial<SlotModels>>>;
   merged.brainModels = {

@@ -14,7 +14,7 @@ import { initLog, log } from './log';
 import { WindowEvents } from './windowEvents';
 import { FullscreenWatcher } from './fullscreenWatcher';
 import { OverlayWindow } from './overlayWindow';
-import { readStoredSettings, SettingsStore } from './settingsStore';
+import { SettingsStore } from './settingsStore';
 import { captureScreen } from './screenCapture';
 import { openSettingsWindow } from './settingsWindow';
 import { readBuildInfo, Updater, type BuildInfo } from './updater';
@@ -25,17 +25,6 @@ app.setAppUserModelId('com.aaron.ghost');
 // transparent always-on-top overlay that check can get stuck after a covering app (e.g. Photos)
 // closes: Ghost's window is still there but draws nothing. Ghost is tiny, so it simply keeps drawing.
 app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
-// Compatible drawing: when an app like Photos closes, Windows' compositor can drop the frame Ghost
-// draws through DirectComposition for a couple of frames (a blink). Without DirectComposition the
-// transparent window is a classic layered window that Windows keeps on its own. Chromium can only
-// update a layered window from its software compositor (with GPU compositing it shows one frame and
-// then freezes), so compositing moves to the CPU too; WebGL still renders on the GPU. Ghost's window
-// is small, so the copy is cheap. Applies at start.
-const compatibleDrawing = readStoredSettings().compatibleDrawing;
-if (compatibleDrawing) {
-  app.commandLine.appendSwitch('disable-direct-composition');
-  app.commandLine.appendSwitch('disable-gpu-compositing');
-}
 
 const resource = (...p: string[]) => (app.isPackaged ? join(process.resourcesPath, ...p) : join(app.getAppPath(), ...p));
 
@@ -44,7 +33,6 @@ let tray: Tray | null = null;
 app.whenReady().then(async () => {
   initLog(join(app.getPath('userData'), 'data', 'ghost.log'));
   log('start', { version: app.getVersion() });
-  log('drawing:', compatibleDrawing ? 'compatible (no DirectComposition)' : 'standard');
   const store = new SettingsStore();
   const settings = () => store.get();
 
@@ -81,7 +69,7 @@ app.whenReady().then(async () => {
   overlay.startCursorFeed();
 
   // ---- IPC used by the overlay and settings renderers
-  ipcMain.handle('ghost:bootstrap', () => ({ url: core.url, token: core.token, settings: settings(), compatibleDrawing, hasElevenLabsKey: !!store.getSecret('elevenlabs'), orientation: overlay.orientation }));
+  ipcMain.handle('ghost:bootstrap', () => ({ url: core.url, token: core.token, settings: settings(), hasElevenLabsKey: !!store.getSecret('elevenlabs'), orientation: overlay.orientation }));
   ipcMain.handle('ghost:update-settings', (_e, patch: Partial<Settings>) => store.update(patch));
   ipcMain.handle('ghost:set-secret', (_e, name: string, value: string) => { store.setSecret(name, value); return !!value; });
   ipcMain.on('ghost:interactive', (_e, on: boolean) => overlay.setInteractive(on));
@@ -92,7 +80,6 @@ app.whenReady().then(async () => {
   ipcMain.on('ghost:dismissed', () => overlay.dismissed());
   ipcMain.on('ghost:open-settings', () => openSettingsWindow());
   ipcMain.on('ghost:quit', () => app.quit());
-  ipcMain.on('ghost:relaunch', () => { log('restarting to apply settings'); app.relaunch(); app.quit(); });
   ipcMain.handle('ghost:pick-folder', async (_e, title: string) => {
     const r = await dialog.showOpenDialog({ title, properties: ['openDirectory'] });
     return r.canceled ? null : r.filePaths[0] ?? null;
