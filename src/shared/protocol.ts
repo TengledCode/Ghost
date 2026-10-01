@@ -50,7 +50,7 @@ export type CoreMessage =
   | { type: 'live_screen'; on: boolean; offAt?: number }
   // Which brain is answering. `reason` is set while Ghost has fallen back from the primary.
   | { type: 'provider'; active: string; primary: string; reason: 'limit' | 'auth' | 'missing' | 'other' | null }
-  | { type: 'tool_result'; id: string; ok: boolean; result: string }
+  | { type: 'tool_result'; id: string; ok: boolean; result: string; image?: { data: string; mime: string } }
   | { type: 'models'; provider: string; models: { id: string; label: string }[]; error?: string }
   | { type: 'obsidian_status'; status: ObsidianStatusInfo }
   // How long a reply took: ms from the message to its first text and to its first synthesised audio.

@@ -11,7 +11,7 @@ export function openSettingsWindow(): void {
     title: 'Ghost settings',
     backgroundColor: '#0d0f14',
     autoHideMenuBar: true,
-    webPreferences: { preload: join(__dirname, '../preload/index.js'), contextIsolation: true, sandbox: false },
+    webPreferences: { preload: join(__dirname, '../preload/index.js'), contextIsolation: true, sandbox: true },
   });
   if (process.env.ELECTRON_RENDERER_URL) void win.loadURL(`${process.env.ELECTRON_RENDERER_URL}/settings/index.html`);
   else void win.loadFile(join(__dirname, '../renderer/settings/index.html'));

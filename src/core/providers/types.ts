@@ -32,7 +32,8 @@ export interface ModelOption { id: string; label: string }
 
 /** Classifies CLI error text so Ghost can say something useful ("I've hit the usage limit"). */
 export function classifyError(text: string): 'auth' | 'limit' | 'missing' | 'other' {
-  if (/ENOENT|not recognized as an internal|command not found|is not recognized/i.test(text)) return 'missing';
+  // Only the CLI itself missing: an ENOENT about some other file is an ordinary error.
+  if (/spawn \S+ ENOENT|not recognized as an internal|command not found|is not recognized/i.test(text)) return 'missing';
   if (/usage limit|rate.?limit|quota|limit reached|resets at|too many requests|429|resource.?exhausted|weekly limit/i.test(text)) return 'limit';
   if (/log ?in|logged out|not logged in|auth|unauthori[sz]ed|401|credential|oauth/i.test(text)) return 'auth';
   return 'other';

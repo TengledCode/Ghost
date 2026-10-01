@@ -95,7 +95,6 @@ export class GhostShell {
   private lastRender = 0;
   private idleSince = 0;
   private frame = 0;
-  private size = { w: 1, h: 1 };
   private reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
   private target = new THREE.Vector3();
   audioLevel: () => number = () => 0;
@@ -271,7 +270,6 @@ export class GhostShell {
   private resize(): void {
     const w = this.canvas.clientWidth, h = this.canvas.clientHeight;
     if (!w || !h) return;
-    this.size = { w, h };
     const q = QUALITY[this.governor.level];
     this.fx.setSize(w, h, Math.min(devicePixelRatio || 1, q.dpr), q.bloom);
     this.camera.aspect = w / h;

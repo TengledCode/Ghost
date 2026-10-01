@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { existsSync, mkdtempSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
@@ -17,7 +17,10 @@ const tts: TtsEngine = { id: 'edge', synthesize: async () => ({ audio: Buffer.al
 
 describe.skipIf(!existsSync(bridge))('MCP bridge (built)', () => {
   it('lists Ghost tools and relays calls to the core', async () => {
+    const shots = mkdtempSync(join(tmpdir(), 'ghost-shots-'));
+    const elsewhere = mkdtempSync(join(tmpdir(), 'ghost-private-'));
     const core = new GhostCore({
+      readableDirs: [shots], approvalTimeoutMs: 300,
       dataDir: mkdtempSync(join(tmpdir(), 'ghost-mcp-')), personaPath: join(__dirname, '../config/persona.md'),
       mcpServerPath: bridge, nodeExecPath: process.execPath, providers: { mock: new MockProvider() },
       tts: new TtsService(tts, tts), host: { openExternal: async () => {}, openPath: async () => '', trash: async () => {} },
@@ -44,6 +47,18 @@ describe.skipIf(!existsSync(bridge))('MCP bridge (built)', () => {
       expect(call.result.isError).toBe(false);
       expect(call.result.content[0].text).toMatch(/^Reminder \w+ set for/);
       expect(core.reminders.list()[0].text).toBe('stand up');
+      // A picture in a safe folder reaches the model as an image it can see.
+      const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+      mkdirSync(join(shots, 'screens'), { recursive: true });
+      writeFileSync(join(shots, 'screens', 's.png'), png);
+      const img = await rpc('tools/call', { name: 'read_file', arguments: { path: join(shots, 'screens', 's.png') } });
+      expect(img.result.isError).toBe(false);
+      expect(img.result.content[0]).toMatchObject({ type: 'image', mimeType: 'image/png', data: png.toString('base64') });
+      // Anywhere else needs Aaron's OK; nobody answers here, so it's declined.
+      writeFileSync(join(elsewhere, 'secret.txt'), 'hunter2');
+      const secret = await rpc('tools/call', { name: 'read_file', arguments: { path: join(elsewhere, 'secret.txt') } });
+      expect(secret.result.isError).toBe(true);
+      expect(JSON.stringify(secret.result)).not.toContain('hunter2');
     } finally {
       child.kill();
       core.stop();

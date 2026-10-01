@@ -5,9 +5,18 @@ import { commandExists, runCli } from './spawnCli';
 // Drives the official Claude Code CLI, logged in with Aaron's Pro/Max subscription (`claude` then /login).
 // No API key is involved: usage counts against the same plan limits as claude.ai.
 
-export const CLAUDE_BUILTIN_TOOLS = ['WebSearch', 'WebFetch', 'Read', 'Glob', 'Grep'];
+// Only the web tools: Claude's own file tools can read anything on the PC without asking, so files
+// go through Ghost's read_file / list_folder, which confirm outside the safe folders.
+export const CLAUDE_BUILTIN_TOOLS = ['WebSearch', 'WebFetch'];
 
-export function claudeArgs(req: Pick<SendRequest, 'model' | 'personaFile' | 'sessionId' | 'mcpConfigPath'>): string[] {
+export function claudeArgs(req: Pick<SendRequest, 'model' | 'personaFile' | 'sessionId' | 'mcpConfigPath' | 'oneShot'>): string[] {
+  // A one-shot (filing or summarising a conversation) needs no tools, and its prompt is old
+  // conversation text, so it gets none: nothing in that text can make it act.
+  if (req.oneShot) {
+    const args = ['-p', '--output-format', 'stream-json', '--verbose', '--append-system-prompt-file', req.personaFile, '--strict-mcp-config', '--tools', ''];
+    if (req.model) args.push('--model', req.model);
+    return args;
+  }
   const args = [
     '-p',
     '--output-format', 'stream-json',

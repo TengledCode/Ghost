@@ -133,6 +133,8 @@ export type FullscreenHide = 'all' | 'games' | 'never';
 
 export function mergeSettings(stored: Partial<Settings> | null | undefined): Settings {
   const merged = { ...DEFAULT_SETTINGS, ...(stored ?? {}) };
+  // Drop settings that no longer exist, so old files don't carry them forever.
+  for (const key of Object.keys(merged)) if (!Object.hasOwn(DEFAULT_SETTINGS, key)) delete (merged as Record<string, unknown>)[key];
   merged.size = clamp(merged.size, 90, 420);
   merged.idleOpacity = clamp(merged.idleOpacity, 0.2, 1);
   merged.ghostFilter = clamp(merged.ghostFilter, 0, 1);
@@ -142,8 +144,6 @@ export function mergeSettings(stored: Partial<Settings> | null | undefined): Set
   merged.elevenLabsVoiceId = String(merged.elevenLabsVoiceId ?? '').trim() || DEFAULT_SETTINGS.elevenLabsVoiceId;
   const legacy = stored as { hideOnFullscreen?: boolean } | null | undefined;
   if (!['all', 'games', 'never'].includes(stored?.fullscreenHide as string)) merged.fullscreenHide = legacy?.hideOnFullscreen === false ? 'never' : 'all';
-  // Settings that no longer exist (compatibleDrawing was an experiment that froze Ghost on Windows).
-  for (const gone of ['hideOnFullscreen', 'compatibleDrawing']) delete (merged as Record<string, unknown>)[gone];
   merged.liveScreenAutoOffMinutes = Math.round(clamp(merged.liveScreenAutoOffMinutes, 5, 240));
   const saved = (stored?.brainModels ?? {}) as Partial<Record<BrainId, Partial<SlotModels>>>;
   merged.brainModels = {

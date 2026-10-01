@@ -36,7 +36,7 @@ export class OverlayWindow {
         backgroundThrottling: false, // keep voice + reminders working while hidden
         autoplayPolicy: 'no-user-gesture-required',
         contextIsolation: true,
-        sandbox: false,
+        sandbox: true,
       },
     });
     this.win.setAlwaysOnTop(true, 'screen-saver');

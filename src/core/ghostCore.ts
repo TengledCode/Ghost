@@ -28,6 +28,7 @@ import { TOOL_DEFS, type ToolName } from './tools/definitions';
 import { CLAUDE_BUILTIN_TOOLS } from './providers/claude';
 import { agyPaths, writeAgyPersona, writeAgyPlugin, type AgyPaths } from './providers/agyPlugin';
 import { ToolExecutor, type Host } from './tools/executor';
+import { safeReadRoots } from './tools/fileAccess';
 import type { TtsService } from './tts/service';
 
 export interface CoreOptions {
@@ -45,6 +46,8 @@ export interface CoreOptions {
   captureScreen?: () => Promise<{ path: string; width: number; height: number; takenAt: string }>;
   /** Told when live screen view switches (e.g. to update the tray tooltip). */
   onLiveScreen?: (on: boolean) => void;
+  /** More folders Ghost may read without asking (e.g. where its screenshots and recordings are saved). */
+  readableDirs?: string[];
   /** Speak a short greeting when the overlay first connects (off in tests). */
   greetOnStart?: boolean;
 }
@@ -132,7 +135,7 @@ export class GhostCore {
     const s = this.o.settings();
     this.obsidian?.stop();
     this.obsidian = null;
-    const buffer = new ConversationLog(this.o.dataDir);
+    const buffer = new ConversationLog(this.o.dataDir, Date.now, () => ({ user: this.o.settings().userName, assistant: this.o.settings().assistantName }));
     if (s.obsidian.vaultPath) {
       this.obsidian = new ObsidianConnection(s.obsidian.vaultPath, {
         dataDir: this.o.dataDir, buffer, settings: this.o.settings,
@@ -238,7 +241,7 @@ export class GhostCore {
     };
     writeFileSync(this.mcpConfigPath, JSON.stringify({ mcpServers: { ghost: server } }, null, 2));
     // Antigravity: Ghost's tools and permission hooks as a plugin, and the persona as GEMINI.md.
-    writeAgyPlugin(this.agy, { nodeExecPath: this.o.nodeExecPath, mcpServerPath: this.o.mcpServerPath, env: { GHOST_CORE_URL: this.url, GHOST_TOKEN: this.token } });
+    writeAgyPlugin(this.agy, { nodeExecPath: this.o.nodeExecPath, mcpServerPath: this.o.mcpServerPath, env: { GHOST_CORE_URL: this.url, GHOST_TOKEN: this.token }, safeReadRoots: this.safeReadRoots() });
     writeAgyPersona(this.agy, buildPersona(this.o.personaPath, s));
     // Claude Code: keep this folder free of project instructions.
     writeFileSync(join(this.workspace, 'README.txt'), 'Ghost working folder for the Claude CLI. Safe to leave empty.\n');
@@ -257,7 +260,7 @@ export class GhostCore {
       const msg = parseMessage<ClientMessage>(raw);
       if (!msg) return;
       if (!client.role) {
-        if (msg.type !== 'hello' || msg.token !== this.token) { ws.close(4003, 'bad token'); return; }
+        if (msg.type !== 'hello' || msg.token !== this.token || (msg.role !== 'ui' && msg.role !== 'mcp')) { ws.close(4003, 'bad token'); return; }
         client.role = msg.role;
         clearTimeout(authTimer);
         if (msg.role === 'ui') {
@@ -270,20 +273,21 @@ export class GhostCore {
         }
         return;
       }
-      void this.handle(client, msg);
+      this.handle(client, msg).catch(e => this.notify('error', `Ghost hit a problem: ${String((e as Error).message ?? e).slice(0, 200)}`));
     });
   }
 
   private async handle(client: Client, msg: ClientMessage): Promise<void> {
     switch (msg.type) {
-      case 'user_message': return this.userMessage(msg.text);
+      case 'user_message': return this.userMessage(String(msg.text ?? ''));
       case 'typing':
         if (msg.active && (this.state === 'idle' || this.state === 'done')) this.setState('listening');
         else if (!msg.active && this.state === 'listening') this.setState('idle');
         return;
       case 'cancel': return this.cancel();
-      case 'approval_response': this.approvals.get(msg.id)?.(msg.approved); return;
+      case 'approval_response': if (client.role === 'ui') this.approvals.get(msg.id)?.(msg.approved === true); return;
       case 'playback_finished':
+        if (typeof msg.turnId !== 'string') return;
         if (this.turn?.id === msg.turnId || msg.turnId.startsWith('reminder-') || msg.turnId.startsWith('preview-') || msg.turnId.startsWith('say-')) this.finishSpeaking(msg.turnId);
         return;
       case 'new_conversation': return this.newConversation();
@@ -497,9 +501,8 @@ export class GhostCore {
   }
 
   private reportError(turn: Turn, pid: string, err: { message: string; kind?: string }): void {
-    const s = this.o.settings();
     const line = {
-      limit: `I've reached the usage limit on your ${pid} plan for now.`,
+      limit: `I've reached the usage limit on your ${brainName(pid)} plan for now.`,
       auth: `I'm signed out of ${brainName(pid)}. Please run "${cliName(pid)}" in a terminal and sign in again.`,
       missing: `I can't find the ${cliName(pid)} command-line tool on this PC. It needs installing first.`,
       other: `Something went wrong on my side. The details are in the transcript.`,
@@ -568,17 +571,17 @@ export class GhostCore {
   // ---------------------------------------------------------------- tools & approvals
 
   private async toolCall(client: Client, id: string, tool: string, args: Record<string, unknown>): Promise<void> {
-    const reply = (ok: boolean, result: string) => this.send(client, { type: 'tool_result', id, ok, result });
-    if (!(tool in TOOL_DEFS)) return reply(false, `Unknown tool ${tool}`);
+    const reply = (ok: boolean, result: string, image?: { data: string; mime: string }) => this.send(client, { type: 'tool_result', id, ok, result, image });
+    if (!Object.hasOwn(TOOL_DEFS, tool)) return reply(false, `Unknown tool ${tool}`);
     const previous = this.state;
-    if (classify(tool, args) === 'confirm') {
+    if (classify(tool, args, { safeReadRoots: this.safeReadRoots() }) === 'confirm') {
       const approved = await this.requestApproval(tool, args);
       if (!approved) { this.setState(previous === 'approval' ? 'thinking' : previous); return reply(false, `${this.o.settings().userName} declined this action. Do not retry it; ask what he would prefer instead.`); }
     }
     this.setState('searching', prettyTool(tool));
     try {
       const result = await this.executor.run(tool as ToolName, args);
-      reply(true, result);
+      if (typeof result === 'string') reply(true, result); else reply(true, result.text, result.image);
       const label = actionLabel(tool, args);
       if (label && this.turn) this.turn.actions.push(label);
     } catch (e) {
@@ -586,6 +589,11 @@ export class GhostCore {
     } finally {
       if (this.state === 'searching') this.setState('thinking');
     }
+  }
+
+  /** Where reading needs no confirmation: Ghost's folders, the vault, Desktop, Documents, Downloads. */
+  private safeReadRoots(): string[] {
+    return safeReadRoots({ ghostDirs: [this.workspace, ...(this.o.readableDirs ?? [])], vault: this.o.settings().obsidian.vaultPath });
   }
 
   private requestApproval(tool: string, args: Record<string, unknown>): Promise<boolean> {
@@ -629,7 +637,6 @@ export class GhostCore {
 
   /** Switch live view; `announce` speaks and shows a short confirmation. */
   setLiveScreen(on: boolean, announce: boolean): void {
-    const s = this.o.settings();
     const changed = on !== this.liveScreen;
     this.liveScreen = on;
     if (on) this.armLiveTimer(); else this.clearLiveTimer();
@@ -744,6 +751,7 @@ function prettyTool(name: string): string {
     close_app: 'Closing an app', run_command: 'Running a command', write_file: 'Writing a file', delete_path: 'Deleting',
     set_reminder: 'Setting a reminder', list_reminders: 'Checking reminders', cancel_reminder: 'Cancelling a reminder',
     remember: 'Committing to memory', recall: 'Recalling', forget: 'Forgetting', get_datetime: 'Checking the time',
+    read_file: 'Reading a file', list_folder: 'Looking in a folder',
     Read: 'Reading a file', Glob: 'Looking for files', Grep: 'Searching files',
   };
   return map[bare] ?? (CLAUDE_BUILTIN_TOOLS.includes(bare) ? bare : 'Working');

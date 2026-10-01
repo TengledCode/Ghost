@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { appendFile, mkdir, readdir, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, open, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { basename, dirname, extname, isAbsolute, join } from 'node:path';
 import type { HistoryStore } from '../memory/conversations';
 import type { FactStore, MemoryTopic } from '../memory/store';
@@ -12,7 +12,16 @@ export interface Host {
   openExternal(url: string): Promise<void>;
   openPath(path: string): Promise<string>; // returns '' on success, error text otherwise
   trash(path: string): Promise<void>;
+  /** An image file, scaled down to a size a model reads well (Electron's nativeImage). */
+  loadImage?(path: string): Promise<{ data: Buffer; mime: string }>;
 }
+
+/** What a tool hands back to the model: text, and for read_file on a picture, the picture itself. */
+export type ToolResult = string | { text: string; image: { data: string; mime: string } };
+
+const IMAGE_TYPES: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.bmp': 'image/bmp' };
+const MAX_TEXT = 20_000; // characters of a text file given to the model
+const MAX_RAW_IMAGE = 5_000_000; // bytes, when the host can't scale the image down
 
 const isWin = process.platform === 'win32';
 const NO_VAULT = "Obsidian isn't connected. Aaron can choose his vault in Settings → Obsidian.";
@@ -64,7 +73,7 @@ export class ToolExecutor {
     private readonly vault?: VaultTools,
   ) {}
 
-  async run(tool: ToolName, a: Record<string, any>): Promise<string> {
+  async run(tool: ToolName, a: Record<string, any>): Promise<ToolResult> {
     switch (tool) {
       case 'get_datetime': {
         const now = new Date();
@@ -103,6 +112,8 @@ export class ToolExecutor {
         const r = await runPowerShell(String(a.command));
         return `exit ${r.code}\n${r.out || '(no output)'}`;
       }
+      case 'read_file': return this.readFile(String(a.path ?? ''));
+      case 'list_folder': return this.listFolder(String(a.path ?? ''));
       case 'write_file': {
         const path = String(a.path);
         if (!isAbsolute(path)) return 'Path must be absolute.';
@@ -138,7 +149,12 @@ export class ToolExecutor {
         return parts.length ? parts.join('\n\n') : 'Nothing relevant in memory or past conversations.';
       }
       case 'forget': {
-        const n = this.memory.forget(String(a.match));
+        // A short or empty match would wipe everything that contains it.
+        const match = String(a.match ?? '').trim();
+        if (match.length < 3) return 'Give the memory id or a few words of the fact to forget.';
+        const hits = this.memory.list().filter(f => f.id === match || f.text.toLowerCase().includes(match.toLowerCase()));
+        if (hits.length > 5) return `That matches ${hits.length} memories. Use a memory id or more of the fact's words.`;
+        const n = this.memory.forget(match);
         return n ? `Forgot ${n} item(s).` : 'Nothing matched.';
       }
       case 'vault_search': return this.vault ? this.vault.search(String(a.query)) : NO_VAULT;
@@ -149,5 +165,43 @@ export class ToolExecutor {
         return this.vault.write(String(a.path), String(a.content), mode);
       }
     }
+  }
+
+  private async readFile(path: string): Promise<ToolResult> {
+    if (!isAbsolute(path)) return 'Path must be absolute.';
+    const info = await stat(path).catch(() => null);
+    if (!info) return `There's no file at ${path}.`;
+    if (info.isDirectory()) return `${path} is a folder; use list_folder.`;
+    const mime = IMAGE_TYPES[extname(path).toLowerCase()];
+    if (mime) {
+      if (this.host.loadImage) {
+        const img = await this.host.loadImage(path);
+        return { text: `Image ${basename(path)}`, image: { data: img.data.toString('base64'), mime: img.mime } };
+      }
+      if (info.size > MAX_RAW_IMAGE) return `${basename(path)} is too large to look at (${Math.round(info.size / 1e6)} MB).`;
+      return { text: `Image ${basename(path)}`, image: { data: (await readFile(path)).toString('base64'), mime } };
+    }
+    // Text only: a binary file (a program, an archive…) has NUL bytes near the start.
+    const handle = await open(path, 'r');
+    try {
+      const buf = Buffer.alloc(Math.min(info.size, MAX_TEXT * 4));
+      await handle.read(buf, 0, buf.length, 0);
+      if (buf.subarray(0, 8000).includes(0)) return `${basename(path)} isn't a text file, so it can't be read here.`;
+      const text = buf.toString('utf8');
+      return text.length > MAX_TEXT || info.size > buf.length ? `${text.slice(0, MAX_TEXT)}\n…(truncated; the file is ${Math.round(info.size / 1000)} KB)` : text;
+    } finally { await handle.close(); }
+  }
+
+  private async listFolder(path: string): Promise<string> {
+    if (!isAbsolute(path)) return 'Path must be absolute.';
+    const entries = await readdir(path, { withFileTypes: true }).catch(() => null);
+    if (!entries) return `There's no folder at ${path}.`;
+    if (!entries.length) return `${path} is empty.`;
+    const rows = await Promise.all(entries.slice(0, 200).map(async e => {
+      if (e.isDirectory()) return `${e.name}/`;
+      const s = await stat(join(path, e.name)).catch(() => null);
+      return s ? `${e.name}  (${s.size < 1000 ? `${s.size} B` : `${Math.round(s.size / 1000)} KB`}, ${s.mtime.toISOString().slice(0, 10)})` : e.name;
+    }));
+    return `${rows.join('\n')}${entries.length > 200 ? `\n…and ${entries.length - 200} more` : ''}`;
   }
 }

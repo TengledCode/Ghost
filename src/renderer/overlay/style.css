@@ -34,7 +34,7 @@ html, body { margin: 0; height: 100%; background: transparent; overflow: hidden;
 #stage[data-idle] #shell > :not(.live-tag):not(.label), #stage[data-idle] #stack .panel { opacity: var(--idle-opacity); transition-duration: .8s; }
 #shell .live-tag { position: absolute; left: 50%; top: -6%; transform: translateX(-50%); display: flex; align-items: center; gap: 5px;
   padding: 2px 8px; border-radius: 999px; font: 600 10px/1.4 "Segoe UI", system-ui, sans-serif; letter-spacing: .12em; color: #fff;
-  background: rgba(200, 24, 72, .92); border: 1px solid rgba(255, 140, 170, .6); pointer-events: none; white-space: nowrap; }
+  background: rgba(200, 24, 72, .92); border: 1px solid rgba(255, 140, 170, .6); pointer-events: none; white-space: nowrap; z-index: 2; }
 #shell .live-tag i { width: 6px; height: 6px; border-radius: 50%; background: #fff; animation: live-pulse 1.6s ease-in-out infinite; }
 #shell .live-tag .live-left:not(:empty)::before { content: "· "; opacity: .75; }
 #shell .live-tag .live-left { letter-spacing: .02em; font-weight: 500; }
@@ -60,7 +60,11 @@ html, body { margin: 0; height: 100%; background: transparent; overflow: hidden;
   font: 500 12px/16px "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; letter-spacing: .01em; color: var(--text);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   opacity: 0; transition: opacity .3s; pointer-events: none;
+  z-index: 2; /* above the 3D canvas, which is added after it */
 }
+/* Snapped to the bottom of the screen there's only a small gap below the shell, so the pill sits
+   just inside its lower edge instead of under it, where it would be cut off. */
+#stage[data-orient^="bottom"] #shell .label { bottom: 0; }
 /* Softly counting dots while Ghost works. */
 #stage[data-state="thinking"] #shell .label::after,
 #stage[data-state="searching"] #shell .label::after { content: ''; display: inline-block; width: 1.1em; text-align: left; animation: label-dots 1.4s steps(1, end) infinite; }

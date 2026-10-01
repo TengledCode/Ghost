@@ -27,7 +27,7 @@ It runs on **your existing subscriptions, not API keys.** Ghost drives the offic
   - **Your other notes:** Ghost can search and read them, and add to them after you confirm.
   - **Continuity:** conversations survive restarts either way, and without a vault everything stays on your PC as before.
 - **Stays out of the way.** Click-through when idle, corner snap or free drag across monitors, size and opacity sliders, auto-hide over fullscreen games (voice and reminders keep working), a `Ctrl+Space` summon hotkey, and start at login.
-- **Safe by default.** Opening apps, URLs, searching, reminders and memory run instantly. Running commands, writing, deleting or closing apps shows a confirm card (auto-denied after 60 s).
+- **Safe by default.** Opening apps, URLs and documents, searching, reminders and memory run instantly. Running commands, writing, deleting, closing apps, opening programs or scripts, and reading files outside Desktop, Documents, Downloads, the vault and Ghost's own folders show a confirm card (auto-denied after 60 s). The brains' own file tools are switched off or fenced to those folders, so a web page can't trick them into reading private files.
 - **Ready for a phone later.** The brain (core) and the UI talk over a token-protected local WebSocket, so a phone client can later speak the same protocol (see `src/shared/protocol.ts`).
 
 ## Quick start (Windows)
@@ -67,7 +67,6 @@ Every side effect goes through Ghost's own MCP tools (`src/core/tools`), never t
 | `npm run typecheck` | TypeScript |
 | `npm run build` | Bundle into `out/` |
 | `npm run preview:ui` | Run the overlay in a normal browser against an offline mock core (`GHOST_PREVIEW_TTS=synth` for a stand-in voice that moves the shards) |
-| `node scripts/build-draft.mjs` | Build the standalone Ghost Shell Lab page (states, reactions, voice sample) into `out/draft/` |
 | `GHOST_PROVIDER=mock npm run dev` | Full app with the mock brain (no subscription usage) |
 | `GHOST_LIVE=1 npx vitest run tests/claude.live.test.ts` | One real Claude round trip through the MCP bridge (after `npm run build`) |
 

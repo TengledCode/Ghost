@@ -47,7 +47,8 @@ export class MemoryStore implements FactStore {
   }
 
   forget(idOrText: string): number {
-    const needle = idOrText.toLowerCase();
+    const needle = idOrText.toLowerCase().trim();
+    if (!needle) return 0;
     const before = this.data.facts.length;
     this.data.facts = this.data.facts.filter(f => f.id !== idOrText && !f.text.toLowerCase().includes(needle));
     if (this.data.facts.length !== before) this.save();

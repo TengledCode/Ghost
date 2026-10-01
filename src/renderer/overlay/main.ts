@@ -44,7 +44,6 @@ let currentTurn = '';
 let replyText = '';
 let bubbleTimer = 0;
 let pendingApproval: string | null = null;
-let orientation: Corner = 'bottom-right';
 let thankedThisTurn = false;
 let materialised = false;
 // Reply timings (Settings → Brain → Show reply timings), measured from when Aaron pressed Enter.
@@ -64,6 +63,8 @@ function renderMeta(): void {
   bubbleMeta.textContent = parts.filter(Boolean).join(' · ');
 }
 const history: { who: 'user' | 'ghost'; text: string }[] = [];
+/** The history panel shows the last 30 messages; older ones aren't kept in the page. */
+function pushHistory(m: { who: 'user' | 'ghost'; text: string }): void { history.push(m); if (history.length > 60) history.splice(0, history.length - 60); }
 
 const boot = await bridge.bootstrap();
 settings = boot.settings;
@@ -85,6 +86,9 @@ await customElements.whenDefined('voice-orb').catch(() => {});
 // The orb taps the processed voice, so the eye pulses with what Aaron actually hears.
 voiceOrb.connect?.(player.master).catch(() => {});
 
+// If the page is ever told it's hidden while Ghost should be on screen, that's the bug that made him
+// vanish; log it so it can be seen in data/ghost.log.
+document.addEventListener('visibilitychange', () => bridge.log(`page ${document.visibilityState}`));
 applySettings(settings);
 bridge.onSettings(s => applySettings(s));
 bridge.onSummon(() => { touch(); openInput(); });
@@ -163,9 +167,6 @@ function applySettings(s: Settings): void {
       if (!materialised) { materialised = true; shell.materialise(); } // the startup entrance, once
       // A graphics driver reset (e.g. when a heavy app like Photos closes) loses the 3D context;
       // without this Ghost would stay invisible. Reload and he materialises again.
-      // If the page is ever told it's hidden while Ghost should be on screen, that's the bug that
-      // made him vanish; log it so it can be seen in data/ghost.log.
-      document.addEventListener('visibilitychange', () => bridge.log(`page ${document.visibilityState}`));
       shellEl.querySelector('canvas')?.addEventListener('webglcontextlost', e => {
         e.preventDefault();
         bridge.log('webgl context lost');
@@ -196,7 +197,6 @@ function hueOf(hex: string): number {
 }
 
 function setOrientation(c: Corner): void {
-  orientation = c;
   stage.dataset.orient = c;
 }
 
@@ -238,7 +238,7 @@ core.on((m: CoreMessage) => {
       renderMeta();
       // No voice came for this reply at all (voice unavailable): show the text now.
       if (settings.voiceEnabled && subtitles.activeTurn !== m.turnId) setTimeout(() => { if (subtitles.activeTurn !== m.turnId) showBubble(m.text); }, 600);
-      history.push({ who: 'ghost', text: m.text });
+      pushHistory({ who: 'ghost', text: m.text });
       renderHistory();
       if (thankedThisTurn) { shell?.express('happy'); thankedThisTurn = false; }
       break;
@@ -252,7 +252,7 @@ core.on((m: CoreMessage) => {
       if (!settings.voiceEnabled) showBubble(m.text);
       else setTimeout(() => { if (subtitles.activeTurn !== turnId) showBubble(m.text); }, 3000);
       glanceAt(bubble); // a reminder appearing catches his eye
-      history.push({ who: 'ghost', text: m.text });
+      pushHistory({ who: 'ghost', text: m.text });
       renderHistory();
       break;
     }
@@ -360,7 +360,7 @@ form.addEventListener('submit', e => {
   e.preventDefault();
   const text = input.value.trim();
   if (!text) return;
-  history.push({ who: 'user', text });
+  pushHistory({ who: 'user', text });
   renderHistory();
   // A small reaction while Ghost works on it: a curious tilt for questions, a happy spin after thanks.
   const mood = moodFromMessage(text);
@@ -404,7 +404,8 @@ function showConfirm(id: string, summary: string): void {
   confirmEl.querySelector('.confirm-summary')!.textContent = summary;
   confirmEl.hidden = false;
   bridge.setInteractive(true);
-  (confirmEl.querySelector('.allow') as HTMLButtonElement).focus();
+  // Keyboard focus goes to Deny: an Enter meant for the text box must never approve an action.
+  (confirmEl.querySelector('.deny') as HTMLButtonElement).focus();
 }
 function hideConfirm(): void { pendingApproval = null; confirmEl.hidden = true; refreshInteractivity(); }
 function answer(approved: boolean): void {

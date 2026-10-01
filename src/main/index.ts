@@ -19,8 +19,18 @@ import { captureScreen } from './screenCapture';
 import { openSettingsWindow } from './settingsWindow';
 import { readBuildInfo, Updater, type BuildInfo } from './updater';
 
-if (!app.requestSingleInstanceLock()) app.quit();
+// A second copy (e.g. started again from the Start menu) only wakes the running one: it must not
+// start a second core, overlay and tray before it quits.
+const firstInstance = app.requestSingleInstanceLock();
+if (!firstInstance) app.exit(0);
 app.setAppUserModelId('com.aaron.ghost');
+// Ghost's windows only ever show its own pages: no navigating away (a dropped file, a stray link)
+// and no new windows, so nothing else can reach the preload bridge.
+app.on('web-contents-created', (_e, contents) => {
+  contents.on('will-navigate', (e, url) => { if (url !== contents.getURL()) e.preventDefault(); });
+  contents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  contents.on('will-attach-webview', e => e.preventDefault());
+});
 // Chromium stops drawing windows it believes are covered ("native window occlusion"). For a
 // transparent always-on-top overlay that check can get stuck after a covering app (e.g. Photos)
 // closes: Ghost's window is still there but draws nothing. Ghost is tiny, so it simply keeps drawing.
@@ -31,6 +41,7 @@ const resource = (...p: string[]) => (app.isPackaged ? join(process.resourcesPat
 let tray: Tray | null = null;
 
 app.whenReady().then(async () => {
+  if (!firstInstance) return;
   initLog(join(app.getPath('userData'), 'data', 'ghost.log'));
   log('start', { version: app.getVersion() });
   const store = new SettingsStore();
@@ -50,6 +61,14 @@ app.whenReady().then(async () => {
       openExternal: url => shell.openExternal(url),
       openPath: path => shell.openPath(path),
       trash: path => shell.trashItem(path),
+      // Pictures go to the model at most 1568 px on the long edge: readable, and a modest image cost.
+      loadImage: async path => {
+        let img = nativeImage.createFromPath(path);
+        if (img.isEmpty()) throw new Error("couldn't open that picture");
+        const { width, height } = img.getSize();
+        if (Math.max(width, height) > 1568) img = width >= height ? img.resize({ width: 1568, quality: 'good' }) : img.resize({ height: 1568, quality: 'good' });
+        return { data: img.toJPEG(85), mime: 'image/jpeg' };
+      },
     },
     settings,
     // Snapshots land in the CLIs' working folder, where the model's file-reading tool can open them.

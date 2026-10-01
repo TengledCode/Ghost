@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { classify } from '../src/core/approvals/classify';
+import { safeReadRoots } from '../src/core/tools/fileAccess';
 import { MemoryStore } from '../src/core/memory/store';
 import { buildTurnPrompt } from '../src/core/persona';
 import { ClaudeStreamParser, claudeArgs } from '../src/core/providers/claude';
@@ -13,7 +14,7 @@ import { modelFor, routeTier } from '../src/core/router';
 import { SentenceSplitter } from '../src/core/sentenceSplitter';
 import { TtsService } from '../src/core/tts/service';
 import { TtsError, type TtsEngine } from '../src/core/tts/types';
-import { cornerPosition, MARGIN, nearestCorner, windowSize } from '../src/main/placement';
+import { windowSize } from '../src/main/placement';
 import { mergeSettings } from '../src/shared/settings';
 import { shouldHide } from '../src/main/fullscreenWatcher';
 
@@ -104,6 +105,27 @@ describe('approval policy', () => {
     expect(classify('write_file', { path: 'C:\\x.txt', content: '' })).toBe('confirm');
     expect(classify('delete_path', { path: 'C:\\x.txt' })).toBe('confirm');
   });
+  it('asks before opening anything that could run, or a network share', () => {
+    for (const target of ['C:\\x\\a.hta', 'C:\\x\\macro.docm', 'C:\\x\\disk.iso', 'C:\\x\\settings.settingcontent-ms', '\\\\server\\share\\a.pdf', 'file:///C:/x.pdf'])
+      expect(classify('open_path_or_url', { target }), target).toBe('confirm');
+    for (const target of ['C:\\Users\\Aaron\\Videos\\clip.mp4', 'C:\\Users\\Aaron\\Documents', 'C:\\x\\photo.JPG'])
+      expect(classify('open_path_or_url', { target }), target).toBe('safe');
+    expect(classify('open_app', { name: 'spotify' })).toBe('safe');
+    for (const name of ['C:\\Users\\Aaron\\Downloads\\evil.exe', 'cmd.exe', 'ms-settings:']) expect(classify('open_app', { name }), name).toBe('confirm');
+  });
+  it('reads freely only inside the safe folders', () => {
+    const home = mkdtempSync(join(tmpdir(), 'ghost-home-'));
+    const roots = safeReadRoots({ ghostDirs: [join(home, 'ghost')], vault: join(home, 'vault'), home });
+    const ctx = { safeReadRoots: roots };
+    expect(classify('read_file', { path: join(home, 'Documents', 'notes.txt') }, ctx)).toBe('safe');
+    expect(classify('read_file', { path: join(home, 'ghost', 'screens', 's.png') }, ctx)).toBe('safe');
+    expect(classify('list_folder', { path: join(home, 'vault') }, ctx)).toBe('safe');
+    expect(classify('read_file', { path: join(home, '.ssh', 'id_ed25519') }, ctx)).toBe('confirm');
+    expect(classify('read_file', { path: join(home, 'Documents', '..', '.ssh', 'id_ed25519') }, ctx)).toBe('confirm');
+    expect(classify('read_file', { path: join(home, 'Documents-old', 'x.txt') }, ctx)).toBe('confirm'); // a prefix isn't the folder
+    expect(classify('read_file', { path: 'notes.txt' }, ctx)).toBe('confirm');
+    expect(classify('read_file', { path: join(home, 'Desktop', 'x.txt') })).toBe('confirm'); // no context: ask
+  });
 });
 
 describe('Claude CLI provider', () => {
@@ -124,9 +146,13 @@ describe('Claude CLI provider', () => {
   it('builds a locked-down argv with no free text in it', () => {
     const args = claudeArgs({ model: 'haiku', personaFile: 'C:\\g\\persona.md', sessionId: 's1', mcpConfigPath: 'C:\\g\\mcp.json' });
     expect(args).toContain('--strict-mcp-config');
-    expect(args[args.indexOf('--tools') + 1]).toBe('WebSearch,WebFetch,Read,Glob,Grep');
+    expect(args[args.indexOf('--tools') + 1]).toBe('WebSearch,WebFetch'); // no file tools: those go through Ghost's checks
     expect(args[args.indexOf('--resume') + 1]).toBe('s1');
     expect(args).not.toContain('Bash');
+    // Filing and summarising old conversations: no tools at all, not even Ghost's.
+    const one = claudeArgs({ model: 'haiku', personaFile: 'p.md', mcpConfigPath: 'm.json', oneShot: true });
+    expect(one[one.indexOf('--tools') + 1]).toBe('');
+    expect(one).not.toContain('--mcp-config');
   });
   it('classifies CLI failures', () => {
     expect(classifyError("'claude' is not recognized as an internal or external command")).toBe('missing');
@@ -204,14 +230,6 @@ describe('TTS fallback', () => {
 });
 
 describe('placement', () => {
-  const work = { x: 0, y: 0, width: 1920, height: 1040 };
-  it('places and snaps to corners', () => {
-    const size = windowSize(180);
-    const br = cornerPosition('bottom-right', work, size);
-    expect(br.x + size.width).toBe(1920 - MARGIN);
-    expect(nearestCorner(br.x - 30, br.y - 20, work, size)).toEqual({ corner: 'bottom-right', snap: true });
-    expect(nearestCorner(800, 300, work, size).snap).toBe(false);
-  });
   it('clamps settings', () => {
     expect(mergeSettings({ size: 5000, idleOpacity: 0 }).size).toBe(420);
     expect(mergeSettings({ idleOpacity: 0 }).idleOpacity).toBe(0.2);

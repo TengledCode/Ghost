@@ -25,6 +25,14 @@ export const TOOL_DEFS = {
     description: 'Run a PowerShell command and return its output. Always requires Aaron\'s confirmation. Prefer the specific tools when one fits.',
     shape: { command: z.string(), reason: z.string().describe('One short line explaining why, shown on the confirm card') },
   },
+  read_file: {
+    description: "Read a text file, or look at an image (screenshots, photos). Ghost's own folders, the Obsidian vault, Desktop, Documents and Downloads open straight away; anywhere else Aaron confirms first.",
+    shape: { path: z.string().describe('Absolute path') },
+  },
+  list_folder: {
+    description: 'List the files and folders inside a folder (names, sizes, dates). Same confirmation rule as read_file.',
+    shape: { path: z.string().describe('Absolute path of the folder') },
+  },
   write_file: {
     description: 'Create, overwrite or append to a text file. Requires confirmation.',
     shape: { path: z.string().describe('Absolute path'), content: z.string(), append: z.boolean().optional() },

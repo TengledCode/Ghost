@@ -29,12 +29,31 @@ export function agyPaths(dir: string): AgyPaths {
 
 /**
  * The PreToolUse decision. Self-contained (it is copied into hook.js as source), so no imports or
- * outside names.
+ * outside names. agy's own file tools may only look inside `safeRoots` (Ghost's folders, the vault,
+ * Desktop, Documents, Downloads); anywhere else the model must use Ghost's read_file, which asks Aaron.
  */
-export function agyHookDecision(call: { name?: unknown; args?: Record<string, unknown> }): { decision: 'allow' | 'deny'; reason?: string } {
+export function agyHookDecision(call: { name?: unknown; args?: Record<string, unknown> }, safeRoots: string[] = []): { decision: 'allow' | 'deny'; reason?: string } {
   const allowed = ['view_file', 'list_dir', 'grep_search', 'find_by_name', 'read_resource', 'list_resources', 'search_web', 'read_url_content', 'finish', 'wait', 'wait_5_seconds'];
+  const fileTools = ['view_file', 'list_dir', 'grep_search', 'find_by_name'];
   const name = String(call.name ?? '');
-  const server = String((call.args ?? {}).ServerName ?? '');
+  const args = call.args ?? {};
+  const server = String(args.ServerName ?? '');
+  if (fileTools.includes(name)) {
+    // Paths compared with forward slashes, drive paths in lower case. (No named helper functions in
+    // here: the bundler would wrap them in a helper that doesn't exist once this is copied to hook.js.)
+    const roots = safeRoots.map(r => r.replace(/\\/g, '/').replace(/\/+$/, '')).map(r => (/^[a-zA-Z]:/.test(r) ? r.toLowerCase() : r));
+    const values = Object.values(args).flatMap(v => (Array.isArray(v) ? v : [v])).filter((v): v is string => typeof v === 'string');
+    for (const v of values) {
+      const slashed = v.trim().replace(/\\/g, '/').replace(/\/+$/, '');
+      const p = /^[a-zA-Z]:/.test(slashed) ? slashed.toLowerCase() : slashed;
+      const looksLikePath = /^[a-zA-Z]:/.test(p) || p.startsWith('/'); // C:\…, a bare C:, /…, \\server
+      const climbs = /(^|\/)\.\.(\/|$)/.test(p);
+      if (climbs || (looksLikePath && !roots.some(r => p === r || p.startsWith(`${r}/`)))) {
+        return { decision: 'deny', reason: `${v} is outside the folders Ghost reads freely. Use read_file or list_folder on the ghost_ghost MCP server (call_mcp_tool); Aaron confirms those.` };
+      }
+    }
+    return { decision: 'allow' };
+  }
   if (allowed.includes(name)) return { decision: 'allow' };
   if (name === 'call_mcp_tool' && server === 'ghost_ghost') return { decision: 'allow' };
   const why = name === 'call_mcp_tool'
@@ -47,6 +66,7 @@ export interface AgyPluginOptions {
   nodeExecPath: string; // Electron (run as node) or node
   mcpServerPath: string;
   env: Record<string, string>; // GHOST_CORE_URL, GHOST_TOKEN
+  safeReadRoots?: string[]; // where agy's own file tools may look (see agyHookDecision)
   windows?: boolean;
 }
 
@@ -64,13 +84,14 @@ export function writeAgyPlugin(paths: AgyPaths, o: AgyPluginOptions): void {
 
   file('hook.js', `// Ghost's permission hook for Antigravity (generated; see src/core/providers/agyPlugin.ts).
 const decide = ${agyHookDecision.toString()};
+const SAFE_ROOTS = ${JSON.stringify(o.safeReadRoots ?? [])};
 let input = '';
 process.stdin.setEncoding('utf8');
 process.stdin.on('data', c => (input += c));
 process.stdin.on('end', () => {
   let payload = {};
   try { payload = JSON.parse(input); } catch {}
-  process.stdout.write(JSON.stringify(decide(payload.toolCall || {})));
+  process.stdout.write(JSON.stringify(decide(payload.toolCall || {}, SAFE_ROOTS)));
 });
 `);
   file('preinvoke.js', `// Proves to Ghost that its hooks are loaded (generated).
@@ -109,7 +130,8 @@ export function writeAgyPersona(paths: AgyPaths, persona: string): void {
 
 - Everything you do on the PC goes through the MCP server \`${GHOST_SERVER}\` (call it with call_mcp_tool). It holds open_app, set_reminder, remember, recall, run_command and the rest.
 - Your own command, file-writing and browser tools are switched off here. Don't try them; use the \`${GHOST_SERVER}\` tools instead.
-- You may read files and images (view_file), search the web (search_web) and read pages (read_url_content).
+- You may search the web (search_web) and read pages (read_url_content).
+- Your file tools (view_file, list_dir…) work in Ghost's folders, the Obsidian vault, Desktop, Documents and Downloads. For anywhere else use read_file or list_folder on \`${GHOST_SERVER}\`; Aaron confirms those.
 `);
 }
 

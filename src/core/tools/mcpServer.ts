@@ -11,7 +11,8 @@ import { parseMessage } from '../../shared/protocol';
 
 const url = process.env.GHOST_CORE_URL ?? 'ws://127.0.0.1:47831';
 const token = process.env.GHOST_TOKEN ?? '';
-const pending = new Map<string, (r: { ok: boolean; result: string }) => void>();
+type Result = { ok: boolean; result: string; image?: { data: string; mime: string } };
+const pending = new Map<string, (r: Result) => void>();
 let socket: Promise<WebSocket> | null = null;
 
 function connect(): Promise<WebSocket> {
@@ -35,11 +36,13 @@ async function call(tool: string, args: Record<string, unknown>) {
   try {
     const ws = await connect();
     const id = randomUUID();
-    const result = await new Promise<{ ok: boolean; result: string }>(resolve => {
+    const result = await new Promise<Result>(resolve => {
       pending.set(id, resolve);
       ws.send(JSON.stringify({ type: 'tool_call', id, tool, args } satisfies ClientMessage));
     });
-    return { content: [{ type: 'text' as const, text: result.result }], isError: !result.ok };
+    const text = { type: 'text' as const, text: result.result };
+    // A picture (read_file on an image) goes to the model as an image the model can see.
+    return { content: result.image ? [{ type: 'image' as const, data: result.image.data, mimeType: result.image.mime }, text] : [text], isError: !result.ok };
   } catch (e) {
     return { content: [{ type: 'text' as const, text: `Ghost core unreachable: ${String(e)}` }], isError: true };
   }

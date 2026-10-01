@@ -1,6 +1,6 @@
 import { app, safeStorage } from 'electron';
 import { EventEmitter } from 'node:events';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { mergeSettings, type Settings } from '../shared/settings';
 
@@ -22,7 +22,9 @@ export class SettingsStore extends EventEmitter {
     const before = this.current;
     this.current = mergeSettings({ ...this.current, ...patch });
     mkdirSync(app.getPath('userData'), { recursive: true });
-    writeFileSync(this.file, JSON.stringify(this.current, null, 2));
+    // Written to a temp file first, so a crash mid-write can't leave a half-written settings file.
+    writeFileSync(`${this.file}.tmp`, JSON.stringify(this.current, null, 2));
+    renameSync(`${this.file}.tmp`, this.file);
     this.emit('change', this.current, before);
     return this.current;
   }
