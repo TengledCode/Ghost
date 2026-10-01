@@ -113,11 +113,14 @@ app.whenReady().then(async () => {
       if (overlay.win.isDestroyed()) return;
       overlay.win.webContents.send('ghost:elsewhere');
       overlay.keepOnTop();
-      overlay.refresh(); // and make sure it's drawn (a closing app like Photos could leave it blank)
+      // Make sure it's drawn: closing an app like Photos can make Windows drop Ghost's image. Once
+      // now, and once more in case that happens a moment later, during the app's closing animation.
+      overlay.refresh();
+      setTimeout(() => overlay.refresh(), 250);
     },
   );
   setInterval(() => overlay.checkHealth(), 5000).unref();
-  foreground.start();
+  foreground.start(60); // quick to notice, so a dropped frame is back before it's seen
   app.on('will-quit', () => foreground.stop());
 
   store.on('change', (next: Settings, prev: Settings) => {

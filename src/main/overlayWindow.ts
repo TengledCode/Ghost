@@ -210,7 +210,7 @@ export class OverlayWindow {
     this.win.webContents.invalidate();
     if (this.hiddenForFullscreen && !this.summoned) return;
     this.win.setOpacity(0.99);
-    setTimeout(() => { if (!this.win.isDestroyed() && !(this.hiddenForFullscreen && !this.summoned)) this.win.setOpacity(1); }, 60);
+    setTimeout(() => { if (!this.win.isDestroyed() && !(this.hiddenForFullscreen && !this.summoned)) this.win.setOpacity(1); }, 16);
   }
 
   /**
