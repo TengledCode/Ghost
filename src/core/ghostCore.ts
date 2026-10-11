@@ -682,11 +682,12 @@ export class GhostCore {
   }
 
   /** A short line from Ghost itself (no model call): shown in the bubble and spoken (`speech` if the shown text has a path in it). */
+  /** Shows a line in the bubble and speaks it (or `speech` instead; '' keeps it silent). */
   private say(text: string, speech = text): void {
     const turnId = `say-${randomUUID()}`;
     this.broadcast({ type: 'text_delta', turnId, text });
     this.broadcast({ type: 'turn_end', turnId, text, provider: 'ghost', model: '' });
-    void this.speakStandalone(turnId, speech, undefined, text);
+    if (speech) void this.speakStandalone(turnId, speech, undefined, text);
   }
 
   // ---------------------------------------------------------------- screenshots and recording
@@ -702,7 +703,8 @@ export class GhostCore {
       } else if (cmd === 'record') {
         if (capture.recording().on) { this.say('Already recording your screen.'); return; }
         await capture.startRecording();
-        this.say('Recording your screen.');
+        // Shown, not spoken: the recording takes in everything the PC plays, Ghost's voice included.
+        this.say('Recording your screen.', '');
       } else {
         const state = capture.recording();
         if (!state.on) { this.say("I'm not recording."); return; }

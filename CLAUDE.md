@@ -86,21 +86,25 @@ Logs: `%APPDATA%\Ghost\data\ghost.log` (app) and `%APPDATA%\Ghost\data\update.lo
 - **Recording:**
   - screen plus PC sound by default, with a mic toggle on the REC tag (Aaron has no mic yet; it must say so and keep recording);
   - Ghost kept out of screenshots and recordings.
+  - Windows records everything the PC plays, and Electron 38 can't leave Ghost's own voice out (tested: `restrictOwnAudio` and `suppressLocalAudioPlayback` do nothing for system loopback). So "Recording your screen." is shown but not spoken; anything Ghost says mid-recording is still captured. Aaron chose this over per-app Windows audio capture.
 - **Compatible drawing mode was removed.** Starting Chromium without DirectComposition and GPU compositing froze Ghost on Windows. Don't retry that path.
 - **The Photos blink** (Ghost vanishes for ~2 frames as Photos closes) is Windows dropping the frame. Aaron agreed it's not worth more risky attempts.
 - **Watch mode** (Ghost watching and commenting, via Gemini Flash check-ins about every 60 s at 1 fps) is designed but Aaron said "not yet".
+
+## Verified on Aaron's PC (11 Oct 2026)
+
+- Ghost is absent from screenshots and recordings, and stays visible on screen.
+- PC sound is in recordings.
+- Recordings are H.264/AAC MP4. MediaRecorder writes fragmented MP4 with no total length, so `src/main/mp4Duration.ts` writes it into the header after saving. Media Player now shows the length and can seek.
 
 ## Not yet verified on real Windows
 
 These were built in a Linux cloud container and tested there with Electron under Xvfb. Check each on Aaron's PC:
 
-1. **Ghost absent from screenshots and recordings** (`setContentProtection` → WDA_EXCLUDEFROMCAPTURE): say "take a screenshot" and "record my screen". Ghost must not appear in either, but stays visible on screen.
-2. **PC sound in recordings** (desktop loopback in `src/renderer/recorder/main.ts`): play a video while recording; the MP4 should have its sound.
-3. **Recording format:** the recorder picks H.264/AAC MP4 if supported, else VP9/Opus MP4. Check which one `ghost.log` reports ("recording started"), and that the file plays in Media Player with the full length.
-4. **Mic toggle:** without a mic, a notice says so and recording continues. Once Aaron has a mic, his voice should be mixed in from the moment he toggles it.
-5. **Sandboxed preload in the packaged app:** overlay, Settings and the recorder all work after `npm run dist:win`.
-6. **File reads with both brains:**
+1. **Mic toggle:** without a mic, a notice says so and recording continues. Once Aaron has a mic, their voice should be mixed in from the moment he toggles it.
+2. **Sandboxed preload in the packaged app:** overlay, Settings and the recorder all work after `npm run dist:win`.
+3. **File reads with both brains:**
    - live view or "what's on my screen?" still works, with the model seeing the image via `read_file`;
    - "read C:\Users\…\AppData\…\something.txt" shows a confirm card.
-7. **Antigravity hook on Windows paths:** with Gemini as primary, reading a file in Documents works without a card. Reading outside the safe folders is refused by the hook, and the model uses `read_file` (confirm) instead.
-8. **Updater:** a locked old installer in `dist\` is moved aside (`scripts/clear-old-installers.mjs`), and update failures name the real error.
+4. **Antigravity hook on Windows paths:** with Gemini as primary, reading a file in Documents works without a card. Reading outside the safe folders is refused by the hook, and the model uses `read_file` (confirm) instead.
+5. **Updater:** a locked old installer in `dist\` is moved aside (`scripts/clear-old-installers.mjs`), and update failures name the real error.

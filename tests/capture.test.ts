@@ -49,14 +49,14 @@ function fakeCapture() {
   return { host, calls, onChange: (f: (s: RecordingState) => void) => { notify = f; } };
 }
 
-async function setup() {
+async function setup(voiceEnabled = false) {
   const cap = fakeCapture();
   core = new GhostCore({
     dataDir: mkdtempSync(join(tmpdir(), 'ghost-cap-')), personaPath: join(__dirname, '../config/persona.md'),
     mcpServerPath: '/out/main/mcpServer.js', nodeExecPath: process.execPath, providers: { claude: new MockProvider() as never },
     tts: new TtsService(fakeTts, fakeTts),
     host: { openExternal: async () => {}, openPath: async () => '', trash: async () => {}, capture: cap.host },
-    settings: () => mergeSettings({ provider: 'claude', fallbackProvider: null, voiceEnabled: false }), port: 0,
+    settings: () => mergeSettings({ provider: 'claude', fallbackProvider: null, voiceEnabled }), port: 0,
   });
   const c = core;
   cap.onChange(s => c.recordingChanged(s));
@@ -85,15 +85,20 @@ describe('screenshots and recording in the core', () => {
   });
 
   it('records, switches the mic from the REC tag, and stops with the length', async () => {
-    const { core, cap, ws, inbox, until } = await setup();
+    const { core, cap, ws, inbox, until } = await setup(true);
     await core.userMessage('record my screen');
     await until(m => m.type === 'recording' && m.on);
+    // Said in the bubble only: spoken, it would end up in the recording.
+    const started = await until(m => m.type === 'turn_end' && (m as { text: string }).text === 'Recording your screen.');
+    await new Promise(r => setTimeout(r, 100));
+    expect(inbox.some(m => m.type === 'audio' && m.turnId === (started as { turnId: string }).turnId)).toBe(false);
     ws.send(JSON.stringify({ type: 'recording_mic', on: true }));
     await until(m => m.type === 'notice' && /No microphone found, so the recording carries on/.test(m.text));
     ws.send(JSON.stringify({ type: 'recording_stop' }));
     await until(m => m.type === 'recording' && !m.on);
     const saved = await until(m => m.type === 'turn_end' && /Recording saved/.test((m as { text: string }).text));
     expect((saved as { text: string }).text).toMatch(/^Recording saved \(1 min \d+ s\)\.\nC:\\.*Ghost recording\.mp4$/);
+    await until(m => m.type === 'audio' && m.turnId === (saved as { turnId: string }).turnId); // spoken once it's stopped
     expect(cap.calls).toEqual(['start', 'mic:true', 'stop']);
     expect(inbox.filter(m => m.type === 'recording').length).toBeGreaterThanOrEqual(3);
   });

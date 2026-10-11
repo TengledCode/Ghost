@@ -1,7 +1,8 @@
 import { BrowserWindow, desktopCapturer, ipcMain, screen, session, type IpcMainEvent } from 'electron';
-import { createWriteStream, mkdirSync, rmSync, statSync, type WriteStream } from 'node:fs';
+import { createWriteStream, existsSync, mkdirSync, rmSync, statSync, type WriteStream } from 'node:fs';
 import { join } from 'node:path';
 import { log } from './log';
+import { fixMp4Duration } from './mp4Duration';
 
 // Screen recording: a hidden page records the monitor under the cursor (plus whatever the PC plays,
 // on Windows) with the browser's MediaRecorder, and streams it here chunk by chunk into a video file,
@@ -110,6 +111,10 @@ export class ScreenRecorder {
     const done = () => {
       // A recording that never got any frames is just an empty file: don't leave it behind.
       try { if (path && statSync(path).size === 0) rmSync(path, { force: true }); } catch { /* none */ }
+      // Give the MP4 its total length, so Windows shows it and Media Player can seek.
+      if (path.endsWith('.mp4') && existsSync(path)) {
+        try { log('recording length', fixMp4Duration(path)); } catch (e) { log('recording length not fixed', String(e)); }
+      }
       log('recording saved', path);
       for (const w of waiting) w(path);
     };
