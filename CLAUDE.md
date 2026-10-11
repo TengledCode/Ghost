@@ -101,6 +101,38 @@ Logs: `%APPDATA%\Ghost\data\ghost.log` (app) and `%APPDATA%\Ghost\data\update.lo
 - Updater clean-up: a running old installer is moved aside and deleted on the next build; one held open without sharing stops the build with "can't clear …", which Settings words as "Windows has the previous installer … locked".
 - File reads with both brains (Gemini Flash and Claude Sonnet): "what's on my screen?" works; a file in Documents is read with no card; a file in AppData\Local shows a confirm card, and after Deny the brain says so and never sees the contents. The Antigravity hook works on Windows paths (its real `hook.cmd` also runs in `tests/safety.test.ts` on Windows).
 
+## docs/SETUP.md manual checklist (section 7): progress
+
+Worked through in rounds of related checks; Aaron reports, Claude checks `ghost.log` and fixes what fails.
+
+- **Passed (12 Oct 2026, Gemini primary):**
+  - startup animation and spoken greeting, and the tray icon;
+  - Ctrl+Space opens the input focused, and Esc closes it;
+  - replies spoken through the Ghost filter, with the shards moving like a mouth and the words appearing with the voice;
+  - no "Certainly" openers, and web search works;
+  - `open notepad` runs with no card, and `delete C:\temp\x.txt` shows one;
+  - cursor following with the beam; no clipping or dark box; no grey shadow on a light background;
+  - click boop, and the happy spin after "thanks" (fixed: it now makes a full turn);
+  - fading on click-away and after hovering. The hover-only fade was shortened to 2 s at Aaron's request. Hovering doesn't reopen the text box, which is how Aaron wants it;
+  - dozing after 5 minutes;
+  - screenshots and recording.
+- **Next, Round 3 (moving and quitting):**
+  - click-through when idle (hover or Alt to grab);
+  - drag precision, edge stick and corner snap, never partly off-screen;
+  - position remembered after a restart, and a second monitor (ask whether Aaron has one);
+  - all three ways to quit;
+  - low GPU when idle, and the Render quality setting.
+- **Still to do after that:**
+  - start at login: registered as `com.aaron.ghost`; confirm after Aaron's next restart;
+  - a reminder over a fullscreen game;
+  - a bad ElevenLabs key falls back to Edge with a notice;
+  - memory across a restart, and "what did we talk about yesterday?";
+  - live screen view and its auto-off;
+  - the first word is heard after 10+ s of silence, and Bluetooth "Test first word";
+  - reply timings;
+  - the three Obsidian checks;
+  - the provider switch when Claude hits its limit.
+
 ## Not yet verified on real Windows
 
 1. **Mic with a real mic:** once Aaron has one, their voice is mixed into a recording from the moment they toggle it on.
