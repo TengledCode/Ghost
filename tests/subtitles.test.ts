@@ -87,6 +87,12 @@ describe('true idle', () => {
     expect(isIdle({ ...base, hovering: true })).toBe(false);
     expect(isIdle({ ...base, quietMs: 2000 })).toBe(false);
   });
+  it('fades sooner after only a hover than after typing or a reply', () => {
+    const hover = { busy: false, hovering: false, quietMs: 60_000, holdMs: 6000, hoverHoldMs: 2000 };
+    expect(isIdle({ ...hover, hoverQuietMs: 1000 })).toBe(false); // just left Ghost
+    expect(isIdle({ ...hover, hoverQuietMs: 2500 })).toBe(true); // 2.5 s later: faded
+    expect(isIdle({ ...hover, quietMs: 3000, hoverQuietMs: 2500 })).toBe(false); // typed 3 s ago: still the 6 s hold
+  });
 });
 
 import { attentionPoint, relativeTo } from '../src/renderer/overlay/attention';

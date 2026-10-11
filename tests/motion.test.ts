@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Curiosity, flourishFor, lookAt, POSES, QualityGovernor, seededRng, Spring } from '../src/renderer/overlay/shell/motion';
+import { Curiosity, flourishFor, HAPPY_SPIN, lookAt, POSES, QualityGovernor, seededRng, spinKick, Spring } from '../src/renderer/overlay/shell/motion';
 
 describe('Spring', () => {
   it('settles on its target, even at low frame rates', () => {
@@ -14,6 +14,19 @@ describe('Spring', () => {
     let peak = 0;
     for (let i = 0; i < 200; i++) peak = Math.max(peak, s.step(1 / 120));
     expect(peak).toBeGreaterThan(1.05);
+  });
+  it('turns the happy spin into exactly the turns asked for, within about a second and a half', () => {
+    for (const [turns, stiffness] of [[HAPPY_SPIN.front, 8], [HAPPY_SPIN.rear, 8]]) {
+      const speed = new Spring(0, 0, stiffness, 1);
+      speed.kick(spinKick(turns, stiffness));
+      let angle = 0;
+      let at15 = 0;
+      for (let t = 0; t < 4; t += 1 / 60) { angle += speed.step(1 / 60) / 60; if (t < 1.5) at15 = angle; }
+      // The spring's stepping lands ~5% short at real frame rates; still reads as the full turn.
+      expect(angle / (2 * Math.PI) / turns).toBeGreaterThan(0.9);
+      expect(angle / (2 * Math.PI) / turns).toBeLessThan(1.05);
+      expect(Math.abs(at15 / angle)).toBeGreaterThan(0.85); // most of it lands quickly
+    }
   });
 });
 

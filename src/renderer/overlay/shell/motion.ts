@@ -257,6 +257,14 @@ export class MicroLife {
 
 export type Mood = 'happy' | 'curious' | 'sad' | 'boop' | 'perk' | 'wake';
 
+/**
+ * The happy spin, in turns: the front shards go once round, the rear half a turn back. A kick of k
+ * on a speed spring of stiffness s adds k / s radians in all, so the kick is turns × 2π × s.
+ * (The ring has 8 matching shards, so anything much under a full turn barely reads as a spin.)
+ */
+export const HAPPY_SPIN = { front: 1, rear: -0.5 };
+export const spinKick = (turns: number, stiffness: number) => turns * 2 * Math.PI * stiffness;
+
 /** Guess a mood from what Aaron typed, for a small reaction while Ghost works on the reply. */
 export function moodFromMessage(text: string): Mood | null {
   const t = text.toLowerCase();

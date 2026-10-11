@@ -5,7 +5,7 @@ import { Hologram } from './hologram';
 import { createMaterials, studioEnvironment, type GhostMaterials } from './materials';
 import { buildModel, CORE_RADIUS, SHARD_REST, type GhostModel } from './model';
 import {
-  Articulator, Curiosity, lookAt, DOZE_AFTER, EmphasisDetector, flourishFor, MicroLife, POSES, QUALITY, QualityGovernor, Spring,
+  Articulator, Curiosity, lookAt, DOZE_AFTER, EmphasisDetector, flourishFor, HAPPY_SPIN, MicroLife, POSES, QUALITY, QualityGovernor, spinKick, Spring,
   type Mood, type Pose, type QualityLevel,
 } from './motion';
 import { ParticleCore } from './particleCore';
@@ -224,7 +224,9 @@ export class GhostShell {
     const t = this.time;
     switch (mood) {
       case 'happy': // a delighted spin and a hop
-        this.frontSpeed.kick(16); this.rearSpeed.kick(-10); this.hop.kick(3.2); this.flash = Math.max(this.flash, 0.5);
+        this.frontSpeed.kick(spinKick(HAPPY_SPIN.front, this.frontSpeed.stiffness));
+        this.rearSpeed.kick(spinKick(HAPPY_SPIN.rear, this.rearSpeed.stiffness));
+        this.hop.kick(3.2); this.flash = Math.max(this.flash, 0.5);
         this.mood = { kind: mood, until: t + 1.6 };
         break;
       case 'curious': // head tilt, iris widens

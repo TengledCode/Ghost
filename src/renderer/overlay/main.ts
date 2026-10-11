@@ -112,7 +112,7 @@ bridge.onSummon(() => { touch(); openInput(); });
 bridge.onCursor((x, y) => {
   // The global feed also keeps hover detection honest once the cursor has left the window.
   lastPoint = { x, y };
-  if (hoveringUi()) touch();
+  if (hoveringUi()) hovered();
   if (!shell) return;
   const r = shellEl.getBoundingClientRect();
   shell.setCursor(x - (r.left + r.width / 2), y - (r.top + r.height / 2));
@@ -471,7 +471,7 @@ function refreshInteractivity(): void {
 window.addEventListener('mousemove', e => {
   lastPoint = { x: e.clientX, y: e.clientY };
   refreshInteractivity();
-  if (hoveringUi()) touch();
+  if (hoveringUi()) hovered();
 });
 setInterval(refreshInteractivity, 200); // completes hover-intent without further mouse movement
 
@@ -480,10 +480,13 @@ setInterval(refreshInteractivity, 200); // completes hover-intent without furthe
 // Only then do Ghost and its panels drop to the "Idle opacity" from Settings. Clicking away
 // (the window losing focus) counts as done with it straight away.
 const ACTIVE_HOLD_MS = 6000;
+const HOVER_HOLD_MS = 2000; // after only hovering (no click, typing or reply), fade sooner
 const HIDE_INPUT_MS = 30000;
 let lastActive = performance.now();
+let lastHover = 0;
 
 function touch(): void { lastActive = performance.now(); updateIdle(); }
+function hovered(): void { lastHover = performance.now(); }
 
 function hoveringUi(): boolean {
   const el = document.elementFromPoint(lastPoint.x, lastPoint.y);
@@ -495,17 +498,17 @@ function busy(): boolean {
 }
 
 function updateIdle(): void {
-  const quiet = performance.now() - lastActive;
-  const idle = isIdle({ busy: busy(), hovering: hoveringUi(), quietMs: quiet, holdMs: ACTIVE_HOLD_MS });
+  const now = performance.now();
+  const idle = isIdle({ busy: busy(), hovering: hoveringUi(), quietMs: now - lastActive, holdMs: ACTIVE_HOLD_MS, hoverQuietMs: now - lastHover, hoverHoldMs: HOVER_HOLD_MS });
   if (idle) stage.dataset.idle = ''; else delete stage.dataset.idle;
   // A long-idle, empty input bar tucks itself away; the hotkey or a click brings it back.
-  if (idle && quiet > HIDE_INPUT_MS && !form.hidden && !input.value) closeInput();
+  if (idle && now - Math.max(lastActive, lastHover) > HIDE_INPUT_MS && !form.hidden && !input.value) closeInput();
 }
 
 setInterval(updateIdle, 250);
 // Clicking away counts as done with Ghost: the window losing focus, or (even when Ghost never had
 // focus) another app coming to the front, reported by the main process.
-const clickedAway = () => { lastActive = 0; updateIdle(); };
+const clickedAway = () => { lastActive = 0; lastHover = 0; updateIdle(); };
 window.addEventListener('blur', clickedAway);
 bridge.onElsewhere(clickedAway);
 document.addEventListener('mouseleave', () => { lastPoint = { x: -1, y: -1 }; });
