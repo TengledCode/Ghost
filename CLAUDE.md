@@ -96,15 +96,16 @@ Logs: `%APPDATA%\Ghost\data\ghost.log` (app) and `%APPDATA%\Ghost\data\update.lo
 - Ghost is absent from screenshots and recordings, and stays visible on screen.
 - PC sound is in recordings.
 - Recordings are H.264/AAC MP4. MediaRecorder writes fragmented MP4 with no total length, so `src/main/mp4Duration.ts` writes it into the header after saving. Media Player now shows the length and can seek.
+- Mic toggle without a mic: the notice shows and recording carries on. (Mixing in a real mic is still untested: Aaron has none yet.)
+- The installed app (sandboxed preloads): overlay, Settings, the updater and the recorder all work after an update.
+- Updater clean-up: a running old installer is moved aside and deleted on the next build; one held open without sharing stops the build with "can't clear …", which Settings words as "Windows has the previous installer … locked".
 
 ## Not yet verified on real Windows
 
 These were built in a Linux cloud container and tested there with Electron under Xvfb. Check each on Aaron's PC:
 
-1. **Mic toggle:** without a mic, a notice says so and recording continues. Once Aaron has a mic, their voice should be mixed in from the moment he toggles it.
-2. **Sandboxed preload in the packaged app:** overlay, Settings and the recorder all work after `npm run dist:win`.
-3. **File reads with both brains:**
+1. **File reads with both brains:**
    - live view or "what's on my screen?" still works, with the model seeing the image via `read_file`;
    - "read C:\Users\…\AppData\…\something.txt" shows a confirm card.
-4. **Antigravity hook on Windows paths:** with Gemini as primary, reading a file in Documents works without a card. Reading outside the safe folders is refused by the hook, and the model uses `read_file` (confirm) instead.
-5. **Updater:** a locked old installer in `dist\` is moved aside (`scripts/clear-old-installers.mjs`), and update failures name the real error.
+2. **Antigravity hook on Windows paths:** with Gemini as primary, reading a file in Documents works without a card. Reading outside the safe folders is refused by the hook, and the model uses `read_file` (confirm) instead.
+3. **Mic with a real mic:** once Aaron has one, their voice is mixed into a recording from the moment they toggle it on.
