@@ -6,7 +6,7 @@ import { classify } from '../src/core/approvals/classify';
 import { ConversationLog } from '../src/core/memory/conversations';
 import { MemoryStore } from '../src/core/memory/store';
 import { agyHookDecision, agyPaths, writeAgyPlugin } from '../src/core/providers/agyPlugin';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, execSync } from 'node:child_process';
 import { classifyError } from '../src/core/providers/types';
 import { ReminderScheduler } from '../src/core/reminders/scheduler';
 import { ToolExecutor } from '../src/core/tools/executor';
@@ -22,7 +22,8 @@ describe('file access', () => {
     mkdirSync(join(home, 'Documents'));
     mkdirSync(join(home, '.ssh'));
     writeFileSync(join(home, '.ssh', 'id'), 'key');
-    symlinkSync(join(home, '.ssh'), join(home, 'Documents', 'keys'));
+    // A junction on Windows: the folder link any user can make (a symlink needs admin rights there).
+    symlinkSync(join(home, '.ssh'), join(home, 'Documents', 'keys'), 'junction');
     const roots = safeReadRoots({ ghostDirs: [], home });
     expect(isInside(join(home, 'Documents', 'keys', 'id'), roots)).toBe(false);
     expect(classify('read_file', { path: join(home, 'Documents', 'keys', 'id') }, { safeReadRoots: roots })).toBe('confirm');
@@ -47,12 +48,20 @@ describe("Antigravity's own file tools", () => {
     expect(deny({ DirectoryPath: '\\\\server\\share' }, 'list_dir').decision).toBe('deny');
     expect(deny({ SearchDirectory: 'C:\\' }, 'find_by_name').reason).toMatch(/read_file/);
   });
-  it.skipIf(process.platform === 'win32')('works as the real hook script agy runs', () => {
+  it('works as the real hook script agy runs', () => {
+    // This platform's hook, run the way agy runs it: hook.cmd through cmd on Windows, hook.sh elsewhere.
+    const win = process.platform === 'win32';
+    const home = win ? 'C:\\Users\\Aaron' : '/home/aaron';
     const paths = agyPaths(tmp('ghost-hook-'));
-    writeAgyPlugin(paths, { nodeExecPath: process.execPath, mcpServerPath: 'x.js', env: {}, safeReadRoots: ['/home/aaron/Documents'], windows: false });
-    const run = (toolCall: object) => JSON.parse(execFileSync(join(paths.plugin, 'hook.sh'), { input: JSON.stringify({ toolCall }) }).toString());
-    expect(run({ name: 'view_file', args: { AbsolutePath: '/home/aaron/Documents/a.md' } }).decision).toBe('allow');
-    expect(run({ name: 'view_file', args: { AbsolutePath: '/home/aaron/.ssh/id' } }).decision).toBe('deny');
+    writeAgyPlugin(paths, { nodeExecPath: process.execPath, mcpServerPath: 'x.js', env: {}, safeReadRoots: [join(home, 'Documents')] });
+    const run = (toolCall: object) => {
+      const input = JSON.stringify({ toolCall });
+      const out = win ? execSync(`"${join(paths.plugin, 'hook.cmd')}"`, { input, windowsHide: true }) : execFileSync(join(paths.plugin, 'hook.sh'), { input });
+      return JSON.parse(out.toString());
+    };
+    expect(run({ name: 'view_file', args: { AbsolutePath: join(home, 'Documents', 'a.md') } }).decision).toBe('allow');
+    expect(run({ name: 'view_file', args: { AbsolutePath: join(home, '.ssh', 'id') } }).decision).toBe('deny');
+    expect(run({ name: 'run_command', args: { CommandLine: 'whoami' } }).decision).toBe('deny');
     expect(run({ name: 'call_mcp_tool', args: { ServerName: 'ghost_ghost' } }).decision).toBe('allow');
   });
   it('keeps the old rules for everything else', () => {

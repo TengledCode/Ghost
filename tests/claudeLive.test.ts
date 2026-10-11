@@ -4,8 +4,9 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ClaudeLiveProvider } from '../src/core/providers/claudeLive';
 import type { ProviderEvent, SendRequest } from '../src/core/providers/types';
+import { fakeCli } from './fakeCli';
 
-const FAKE = join(__dirname, 'fixtures', 'fake-claude-live.mjs');
+const FAKE = fakeCli(join(__dirname, 'fixtures', 'fake-claude-live.mjs'));
 let provider: ClaudeLiveProvider | null = null;
 afterEach(() => provider?.stop());
 

@@ -5,15 +5,16 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { agyHookDecision, agyModelLabel, agyPaths, parseAgyCatalog, parseAgyModels, pickAgyModel, writeAgyPlugin } from '../src/core/providers/agyPlugin';
 import { AntigravityProvider } from '../src/core/providers/antigravity';
 import type { ProviderEvent, SendRequest } from '../src/core/providers/types';
+import { fakeCli } from './fakeCli';
 
-const FAKE = join(__dirname, 'fixtures', 'fake-agy.mjs');
+const FAKE = fakeCli(join(__dirname, 'fixtures', 'fake-agy.mjs'));
 let provider: AntigravityProvider | null = null;
 afterEach(() => { provider?.stop(); delete process.env.FAKE_AGY_LOGGED_OUT; });
 
 function setup(opts: { hooks?: boolean } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'ghost-agy-'));
   const paths = agyPaths(join(dir, 'agy'));
-  writeAgyPlugin(paths, { nodeExecPath: process.execPath, mcpServerPath: '/nowhere/mcpServer.js', env: { GHOST_TOKEN: 't' }, windows: false });
+  writeAgyPlugin(paths, { nodeExecPath: process.execPath, mcpServerPath: '/nowhere/mcpServer.js', env: { GHOST_TOKEN: 't' } }); // this platform's hooks, as Ghost writes them
   if (opts.hooks === false) rmSync(join(paths.plugin, 'hooks.json'));
   process.env.FAKE_AGY_LOG = join(dir, 'launches.log');
   process.env.FAKE_AGY_STATE = join(dir, 'conversations');

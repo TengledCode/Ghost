@@ -45,8 +45,11 @@ if (root && existsSync(join(root, '.agents', 'plugins'))) {
     }
   }
 }
+// agy runs a hook command through the system shell: cmd on Windows, sh elsewhere.
 const runHook = (command, input) => {
-  const r = spawnSync('sh', ['-c', `"${command}"`], { input: JSON.stringify(input), encoding: 'utf8' });
+  const r = process.platform === 'win32'
+    ? spawnSync(`"${command}"`, { shell: true, input: JSON.stringify(input), encoding: 'utf8', windowsHide: true })
+    : spawnSync('sh', ['-c', `"${command}"`], { input: JSON.stringify(input), encoding: 'utf8' });
   if (r.status !== 0) return { decision: 'deny', reason: `hook failed: ${r.stderr}` };
   try { return JSON.parse(r.stdout || '{}'); } catch { return {}; }
 };

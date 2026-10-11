@@ -44,7 +44,7 @@ function makeVault() {
   });
   const read = (rel: string) => readFileSync(join(root, rel), 'utf8');
   const files = (dir: string): string[] => existsSync(join(root, dir))
-    ? readdirSync(join(root, dir), { recursive: true }).map(String).filter(f => f.endsWith('.md')) : [];
+    ? readdirSync(join(root, dir), { recursive: true }).map(f => String(f).replace(/\\/g, '/')).filter(f => f.endsWith('.md')) : [];
   const deps = (ask: CloseDeps['ask']): CloseDeps => ({ vault, index, conversations, settings: () => settings, names: () => names, ask });
   return { root, data, vault, index, buffer, conversations, memory, read, files, deps, put, setSettings: (s: Partial<ObsidianSettings>) => { settings = { ...settings, ...s }; } };
 }
