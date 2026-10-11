@@ -99,13 +99,8 @@ Logs: `%APPDATA%\Ghost\data\ghost.log` (app) and `%APPDATA%\Ghost\data\update.lo
 - Mic toggle without a mic: the notice shows and recording carries on. (Mixing in a real mic is still untested: Aaron has none yet.)
 - The installed app (sandboxed preloads): overlay, Settings, the updater and the recorder all work after an update.
 - Updater clean-up: a running old installer is moved aside and deleted on the next build; one held open without sharing stops the build with "can't clear …", which Settings words as "Windows has the previous installer … locked".
+- File reads with both brains (Gemini Flash and Claude Sonnet): "what's on my screen?" works; a file in Documents is read with no card; a file in AppDataLocal shows a confirm card, and after Deny the brain says so and never sees the contents. The Antigravity hook works on Windows paths (its real `hook.cmd` also runs in `tests/safety.test.ts` on Windows).
 
 ## Not yet verified on real Windows
 
-These were built in a Linux cloud container and tested there with Electron under Xvfb. Check each on Aaron's PC:
-
-1. **File reads with both brains:**
-   - live view or "what's on my screen?" still works, with the model seeing the image via `read_file`;
-   - "read C:\Users\…\AppData\…\something.txt" shows a confirm card.
-2. **Antigravity hook on Windows paths:** with Gemini as primary, reading a file in Documents works without a card. Reading outside the safe folders is refused by the hook, and the model uses `read_file` (confirm) instead.
-3. **Mic with a real mic:** once Aaron has one, their voice is mixed into a recording from the moment they toggle it on.
+1. **Mic with a real mic:** once Aaron has one, their voice is mixed into a recording from the moment they toggle it on.
