@@ -153,7 +153,7 @@ app.whenReady().then(async () => {
     }
   };
   bindHotkeys(settings());
-  const applyLogin = (on: boolean) => { if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: on, args: ['--hidden-start'] }); };
+  const applyLogin = (on: boolean) => { if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: on }); };
   applyLogin(settings().launchAtLogin);
   const fullscreen = new FullscreenWatcher((hide, code) => overlay.setFullscreenHidden(hide, code));
   fullscreen.start(settings().fullscreenHide);

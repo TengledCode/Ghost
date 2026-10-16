@@ -90,6 +90,7 @@ Logs: `%APPDATA%\Ghost\data\ghost.log` (app) and `%APPDATA%\Ghost\data\update.lo
 - **Compatible drawing mode was removed.** Starting Chromium without DirectComposition and GPU compositing froze Ghost on Windows. Don't retry that path.
 - **The Photos blink** (Ghost vanishes for ~2 frames as Photos closes) is Windows dropping the frame. Aaron agreed it's not worth more risky attempts.
 - **Watch mode** (Ghost watching and commenting, via Gemini Flash check-ins about every 60 s at 1 fps) is designed but Aaron said "not yet".
+- **Later, planned by Aaron:** more recording work, including a choice to keep Ghost in or leave it out (picture and voice) and picking which screen to record. Don't start it unasked.
 
 ## Verified on Aaron's PC (11 Oct 2026)
 
@@ -115,7 +116,8 @@ Worked through in rounds of related checks; Aaron reports, Claude checks `ghost.
   - click boop, and the happy spin after "thanks" (fixed: it now makes a full turn);
   - fading on click-away and after hovering. The hover-only fade was shortened to 2 s at Aaron's request. Hovering doesn't reopen the text box, which is how Aaron wants it;
   - dozing after 5 minutes;
-  - screenshots and recording.
+  - screenshots and recording;
+  - start at login (16 Oct: started two minutes after boot). The login entry no longer passes the unused `--hidden-start`.
 - **Next, Round 3 (moving and quitting):**
   - click-through when idle (hover or Alt to grab);
   - drag precision, edge stick and corner snap, never partly off-screen;
@@ -123,7 +125,6 @@ Worked through in rounds of related checks; Aaron reports, Claude checks `ghost.
   - all three ways to quit;
   - low GPU when idle, and the Render quality setting.
 - **Still to do after that:**
-  - start at login: registered as `com.aaron.ghost`; confirm after Aaron's next restart;
   - a reminder over a fullscreen game;
   - a bad ElevenLabs key falls back to Edge with a notice;
   - memory across a restart, and "what did we talk about yesterday?";
