@@ -40,6 +40,8 @@ const browserApi: GhostApi = {
   // In a plain browser the page's own mousemove stands in for the global cursor feed.
   onCursor: cb => window.addEventListener('mousemove', e => cb(e.clientX, e.clientY)),
   onElsewhere: () => {},
+  onClickedThrough: () => {},
+  onAlt: () => {}, // the page's own key events cover Alt in a plain browser
 };
 
 export const bridge: GhostApi = window.ghost ?? browserApi;

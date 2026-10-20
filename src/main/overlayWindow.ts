@@ -2,6 +2,7 @@ import { BrowserWindow, screen } from 'electron';
 import { join } from 'node:path';
 import type { Corner, Settings } from '../shared/settings';
 import { log } from './log';
+import { altDown, leftButtonDown, nudgeMouse } from './inputNative';
 import { QUNS_NAMES } from './fullscreenWatcher';
 import { cornerWindowPosition, orientationForShell, SHELL_PAD, snapShell, windowSize, type Rect } from './placement';
 
@@ -11,6 +12,10 @@ export class OverlayWindow {
   private summoned = false;
   private cursorTimer: NodeJS.Timeout | null = null;
   private lastCursor = { x: NaN, y: NaN };
+  /** Clicks reach the overlay (false: they pass through to the app behind). */
+  private interactive = false;
+  private buttonWasDown = false;
+  private altWasDown = false;
   /** The shell's hit area inside the window (CSS px = DIPs), reported by the renderer. */
   private shellRect: Rect;
   private drag: { cursor: Electron.Point; win: { x: number; y: number }; timer: NodeJS.Timeout | null } | null = null;
@@ -62,16 +67,25 @@ export class OverlayWindow {
   /**
    * Ghost follows the cursor anywhere on screen, not just over its own window. About 30 times a
    * second the cursor position (relative to this window, in DIPs) goes to the renderer. It is
-   * sent only when it moves, and paused while hidden over a fullscreen app.
+   * sent only when it moves, and paused while hidden over a fullscreen app. A click that passes
+   * through the shell to the app behind is reported too, so Ghost doesn't light up for it.
    */
   startCursorFeed(): void {
     if (this.cursorTimer) return;
     this.cursorTimer = setInterval(() => {
       if (this.win.isDestroyed() || !this.win.isVisible() || (this.hiddenForFullscreen && !this.summoned)) return;
       const p = screen.getCursorScreenPoint();
+      const [wx, wy] = this.win.getPosition();
+      const down = leftButtonDown();
+      if (down && !this.buttonWasDown && !this.interactive) {
+        const x = p.x - wx, y = p.y - wy, r = this.shellRect;
+        if (x >= r.x && x < r.x + r.width && y >= r.y && y < r.y + r.height) this.win.webContents.send('ghost:clicked-through');
+      }
+      this.buttonWasDown = down;
+      const alt = altDown();
+      if (alt !== this.altWasDown) { this.altWasDown = alt; this.win.webContents.send('ghost:alt', alt); }
       if (p.x === this.lastCursor.x && p.y === this.lastCursor.y) return;
       this.lastCursor = p;
-      const [wx, wy] = this.win.getPosition();
       this.win.webContents.send('ghost:cursor', p.x - wx, p.y - wy);
     }, 33);
   }
@@ -196,7 +210,11 @@ export class OverlayWindow {
 
   setInteractive(on: boolean): void {
     if (this.hiddenForFullscreen && !this.summoned) return;
+    this.interactive = on;
     this.win.setIgnoreMouseEvents(!on, { forward: true });
+    // Windows re-checks what's under a still cursor only when the mouse moves: without this the
+    // first click after hovering would still land on the app behind.
+    if (on) nudgeMouse();
   }
 
   /** Hotkey: show, focus and open the input bar (even over a fullscreen game). */
@@ -286,6 +304,6 @@ export class OverlayWindow {
     if (this.summoned) return;
     // Opacity rather than hide(), so the renderer keeps playing voice and reminders.
     this.win.setOpacity(hidden ? 0 : 1);
-    if (hidden) this.win.setIgnoreMouseEvents(true, { forward: true });
+    if (hidden) { this.interactive = false; this.win.setIgnoreMouseEvents(true, { forward: true }); }
   }
 }

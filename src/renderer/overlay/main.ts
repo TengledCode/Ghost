@@ -449,17 +449,22 @@ confirmEl.addEventListener('keydown', e => { if (e.key === 'Escape') answer(fals
 let interactive = false;
 let hoverSince = 0;
 let altDown = false;
+// A click went through the shell to the app behind: Aaron is working there, so the shell stays
+// see-through (and faded) until the cursor leaves it. Alt still grabs him.
+let clickedThrough = false;
 
 function wantsMouse(x: number, y: number): boolean {
   const el = document.elementFromPoint(x, y);
-  if (!el) return false;
+  if (!el) { clickedThrough = false; return false; }
   if (el.closest('.interactive')) return true;
   if (el.closest('#shell')) {
     if (!settings.clickThroughWhenIdle || state !== 'idle' || altDown || !form.hidden) return true;
+    if (clickedThrough) return false;
     if (!hoverSince) hoverSince = performance.now();
     return performance.now() - hoverSince > 350;
   }
   hoverSince = 0;
+  clickedThrough = false;
   return false;
 }
 
@@ -488,9 +493,12 @@ let lastHover = 0;
 function touch(): void { lastActive = performance.now(); updateIdle(); }
 function hovered(): void { lastHover = performance.now(); }
 
+// The shell counts as hovered only once it takes the mouse (straight away, or after the short hover
+// when click-through is on), so a cursor merely passing over him to the app behind doesn't light him up.
 function hoveringUi(): boolean {
   const el = document.elementFromPoint(lastPoint.x, lastPoint.y);
-  return !!el?.closest('#shell, #stack .panel');
+  if (el?.closest('#stack .panel')) return true;
+  return !!el?.closest('#shell') && interactive;
 }
 
 function busy(): boolean {
@@ -511,12 +519,15 @@ setInterval(updateIdle, 250);
 const clickedAway = () => { lastActive = 0; lastHover = 0; updateIdle(); };
 window.addEventListener('blur', clickedAway);
 bridge.onElsewhere(clickedAway);
+bridge.onClickedThrough(() => { clickedThrough = true; hoverSince = 0; clickedAway(); refreshInteractivity(); });
 document.addEventListener('mouseleave', () => { lastPoint = { x: -1, y: -1 }; });
 input.addEventListener('focus', touch);
 input.addEventListener('keydown', touch);
 window.addEventListener('keydown', e => { if (e.key === 'Alt') { altDown = true; refreshInteractivity(); } });
 window.addEventListener('keyup', e => { if (e.key === 'Alt') { altDown = false; refreshInteractivity(); } });
 window.addEventListener('blur', () => { altDown = false; });
+// Alt held anywhere (Ghost rarely has keyboard focus, so the key events above seldom see it).
+bridge.onAlt(down => { altDown = down; refreshInteractivity(); });
 
 let dragging = false;
 let dragStart: { x: number; y: number } | null = null;

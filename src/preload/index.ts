@@ -32,6 +32,8 @@ const api = {
   onCursor: (cb: (x: number, y: number) => void): void => { ipcRenderer.on('ghost:cursor', (_e, x, y) => cb(x, y)); },
   /** Another app came to the front (Aaron clicked away from Ghost). */
   onElsewhere: (cb: () => void): void => { ipcRenderer.on('ghost:elsewhere', () => cb()); },
+  onClickedThrough: (cb: () => void): void => { ipcRenderer.on('ghost:clicked-through', () => cb()); },
+  onAlt: (cb: (down: boolean) => void): void => { ipcRenderer.on('ghost:alt', (_e, down: boolean) => cb(down)); },
 };
 
 export type GhostApi = typeof api;

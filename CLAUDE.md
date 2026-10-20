@@ -118,13 +118,15 @@ Worked through in rounds of related checks; Aaron reports, Claude checks `ghost.
   - dozing after 5 minutes;
   - screenshots and recording;
   - start at login (16 Oct: started two minutes after boot). The login entry no longer passes the unused `--hidden-start`.
-- **Next, Round 3 (moving and quitting):**
-  - click-through when idle (hover or Alt to grab);
-  - drag precision, edge stick and corner snap, never partly off-screen;
-  - position remembered after a restart, and a second monitor (ask whether Aaron has one);
+- **Passed (Round 3, 20 Oct 2026):**
+  - click-through when idle. Three fixes, in `src/main/inputNative.ts` (user32 via koffi):
+    - Ghost brightens only once he's grabbable, and a click that passes through him keeps him faded until the cursor leaves;
+    - a zero-pixel mouse nudge makes the first click after the hover land on Ghost (Windows only re-hit-tests on mouse movement);
+    - Alt is read from Windows, as Ghost rarely has keyboard focus;
+  - drag precision, edge stick and corner snap; position remembered after a restart. Aaron has **no second monitor**;
   - all three ways to quit;
-  - low GPU when idle, and the Render quality setting.
-- **Still to do after that:**
+  - idle GPU about 1.7% of the 3D engine (Task Manager shows 0%).
+- **Still to do:**
   - a reminder over a fullscreen game;
   - a bad ElevenLabs key falls back to Edge with a notice;
   - memory across a restart, and "what did we talk about yesterday?";
