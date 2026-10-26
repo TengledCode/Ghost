@@ -17,6 +17,37 @@ export function elevenLabsBody(text: string, opts: SynthOptions = {}): Record<st
 }
 
 function clamp01(v: number): number { return Math.min(1, Math.max(0, Number.isFinite(v) ? v : 0.5)); }
+
+/** Whether a key works, checked against the account (no speech made, no credits spent). */
+export interface KeyCheck {
+  status: 'ok' | 'quota' | 'invalid' | 'offline';
+  used?: number; limit?: number; resetsAt?: number; // credits this month; reset time in ms
+}
+
+export async function checkElevenLabsKey(key: string, fetchImpl: typeof fetch = fetch): Promise<KeyCheck> {
+  let res: Response;
+  try {
+    res = await fetchImpl('https://api.elevenlabs.io/v1/user/subscription', { headers: { 'xi-api-key': key }, signal: AbortSignal.timeout(10_000) });
+  } catch {
+    return { status: 'offline' };
+  }
+  const body = await res.text().catch(() => '');
+  if (res.ok) {
+    try {
+      const s = JSON.parse(body) as { character_count?: number; character_limit?: number; next_character_count_reset_unix?: number };
+      const used = s.character_count, limit = s.character_limit;
+      const usage = { used, limit, resetsAt: s.next_character_count_reset_unix ? s.next_character_count_reset_unix * 1000 : undefined };
+      return { status: limit && used !== undefined && used >= limit ? 'quota' : 'ok', ...usage };
+    } catch {
+      return { status: 'ok' };
+    }
+  }
+  if (/quota_exceeded/.test(body)) return { status: 'quota' };
+  // A key restricted to speech can't read the account, but it is a real, working key.
+  if (/missing_permissions/.test(body)) return { status: 'ok' };
+  if (res.status === 401 || res.status === 403) return { status: 'invalid' };
+  return { status: 'offline' }; // ElevenLabs is having trouble: can't tell either way
+}
 export class ElevenLabsTts implements TtsEngine {
   readonly id = 'elevenlabs' as const;
   constructor(private readonly apiKey: () => string, private readonly fetchImpl: typeof fetch = fetch) {}

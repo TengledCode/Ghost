@@ -30,7 +30,7 @@ import { CLAUDE_BUILTIN_TOOLS } from './providers/claude';
 import { agyPaths, writeAgyPersona, writeAgyPlugin, type AgyPaths } from './providers/agyPlugin';
 import { ToolExecutor, type Host, type RecordingState } from './tools/executor';
 import { safeReadRoots } from './tools/fileAccess';
-import type { TtsService } from './tts/service';
+import { voiceFallbackNotice, type TtsService } from './tts/service';
 
 export interface CoreOptions {
   dataDir: string;
@@ -105,7 +105,7 @@ export class GhostCore {
     this.sessionId = this.log.current.claudeSessionId; // resume the Claude conversation after a restart
     this.presence = new PresenceStore(join(o.dataDir, 'presence.json'));
     this.agy = agyPaths(join(o.dataDir, 'agy'));
-    o.tts.onFallback = reason => this.broadcast({ type: 'notice', level: 'info', text: `Voice switched to Edge (${reason}).` });
+    o.tts.onFallback = (reason, kind) => this.broadcast({ type: 'notice', level: 'warn', text: voiceFallbackNotice(kind, reason) });
   }
 
   async start(): Promise<void> {

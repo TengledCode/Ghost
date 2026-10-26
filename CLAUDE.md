@@ -126,13 +126,19 @@ Worked through in rounds of related checks; Aaron reports, Claude checks `ghost.
   - drag precision, edge stick and corner snap; position remembered after a restart. Aaron has **no second monitor**;
   - all three ways to quit;
   - idle GPU about 1.7% of the 3D engine (Task Manager shows 0%).
+- **Passed (Round 4, 26 Oct 2026):**
+  - the first word is heard after 10+ s of silence. A new message cuts off what Ghost is still saying, by design;
+  - Bluetooth "Test first word";
+  - the ElevenLabs → Edge fallback. Fixed along the way:
+    - **the Edge voice was broken** (403 from Microsoft): `msedge-tts` was updated to 2.1.1. Its `npx only-allow pnpm` preinstall is harmless as a dependency;
+    - the overlay's "no voice came" safety net waited 0.6 s, so with Edge (~3 s to start) the whole reply flashed up first. It's now 8 s (failed sentences still arrive, silent, with their words);
+    - notices stay while their reply's bubble is up, and fade with Ghost. The voice-switch notice is yellow, with plain wording per cause (`voiceFallbackNotice`);
+    - Settings checks the ElevenLabs key against `/v1/user/subscription` (no credits spent) when it opens and on save. It shows works / credits used up / rejected / unreachable, plus this month's usage. A rejected key isn't saved, and a new key resets the back-off.
 - **Still to do:**
+  - reply timings: redo by sending a second message only after the first reply has finished;
   - a reminder over a fullscreen game;
-  - a bad ElevenLabs key falls back to Edge with a notice;
   - memory across a restart, and "what did we talk about yesterday?";
   - live screen view and its auto-off;
-  - the first word is heard after 10+ s of silence, and Bluetooth "Test first word";
-  - reply timings;
   - the three Obsidian checks;
   - the provider switch when Claude hits its limit.
 

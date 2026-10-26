@@ -1,6 +1,7 @@
 import { EDGE_VOICES, ELEVENLABS_VOICES, type VoiceOption } from '../../shared/voices';
 import { SLOT_LABELS, THEMES, type BrainId, type Settings, type SlotModels } from '../../shared/settings';
 import type { CoreMessage } from '../../shared/protocol';
+import type { KeyState } from '../../preload/index';
 import { bridge } from '../shared/bridge';
 import { CoreClient } from '../shared/coreClient';
 
@@ -163,16 +164,32 @@ function renderVoices(id: string, list: VoiceOption[], engine: 'elevenlabs' | 'e
 }
 
 // ElevenLabs key: stored encrypted by the main process and never sent back to the page.
+// Each time Settings opens and on every save, the key is checked with ElevenLabs (no credits spent).
 const keyStatus = document.getElementById('keyStatus')!;
-const showKeyStatus = (has: boolean) => {
-  keyStatus.textContent = has
-    ? 'Key saved (encrypted with your Windows account).'
-    : 'No key yet. Create a free account at elevenlabs.io, then Profile → API keys. Without a key, Ghost uses Edge voices.';
+const showKey = (text: string, tone: '' | 'ok' | 'warn' | 'bad' = '') => { keyStatus.textContent = text; keyStatus.className = `hint ${tone}`.trim(); };
+const showKeyState = (k: KeyState) => {
+  const c = k.check;
+  if (k.saved === false) {
+    return showKey(`ElevenLabs didn't accept that key, so it wasn't saved.${k.has ? ' Your previous key is still in use.' : ''}`, 'bad');
+  }
+  if (!k.has) return showKey('No key yet. Create a free account at elevenlabs.io, then Profile → API keys. Without a key, Ghost uses Edge voices.');
+  const resets = c?.resetsAt ? ` on ${new Date(c.resetsAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}` : '';
+  switch (c?.status) {
+    case 'ok': {
+      const usage = c.used !== undefined && c.limit ? ` ${c.used.toLocaleString()} of ${c.limit.toLocaleString()} free credits used this month.` : '';
+      return showKey(`Key works (saved, encrypted with your Windows account).${usage}`, 'ok');
+    }
+    case 'quota': return showKey(`Key works, but this month's free credits are used up, so Ghost uses the Edge voice until they reset${resets}.`, 'warn');
+    case 'invalid': return showKey('ElevenLabs no longer accepts the saved key. Paste a new one; until then Ghost uses the Edge voice.', 'bad');
+    default: return showKey("Key saved, but ElevenLabs couldn't be reached to check it.");
+  }
 };
-showKeyStatus(boot.hasElevenLabsKey);
+showKey(boot.hasElevenLabsKey ? 'Checking the key with ElevenLabs…' : '');
+void bridge.checkElevenLabsKey().then(showKeyState);
 document.getElementById('saveKey')!.addEventListener('click', async () => {
   const input = document.getElementById('elevenKey') as HTMLInputElement;
-  showKeyStatus(await bridge.setSecret('elevenlabs', input.value.trim()));
+  showKey('Checking the key with ElevenLabs…');
+  showKeyState(await bridge.saveElevenLabsKey(input.value.trim()));
   input.value = '';
 });
 

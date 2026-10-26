@@ -1,13 +1,19 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { Corner, Settings } from '../shared/settings';
 import type { UpdateStatus } from '../main/updater';
+import type { KeyCheck } from '../core/tts/elevenlabs';
+
+/** The ElevenLabs key as Settings shows it: whether one is stored, and whether it works. */
+export interface KeyState { has: boolean; saved?: boolean; check?: KeyCheck }
 
 export interface Bootstrap { url: string; token: string; settings: Settings; hasElevenLabsKey: boolean; orientation?: Corner }
 
 const api = {
   bootstrap: (): Promise<Bootstrap> => ipcRenderer.invoke('ghost:bootstrap'),
   updateSettings: (patch: Partial<Settings>): Promise<Settings> => ipcRenderer.invoke('ghost:update-settings', patch),
-  setSecret: (name: string, value: string): Promise<boolean> => ipcRenderer.invoke('ghost:set-secret', name, value),
+  /** Checks a new key with ElevenLabs and saves it unless it's rejected ('' removes the key). */
+  saveElevenLabsKey: (value: string): Promise<KeyState> => ipcRenderer.invoke('ghost:save-eleven-key', value),
+  checkElevenLabsKey: (): Promise<KeyState> => ipcRenderer.invoke('ghost:check-eleven-key'),
   setInteractive: (on: boolean) => ipcRenderer.send('ghost:interactive', on),
   dragArm: () => ipcRenderer.send('ghost:drag-arm'),
   dragStart: () => ipcRenderer.send('ghost:drag-start'),

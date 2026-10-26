@@ -7,7 +7,7 @@ import { ClaudeLiveProvider } from '../core/providers/claudeLive';
 import { AntigravityProvider } from '../core/providers/antigravity';
 import { MockProvider } from '../core/providers/mock';
 import { EdgeTts } from '../core/tts/edge';
-import { ElevenLabsTts } from '../core/tts/elevenlabs';
+import { checkElevenLabsKey, ElevenLabsTts } from '../core/tts/elevenlabs';
 import { TtsService } from '../core/tts/service';
 import type { Settings } from '../shared/settings';
 import { ForegroundWatcher, hwndOf } from './foregroundWatcher';
@@ -65,6 +65,7 @@ app.whenReady().then(async () => {
   });
 
   const mock = process.env.GHOST_PROVIDER === 'mock' || settings().provider === 'mock';
+  const tts = new TtsService(new ElevenLabsTts(() => store.getSecret('elevenlabs')), new EdgeTts());
   const core = new GhostCore({
     dataDir: join(app.getPath('userData'), 'data'),
     personaPath: resource('config', 'persona.md'),
@@ -73,7 +74,7 @@ app.whenReady().then(async () => {
     providers: mock
       ? { mock: new MockProvider(), claude: new MockProvider() as never, gemini: new MockProvider() as never }
       : { claude: new ClaudeLiveProvider(), gemini: new AntigravityProvider({ dir: join(app.getPath('userData'), 'data', 'agy') }) },
-    tts: new TtsService(new ElevenLabsTts(() => store.getSecret('elevenlabs')), new EdgeTts()),
+    tts,
     host: {
       openExternal: url => shell.openExternal(url),
       openPath: path => shell.openPath(path),
@@ -115,7 +116,21 @@ app.whenReady().then(async () => {
   // ---- IPC used by the overlay and settings renderers
   ipcMain.handle('ghost:bootstrap', () => ({ url: core.url, token: core.token, settings: settings(), hasElevenLabsKey: !!store.getSecret('elevenlabs'), orientation: overlay.orientation }));
   ipcMain.handle('ghost:update-settings', (_e, patch: Partial<Settings>) => store.update(patch));
-  ipcMain.handle('ghost:set-secret', (_e, name: string, value: string) => { store.setSecret(name, value); return !!value; });
+  // ElevenLabs key: checked with ElevenLabs before it's kept, so a wrong key shows up in Settings
+  // straight away; a rejected key isn't saved, and the previous one stays in use.
+  ipcMain.handle('ghost:save-eleven-key', async (_e, value: string) => {
+    const key = String(value ?? '').trim();
+    if (!key) { store.setSecret('elevenlabs', ''); return { has: false }; }
+    const check = await checkElevenLabsKey(key);
+    if (check.status === 'invalid') return { has: !!store.getSecret('elevenlabs'), saved: false, check };
+    store.setSecret('elevenlabs', key);
+    tts.resetBackoff(); // a fresh try straight away, not after the old key's back-off
+    return { has: true, saved: true, check };
+  });
+  ipcMain.handle('ghost:check-eleven-key', async () => {
+    const key = store.getSecret('elevenlabs');
+    return key ? { has: true, check: await checkElevenLabsKey(key) } : { has: false };
+  });
   ipcMain.on('ghost:interactive', (_e, on: boolean) => overlay.setInteractive(on));
   ipcMain.on('ghost:drag-arm', () => overlay.dragArm());
   ipcMain.on('ghost:drag-start', () => overlay.dragStart());

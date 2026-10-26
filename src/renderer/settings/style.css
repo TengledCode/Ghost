@@ -22,6 +22,9 @@ output { min-width: 42px; text-align: right; color: var(--muted); font-variant-n
 .inline-num input { width: 76px; }
 input:disabled { opacity: .45; }
 .hint { margin: -4px 0 0; color: var(--muted); font-size: 12.5px; }
+.hint.ok { color: #8fd9a8; }
+.hint.warn { color: #ffcf85; }
+.hint.bad { color: #ff9aa2; }
 .themes { display: flex; flex-wrap: wrap; gap: 8px; }
 .swatch { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 10px; border: 1px solid var(--line); background: #0f1219; cursor: pointer; }
 .swatch[aria-pressed=true] { border-color: var(--accent); }

@@ -252,8 +252,9 @@ core.on((m: CoreMessage) => {
       modelLabel = m.model ? `${m.provider} · ${m.model}` : '';
       if (standalone(m.turnId)) { timing = {}; sentAt = 0; }
       renderMeta();
-      // No voice came for this reply at all (voice unavailable): show the text now.
-      if (settings.voiceEnabled && subtitles.activeTurn !== m.turnId) setTimeout(() => { if (subtitles.activeTurn !== m.turnId) showBubble(m.text); }, 600);
+      // Safety net: no voice came for this reply at all, so show the text. Generous, as the Edge voice
+      // takes ~3 s to start; a sentence whose voice fails still arrives (silent) with its words.
+      if (settings.voiceEnabled && subtitles.activeTurn !== m.turnId) setTimeout(() => { if (subtitles.activeTurn !== m.turnId) showBubble(m.text); }, 8000);
       pushHistory({ who: 'ghost', text: m.text });
       renderHistory();
       if (thankedThisTurn) { shell?.express('happy'); thankedThisTurn = false; }
@@ -359,9 +360,15 @@ function showNotice(text: string, level: 'info' | 'warn' | 'error' = 'info'): vo
   noticeEl.hidden = false;
   glanceAt(noticeEl);
   clearTimeout(noticeTimer);
-  noticeTimer = window.setTimeout(hideNotice, level === 'error' ? 9000 : 4500);
+  noticeTimer = window.setTimeout(hideNoticeWhenDone, level === 'error' ? 9000 : 4500);
 }
-function hideNotice(): void { noticeEl.hidden = true; }
+function hideNotice(): void { clearTimeout(noticeTimer); noticeEl.hidden = true; }
+// A notice belongs to the reply it came with: it stays while Ghost is still busy with it or its
+// bubble is on screen, and goes when the bubble does.
+function hideNoticeWhenDone(): void {
+  if (busy() || !bubble.hidden) { noticeTimer = window.setTimeout(hideNoticeWhenDone, 500); return; }
+  hideNotice();
+}
 
 // ------------------------------------------------------------------ input
 
