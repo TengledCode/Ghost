@@ -1,6 +1,8 @@
 import type { TtsEngineId } from './protocol';
 
 export type Corner = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+/** Which way the chat stack sits around the shell: a corner's two sides, or centred over/under it. */
+export type Orientation = Corner | 'top-center' | 'bottom-center';
 export type ProviderId = 'claude' | 'gemini' | 'mock';
 export type ModelTier = 'auto' | 'fast' | 'balanced' | 'deep';
 /** The model each slot uses (shown as Light / Balanced / Heavy). */
@@ -51,7 +53,9 @@ export interface Settings {
   // Placement
   corner: Corner;
   cornerDisplayId: number | null; // which monitor the corner is on (null = primary)
-  customPosition: { x: number; y: number; displayId: number } | null;
+  // A free position. With anchor 'shell', x/y is the shell's own top-left on screen; older saves
+  // (no anchor) hold the window's top-left and are converted on first use.
+  customPosition: { x: number; y: number; displayId: number; anchor?: 'shell' } | null;
   size: number; // px, shell diameter
   idleOpacity: number; // 0.2 - 1
   clickThroughWhenIdle: boolean;

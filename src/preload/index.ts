@@ -1,12 +1,12 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { Corner, Settings } from '../shared/settings';
+import type { Orientation, Settings } from '../shared/settings';
 import type { UpdateStatus } from '../main/updater';
 import type { KeyCheck } from '../core/tts/elevenlabs';
 
 /** The ElevenLabs key as Settings shows it: whether one is stored, and whether it works. */
 export interface KeyState { has: boolean; saved?: boolean; check?: KeyCheck }
 
-export interface Bootstrap { url: string; token: string; settings: Settings; hasElevenLabsKey: boolean; orientation?: Corner }
+export interface Bootstrap { url: string; token: string; settings: Settings; hasElevenLabsKey: boolean; orientation?: Orientation }
 
 const api = {
   bootstrap: (): Promise<Bootstrap> => ipcRenderer.invoke('ghost:bootstrap'),
@@ -33,7 +33,7 @@ const api = {
   onUpdate: (cb: (s: UpdateStatus) => void): void => { ipcRenderer.on('ghost:update', (_e, s) => cb(s)); },
   onSettings: (cb: (s: Settings) => void): void => { ipcRenderer.on('ghost:settings', (_e, s) => cb(s)); },
   onSummon: (cb: () => void): void => { ipcRenderer.on('ghost:summon', () => cb()); },
-  onOrientation: (cb: (c: Corner) => void): void => { ipcRenderer.on('ghost:orientation', (_e, c) => cb(c)); },
+  onOrientation: (cb: (c: Orientation) => void): void => { ipcRenderer.on('ghost:orientation', (_e, c) => cb(c)); },
   /** Cursor position relative to the overlay window, anywhere on screen. */
   onCursor: (cb: (x: number, y: number) => void): void => { ipcRenderer.on('ghost:cursor', (_e, x, y) => cb(x, y)); },
   /** Another app came to the front (Aaron clicked away from Ghost). */

@@ -1,4 +1,4 @@
-import type { Corner } from '../shared/settings';
+import type { Corner, Orientation } from '../shared/settings';
 
 export interface Rect { x: number; y: number; width: number; height: number }
 
@@ -45,8 +45,18 @@ export function cornerWindowPosition(corner: Corner, shell: Rect, work: Rect): {
   return { x: Math.round(sx - shell.x), y: Math.round(sy - shell.y) };
 }
 
-/** Which way the UI stack should grow for a shell at this screen position: towards the screen centre. */
-export function orientationForShell(shellAbs: Rect, work: Rect): Corner {
+/** Width of the chat stack (bubble, input), as in the overlay's CSS. */
+export const STACK_WIDTH = 360;
+
+/**
+ * Which way the UI stack should go for a shell at this screen position: above or below it towards the
+ * screen centre, and centred on it when it fits on screen that way (else lined up with the shell's
+ * side nearer the screen edge, as in a corner).
+ */
+export function orientationForShell(shellAbs: Rect, work: Rect, stackWidth = STACK_WIDTH): Orientation {
   const cx = shellAbs.x + shellAbs.width / 2, cy = shellAbs.y + shellAbs.height / 2;
-  return `${cy < work.y + work.height / 2 ? 'top' : 'bottom'}-${cx < work.x + work.width / 2 ? 'left' : 'right'}` as Corner;
+  const v = cy < work.y + work.height / 2 ? 'top' : 'bottom';
+  const fits = cx - stackWidth / 2 >= work.x + EDGE_MARGIN && cx + stackWidth / 2 <= work.x + work.width - EDGE_MARGIN;
+  if (fits) return `${v}-center`;
+  return `${v}-${cx < work.x + work.width / 2 ? 'left' : 'right'}` as Corner;
 }

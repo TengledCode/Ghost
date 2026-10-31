@@ -13,6 +13,7 @@ html, body { margin: 0; height: 100%; background: transparent; overflow: hidden;
 
 #stage { position: fixed; inset: 0; display: flex; flex-direction: column; justify-content: flex-end; align-items: flex-end; padding: 8px; gap: 8px; }
 #stage[data-orient$="left"] { align-items: flex-start; }
+#stage[data-orient$="center"] { align-items: center; } /* free spot with room: the stack centred on the shell */
 #stage[data-orient^="top"] { flex-direction: column-reverse; justify-content: flex-end; }
 #stack { display: flex; flex-direction: column; gap: 8px; width: min(360px, 100%); align-items: stretch; }
 /* The 3D shell keeps a glow margin inside the window, and that margin may hang off-screen when Ghost is

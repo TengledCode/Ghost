@@ -1,6 +1,6 @@
 import { BrowserWindow, screen } from 'electron';
 import { join } from 'node:path';
-import type { Corner, Settings } from '../shared/settings';
+import type { Corner, Orientation, Settings } from '../shared/settings';
 import { log } from './log';
 import { altDown, leftButtonDown, nudgeMouse } from './inputNative';
 import { QUNS_NAMES } from './fullscreenWatcher';
@@ -20,7 +20,7 @@ export class OverlayWindow {
   private shellRect: Rect;
   private drag: { cursor: Electron.Point; win: { x: number; y: number }; timer: NodeJS.Timeout | null } | null = null;
   /** Which way the chat stack grows. The renderer also asks for it on start, as a message sent while it loads can be missed. */
-  orientation: Corner = 'bottom-right';
+  orientation: Orientation = 'bottom-right';
 
   constructor(private settings: () => Settings, private save: (p: Partial<Settings>) => void) {
     const size = windowSize(settings().size);
@@ -149,9 +149,13 @@ export class OverlayWindow {
     const customDisplay = custom ? displays.find(d => d.id === custom.displayId) : undefined;
     if (custom && customDisplay) {
       const work = customDisplay.workArea;
-      const p = snapShell({ x: custom.x, y: custom.y }, this.shellRect, work); // also clamps onto the screen
+      const r = this.shellRect;
+      // The shell's spot on screen stays put; the window moves around it when the stack's side changes.
+      const shellAt = custom.anchor === 'shell' ? { x: custom.x, y: custom.y } : { x: custom.x + r.x, y: custom.y + r.y };
+      if (custom.anchor !== 'shell') this.save({ customPosition: { ...shellAt, displayId: custom.displayId, anchor: 'shell' } });
+      const p = snapShell({ x: shellAt.x - r.x, y: shellAt.y - r.y }, r, work); // also clamps onto the screen
       this.setWindowPos(p.x, p.y);
-      this.sendOrientation(orientationForShell({ ...this.shellRect, x: p.x + this.shellRect.x, y: p.y + this.shellRect.y }, work));
+      this.sendOrientation(orientationForShell({ ...r, x: p.x + r.x, y: p.y + r.y }, work));
     } else {
       const display = displays.find(d => d.id === s.cornerDisplayId) ?? screen.getPrimaryDisplay();
       const p = cornerWindowPosition(s.corner, this.shellRect, display.workArea);
@@ -168,7 +172,7 @@ export class OverlayWindow {
     this.place();
   }
 
-  private sendOrientation(corner: Corner): void {
+  private sendOrientation(corner: Orientation): void {
     this.orientation = corner;
     const send = () => this.win.webContents.send('ghost:orientation', corner);
     if (this.win.webContents.isLoading()) this.win.webContents.once('did-finish-load', send); else send();
@@ -204,7 +208,7 @@ export class OverlayWindow {
     const display = screen.getDisplayNearestPoint({ x: Math.round(x + r.x + r.width / 2), y: Math.round(y + r.y + r.height / 2) });
     const snapped = snapShell({ x, y }, r, display.workArea);
     if (snapped.corner) this.save({ corner: snapped.corner, cornerDisplayId: display.id, customPosition: null });
-    else this.save({ customPosition: { x: snapped.x, y: snapped.y, displayId: display.id } });
+    else this.save({ customPosition: { x: snapped.x + r.x, y: snapped.y + r.y, displayId: display.id, anchor: 'shell' } });
     this.place();
   }
 

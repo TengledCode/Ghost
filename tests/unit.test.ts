@@ -279,6 +279,12 @@ describe('snapping by the shell', () => {
     expect(orientationForShell({ x: 1700, y: 850, width: 180, height: 180 }, work)).toBe('bottom-right');
     expect(orientationForShell({ x: 20, y: 20, width: 180, height: 180 }, work)).toBe('top-left');
   });
+  it('centres the chat stack on a free-floating shell when it fits, else lines it up with the nearer edge', () => {
+    expect(orientationForShell({ x: 1300, y: 600, width: 180, height: 180 }, work)).toBe('bottom-center');
+    expect(orientationForShell({ x: 400, y: 100, width: 180, height: 180 }, work)).toBe('top-center');
+    // 100 px from the right edge: a centred 360 px stack would run off the screen.
+    expect(orientationForShell({ x: work.x + work.width - 280, y: 600, width: 180, height: 180 }, work)).toBe('bottom-right');
+  });
 });
 
 import { elevenLabsBody } from '../src/core/tts/elevenlabs';

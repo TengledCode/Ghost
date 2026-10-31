@@ -1,5 +1,5 @@
 import type { CoreMessage, GhostState } from '../../shared/protocol';
-import { themeColors, type Corner, type Settings } from '../../shared/settings';
+import { themeColors, type Orientation, type Settings } from '../../shared/settings';
 import { bridge, inElectron } from '../shared/bridge';
 import { CoreClient } from '../shared/coreClient';
 import { VoicePlayer } from './audio/player';
@@ -156,7 +156,7 @@ function attend(): void {
   shell?.setBands(player.bands());
   attend();
 })();
-if (!inElectron) setOrientation((new URLSearchParams(location.search).get('orient') as Corner) ?? 'bottom-right');
+if (!inElectron) setOrientation((new URLSearchParams(location.search).get('orient') as Orientation) ?? 'bottom-right');
 
 // ------------------------------------------------------------------ settings & look
 
@@ -212,7 +212,7 @@ function hueOf(hex: string): number {
   return (h * 60 + 360) % 360;
 }
 
-function setOrientation(c: Corner): void {
+function setOrientation(c: Orientation): void {
   stage.dataset.orient = c;
 }
 
