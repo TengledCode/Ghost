@@ -134,6 +134,13 @@ Worked through in rounds of related checks; Aaron reports, Claude checks `ghost.
     - the overlay's "no voice came" safety net waited 0.6 s, so with Edge (~3 s to start) the whole reply flashed up first. It's now 8 s (failed sentences still arrive, silent, with their words);
     - notices stay while their reply's bubble is up, and fade with Ghost. The voice-switch notice is yellow, with plain wording per cause (`voiceFallbackNotice`);
     - Settings checks the ElevenLabs key against `/v1/user/subscription` (no credits spent) when it opens and on save. It shows works / credits used up / rejected / unreachable, plus this month's usage. A rejected key isn't saved, and a new key resets the back-off.
+- **Passed (31 Oct 2026):**
+  - the chat stack centres on a free-floating Ghost when it fits (`orientationForShell` → `top-center` / `bottom-center`). Free positions are saved as the shell's own spot (`customPosition.anchor: 'shell'`), so Ghost never jumps when the stack changes sides; old saves convert on first use;
+  - the first update check runs 10 s after start (still only the dot).
+- **High priority, next time Aaron plays:** check that Ghost hides in **TFT** with "games only".
+  - TFT is borderless: QUNS 2, an `UnrealWindow` covering the screen.
+  - `shouldHide` now also hides in games mode when the window in front covers its monitor and `looksLikeGame` (engine window class or game-library folder).
+  - Unit-tested, and the live foreground query was checked to run without errors; not yet seen in a real match. `ghost.log` should say "hidden … (a borderless game: TFTClient-Win64-Shipping.exe)".
 - **Still to do:**
   - reply timings: redo by sending a second message only after the first reply has finished;
   - a reminder over a fullscreen game;
