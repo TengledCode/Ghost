@@ -15,6 +15,21 @@ export function tokens(text: string): string[] {
   return (text.toLowerCase().match(/[\p{L}\p{N}']+/gu) ?? []).filter(t => t.length > 1 && !STOP.has(t));
 }
 
+// Chat filler that says nothing about the topic. Ignored when picking memories for a message, so a
+// follow-up like "do you have the source of this? could you link it here thanks" doesn't drag in an
+// unrelated note that happens to mention a "link" or a "source".
+const FILLER = new Set('thanks thank thx ty pls here there have has had get got give tell show link links source sources its these those just also like know need want okay ok yes yeah yep no not so then now some any about more again sure right well hey hi hello one'.split(' '));
+
+/**
+ * The words to recall memories by. A short follow-up ("is that right?", "link it here") carries no
+ * topic of its own, so the previous message's words come along and keep "this" tied to it.
+ */
+export function recallQuery(message: string, previous?: string): string {
+  const own = tokens(message).filter(t => !FILLER.has(t));
+  const words = own.length < 2 && previous ? [...tokens(previous).filter(t => !FILLER.has(t)), ...own] : own;
+  return words.join(' ');
+}
+
 export type MemoryTopic = 'About me' | 'People' | 'Preferences' | 'Plans & routines' | 'Other';
 export const MEMORY_TOPICS: MemoryTopic[] = ['About me', 'People', 'Preferences', 'Plans & routines', 'Other'];
 
@@ -24,7 +39,7 @@ export interface FactStore {
   forget(idOrText: string): number;
   addEpisode(summary: string): void;
   recall(query: string, limit?: number): string[];
-  contextFor(message: string, coreLimit?: number): string[];
+  contextFor(message: string, coreLimit?: number, previous?: string): string[];
   list(): Fact[];
   clearEpisodes(): void;
 }
@@ -78,9 +93,10 @@ export class MemoryStore implements FactStore {
   }
 
   /** Context for a turn: the most recent core facts plus anything relevant to the message. */
-  contextFor(message: string, coreLimit = 6): string[] {
+  contextFor(message: string, coreLimit = 6, previous?: string): string[] {
     const core = this.data.facts.slice(-coreLimit).map(f => f.text);
-    const related = this.recall(message, 6);
+    const query = recallQuery(message, previous);
+    const related = query ? this.recall(query, 6) : [];
     return [...new Set([...core, ...related])];
   }
 

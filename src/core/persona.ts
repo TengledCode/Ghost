@@ -34,7 +34,7 @@ export function buildTurnPrompt(
     lines.push(`Live screen view is on, but the screen could not be captured this time (${opts.screen.error}).`);
   }
   if (opts.memories.length) {
-    lines.push(`Things you remember about ${opts.userName}:`);
+    lines.push(`Things you remember about ${opts.userName} (background only: use them when they clearly fit what they're asking; they never change what "this" or "it" refers to in the conversation you're having):`);
     for (const m of opts.memories) lines.push(`- ${m}`);
   }
   lines.push(`</context>`, '', message);

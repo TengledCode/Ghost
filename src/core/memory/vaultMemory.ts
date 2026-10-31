@@ -4,7 +4,7 @@ import { parseFrontmatter, stringifyFrontmatter } from '../obsidian/markdown';
 import type { Linker } from '../obsidian/linker';
 import type { ObsidianVault } from '../obsidian/vault';
 import type { VaultIndex } from '../obsidian/vaultIndex';
-import { MEMORY_TOPICS, tokens, type Fact, type FactStore, type MemoryTopic } from './store';
+import { MEMORY_TOPICS, recallQuery, tokens, type Fact, type FactStore, type MemoryTopic } from './store';
 
 // Lasting facts as Memory notes in the vault, one per topic, each fact a bullet. The notes are the
 // source: bullets Aaron adds, edits or deletes in Obsidian change what Ghost knows straight away.
@@ -94,16 +94,18 @@ export class VaultMemory implements FactStore {
       const summary = String(hit.frontmatter.summary ?? '');
       if (!summary) continue;
       const s = overlap(summary);
-      if (s) scored.push({ s: s * 0.8, text: `(${String(hit.frontmatter.date ?? '').slice(0, 10)}, [[${hit.title}]]) ${summary}` });
+      // A past conversation needs at least two words in common, not one stray match.
+      if (s >= 2) scored.push({ s: s * 0.8, text: `(${String(hit.frontmatter.date ?? '').slice(0, 10)}, [[${hit.title}]]) ${summary}` });
     }
     return scored.sort((a, b) => b.s - a.s).slice(0, limit).map(x => x.text);
   }
 
   /** What goes into every turn: the "About me" essentials plus anything related to the message. */
-  contextFor(message: string, coreLimit = 6): string[] {
+  contextFor(message: string, coreLimit = 6, previous?: string): string[] {
     const all = this.all();
     const core = all.filter(x => x.topic === 'About me').slice(-coreLimit).map(x => x.fact.text);
-    return [...new Set([...core, ...this.recall(message, 6)])];
+    const query = recallQuery(message, previous);
+    return [...new Set([...core, ...(query ? this.recall(query, 6) : [])])];
   }
 
   /** Every fact, read from the Memory notes (or the last-known copy while the vault is away). */

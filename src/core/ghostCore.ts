@@ -416,7 +416,9 @@ export class GhostCore {
     }
     let tier = routeTier(message, s.modelTier);
     if (screen && 'path' in screen && tier === 'fast' && s.modelTier === 'auto') tier = 'balanced'; // reading a screen deserves more than the quick tier
-    const prompt = buildTurnPrompt(message, { now: new Date(), memories: this.memory.contextFor(message), userName: s.userName, screen });
+    // A short follow-up is recalled together with the previous message, so "this" keeps its meaning.
+    const previous = this.log.lines().filter(l => l.role === 'user').pop()?.text;
+    const prompt = buildTurnPrompt(message, { now: new Date(), memories: this.memory.contextFor(message, undefined, previous), userName: s.userName, screen });
     let order = [s.provider, s.fallbackProvider].filter((p, i, a): p is ProviderId => !!p && a.indexOf(p) === i);
     // While fallen back, don't pay for a failing call to the primary on every message.
     if (this.fallback && Date.now() < this.fallback.retryAt && order.length > 1) order = order.slice(1);
