@@ -6,6 +6,7 @@ import { VoicePlayer } from './audio/player';
 import { GhostFilter } from './audio/ghostFilter';
 import { GhostShell } from './shell/ghostShell';
 import { moodFromMessage } from './shell/motion';
+import { playChime } from './chime';
 import { isIdle } from './idle';
 import { Subtitles } from './subtitles';
 import { attentionPoint, GLANCE_MS, relativeTo, type Box } from './attention';
@@ -97,7 +98,7 @@ player.onChunkStart = (turnId, seq, at, duration) => {
 };
 player.onFinished = turnId => { subtitles.revealAll(turnId); core.send({ type: 'playback_finished', turnId }); };
 (function tickSubtitles() { requestAnimationFrame(tickSubtitles); subtitles.tick(); })();
-if (!inElectron) (window as unknown as { ghostDebug: object }).ghostDebug = { player, subtitles, GhostFilter, showConfirm: (id: string, text: string) => showConfirm(id, text), showNotice: (t: string) => showNotice(t) }; // browser preview: inspectable
+if (!inElectron) (window as unknown as { ghostDebug: object }).ghostDebug = { player, subtitles, GhostFilter, showConfirm: (id: string, text: string) => showConfirm(id, text), showNotice: (t: string, level?: 'info' | 'warn' | 'error') => showNotice(t, level) }; // browser preview: inspectable
 await customElements.whenDefined('voice-orb').catch(() => {});
 // The orb taps the processed voice, so the eye pulses with what Aaron actually hears.
 voiceOrb.connect?.(player.master).catch(() => {});
@@ -354,11 +355,21 @@ $('.history-toggle').addEventListener('click', () => {
 });
 
 let noticeTimer = 0;
+let lastChime = { text: '', at: 0 };
 function showNotice(text: string, level: 'info' | 'warn' | 'error' = 'info'): void {
   noticeEl.textContent = text;
   noticeEl.className = level;
   noticeEl.hidden = false;
+  // Slide in and glow (restarting the animation even if the same notice comes back).
+  noticeEl.classList.remove('arrive');
+  void noticeEl.offsetWidth;
+  noticeEl.classList.add('arrive');
   glanceAt(noticeEl);
+  shell?.express('perk'); // a little hop and a bright eye: "oh, look"
+  // A soft chime, but not again for the same notice within 20 s (e.g. "Reconnecting…").
+  const now = performance.now();
+  if (settings.noticeSound && !(lastChime.text === text && now - lastChime.at < 20_000)) playChime(level, settings.volume);
+  lastChime = { text, at: now };
   clearTimeout(noticeTimer);
   noticeTimer = window.setTimeout(hideNoticeWhenDone, level === 'error' ? 9000 : 4500);
 }

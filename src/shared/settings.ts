@@ -89,6 +89,7 @@ export interface Settings {
   voiceCharacter: VoiceCharacter; // how synthetic the Ghost filter makes the voice
   ghostFilter: number; // 0 - 1 wet mix of the Ghost FX chain
   volume: number; // 0 - 1
+  noticeSound: boolean; // a soft chime when a notice appears
   audioKeepAlive: 'while-talking' | 'always' | 'off'; // keep the output device awake so first words aren't clipped
 }
 
@@ -119,6 +120,7 @@ export const DEFAULT_SETTINGS: Settings = {
   showTimings: false,
   obsidian: DEFAULT_OBSIDIAN,
   voiceEnabled: true,
+  noticeSound: true,
   ttsEngine: 'elevenlabs',
   elevenLabsVoiceId: 'TX3LPaxmHKxFdv7VOQHJ', // Liam; change in settings after auditioning
   edgeVoice: 'en-US-AndrewMultilingualNeural',
