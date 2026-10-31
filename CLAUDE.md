@@ -4,7 +4,7 @@ Handoff from the cloud sessions that built Ghost, so a local session can carry s
 
 ## Who and how
 
-- **Aaron** (use they/them) builds and uses Ghost on a Windows PC. Repo: `C:\Users\AaronTengRyzen\Ghost`, branch `claude/bold-planck-b1n6bl`.
+- **Aaron** (he/him) builds and uses Ghost on a Windows PC. Repo: `C:\Users\AaronTengRyzen\Ghost`, branch `claude/bold-planck-b1n6bl`.
 - **Stay in sync with GitHub:** Aaron works both locally and in cloud sessions on the same branch.
   - **Before starting work,** run `git pull origin claude/bold-planck-b1n6bl`.
   - **When done,** make sure everything is committed and pushed, so the next session (local or cloud) starts from the latest code.
@@ -137,10 +137,10 @@ Worked through in rounds of related checks; Aaron reports, Claude checks `ghost.
 - **Passed (31 Oct 2026):**
   - the chat stack centres on a free-floating Ghost when it fits (`orientationForShell` → `top-center` / `bottom-center`). Free positions are saved as the shell's own spot (`customPosition.anchor: 'shell'`), so Ghost never jumps when the stack changes sides; old saves convert on first use;
   - the first update check runs 10 s after start (still only the dot).
-- **High priority, next time Aaron plays:** check that Ghost hides in **TFT** with "games only".
-  - TFT is borderless: QUNS 2, an `UnrealWindow` covering the screen.
-  - `shouldHide` now also hides in games mode when the window in front covers its monitor and `looksLikeGame` (engine window class or game-library folder).
-  - Unit-tested, and the live foreground query was checked to run without errors; not yet seen in a real match. `ghost.log` should say "hidden … (a borderless game: TFTClient-Win64-Shipping.exe)".
+  - Ghost hides in **TFT** with "games only" (seen in real matches on 31 Oct; `ghost.log`: "hidden … (a borderless game: TFTClient-Win64-Shipping.exe)").
+    - TFT is borderless: QUNS 2, an `UnrealWindow` covering the screen.
+    - `shouldHide` also hides in games mode when the window in front covers its monitor and `looksLikeGame` (engine window class or game-library folder).
+    - Other games are still to check.
 - **Still to do:**
   - reply timings: redo by sending a second message only after the first reply has finished;
   - a reminder over a fullscreen game;
@@ -149,6 +149,35 @@ Worked through in rounds of related checks; Aaron reports, Claude checks `ghost.
   - the three Obsidian checks;
   - the provider switch when Claude hits its limit.
 
+## Aaron's to-do list (from 27 Oct 2026)
+
+Work through it one item at a time, asking Aaron before design-level changes.
+
+- **Done:**
+  - text box centred on a free-floating Ghost;
+  - update check soon after start;
+  - TFT hiding;
+  - the 4 Oct memory mix-up: recall now ignores chat filler, uses the previous message for short follow-ups, and labels memories as background.
+- **Next: the brains (models).** Aaron wants:
+  - Ghost to **keep up with the newest Claude and Gemini models on its own**, adjusting as they appear;
+  - each Gemini slot (Light / Balanced / Heavy) **matched to its Claude counterpart**, so either brain gives as equal an experience as possible;
+  - ambiguity checked with him.
+  - Facts as of 31 Oct 2026: `agy models` offers Gemini 4 Argon (low/medium/high), Gemini 3.8 Flash (low/medium/high), Claude Opus/Sonnet 5.5 and GPT-OSS. There's no Gemini "Pro" any more, so the old `pro` hint resolves to nothing and agy uses its default. Gemini 4 Carbon was announced 28 Oct (limited access).
+- **Open:**
+  - **Ghost staring at the blinking text cursor:** look at the input only while typing (a key in the last second or two) or just after clicking into it. Proposed; not yet confirmed.
+  - **Terminal flash at login:** not seen in three restarts with a console-window watcher, so it's login-only. Proposed: a one-time logon watcher (needs Aaron's OK).
+  - **Starting sooner after boot:** Run-key apps are delayed by Windows. Proposed: a Task Scheduler "at log on" task (needs Aaron's OK).
+  - **Include Ghost in recordings:** a Settings switch. His voice is always recorded anyway, so this is about his picture.
+  - **Ghost changes his own settings on request:** an Undo notice or a confirm card (Aaron to choose). Safety settings, the ElevenLabs key and the vault location are off-limits.
+  - **Read-out-friendly replies** (persona).
+  - **Model self-check:** Settings shows the exact model per slot, and Ghost tells Aaron when a new family appears or a slot's model vanishes. Agreed; part of the brains work.
+  - **Hide Ghost:** interview Aaron first about how it should work.
+  - **Google Drive,** and later the phone and its gallery. Ask what Ghost should do with it. Simplest route: Drive for desktop as a safe folder.
+  - **Ghost's conversational capabilities.**
+  - **Ghost's ability to self-update, bug-fix and improve.**
+  - **A full security sweep,** keeping security practices up to date (for example, dependency checks on each update).
+  - **Last:** clear redundant logs and test leftovers, keeping core memories and facts about Aaron (list it for his approval first).
+
 ## Not yet verified on real Windows
 
-1. **Mic with a real mic:** once Aaron has one, their voice is mixed into a recording from the moment they toggle it on.
+1. **Mic with a real mic:** once Aaron has one, his voice is mixed into a recording from the moment he toggles it on.
