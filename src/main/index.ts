@@ -170,7 +170,7 @@ app.whenReady().then(async () => {
   bindHotkeys(settings());
   const applyLogin = (on: boolean) => { if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: on }); };
   applyLogin(settings().launchAtLogin);
-  const fullscreen = new FullscreenWatcher((hide, code) => overlay.setFullscreenHidden(hide, code));
+  const fullscreen = new FullscreenWatcher((hide, code, game) => overlay.setFullscreenHidden(hide, code, game));
   fullscreen.start(settings().fullscreenHide);
   log('fullscreen hiding:', settings().fullscreenHide);
   // Clicking into another app sends Ghost to its idle look straight away.

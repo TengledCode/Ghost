@@ -300,9 +300,9 @@ export class OverlayWindow {
     if (problems.length) log('overlay health', problems.join('; '));
   }
 
-  setFullscreenHidden(hidden: boolean, code?: number): void {
+  setFullscreenHidden(hidden: boolean, code?: number, game?: string): void {
     if (!hidden && !this.hiddenForFullscreen) return;
-    const why = code !== undefined ? ` (Windows reports ${QUNS_NAMES[code] ?? 'state'}, code ${code})` : '';
+    const why = game ? ` (a borderless game: ${game})` : code !== undefined ? ` (Windows reports ${QUNS_NAMES[code] ?? 'state'}, code ${code})` : '';
     log(hidden ? `hidden: a fullscreen app is in front${why}` : `shown again${why}`, this.summoned ? '(summoned, stays visible)' : '');
     this.hiddenForFullscreen = hidden;
     if (this.summoned) return;

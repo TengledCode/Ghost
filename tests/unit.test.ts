@@ -91,6 +91,18 @@ describe('router', () => {
     expect(shouldHide('never', 3)).toBe(false);
     expect(shouldHide('all', 5)).toBe(false);
   });
+  it('counts a borderless game covering the screen as a game, but not a fullscreen video', () => {
+    // TFT as Windows described it on Aaron's PC (31 Oct 2026): QUNS 2, an Unreal window over the whole screen.
+    const tft = { cls: 'UnrealWindow', exe: 'C:\\Riot Games\\Teamfight Tactics\\Live\\TFT\\Binaries\\Win64\\TFTClient-Win64-Shipping.exe', coversScreen: true };
+    const steamGame = { cls: 'SomeEngineWindow', exe: 'D:\\SteamLibrary\\steamapps\\common\\Hades\\Hades.exe', coversScreen: true };
+    const youtube = { cls: 'Chrome_WidgetWin_1', exe: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe', coversScreen: true };
+    expect(shouldHide('games', 2, tft)).toBe(true);
+    expect(shouldHide('games', 2, steamGame)).toBe(true);
+    expect(shouldHide('games', 2, youtube)).toBe(false);
+    expect(shouldHide('games', 2, { ...tft, coversScreen: false })).toBe(false); // a windowed game
+    expect(shouldHide('never', 2, tft)).toBe(false);
+    expect(shouldHide('all', 2, youtube)).toBe(true); // "all" still hides for anything fullscreen
+  });
 });
 
 describe('approval policy', () => {
