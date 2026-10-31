@@ -233,7 +233,9 @@ app.whenReady().then(async () => {
   ipcMain.handle('ghost:update-status', () => updater.current);
   ipcMain.handle('ghost:update-check', () => updater.check());
   ipcMain.on('ghost:update-run', () => { void updater.update(); });
-  setTimeout(() => void updater.check(), 60_000).unref();
+  // Check soon after starting (only the dot on the gear; nothing installs without Aaron pressing Update),
+  // leaving the first seconds to the greeting and the brains warming up.
+  setTimeout(() => void updater.check(), 10_000).unref();
   setInterval(() => void updater.check(), 4 * 3600_000).unref();
 
   // ---- Tray
