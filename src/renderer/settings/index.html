@@ -26,6 +26,10 @@
 
     <section data-tab="main">
       <h2>Brain</h2>
+      <div id="modelOffer" class="offer" hidden>
+        <p></p>
+        <div class="row"><button type="button" id="offerUse">Use it</button><button type="button" id="offerLater">Not now</button></div>
+      </div>
       <label>Primary brain
         <select id="primaryBrain" data-key="provider"><option value="claude">Claude (Pro/Max subscription)</option><option value="gemini">Gemini (Google AI Pro, via Antigravity)</option><option value="mock">Offline mock (testing)</option></select>
       </label>
@@ -213,6 +217,7 @@
         </select>
       </label>
       <label class="check"><input type="checkbox" data-key="clickThroughWhenIdle" /> Click-through when idle (hover briefly or hold Alt to grab it)</label>
+      <label>Hover before Ghost can be grabbed <input type="range" min="0.2" max="2" step="0.1" data-key="grabDelay" data-num /><output></output></label>
     </section>
 
     <section data-tab="more">

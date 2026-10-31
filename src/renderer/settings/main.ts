@@ -2,7 +2,9 @@ import { EDGE_VOICES, ELEVENLABS_VOICES, type VoiceOption } from '../../shared/v
 import { SLOT_LABELS, THEMES, type BrainId, type Settings, type SlotModels } from '../../shared/settings';
 import type { CoreMessage } from '../../shared/protocol';
 import type { KeyState } from '../../preload/index';
+import type { ModelSuggestion } from '../../main/modelWatcher';
 import { bridge } from '../shared/bridge';
+import { modelLabel } from '../../shared/modelLabel';
 import { CoreClient } from '../shared/coreClient';
 
 const boot = await bridge.bootstrap();
@@ -45,7 +47,7 @@ function render(): void {
     if (el instanceof HTMLInputElement && el.type === 'checkbox') el.checked = !!value;
     else if (document.activeElement !== el || el.type === 'range') el.value = value == null ? '' : String(value);
     const out = el.parentElement?.querySelector('output');
-    if (out) out.textContent = el.dataset.key === 'size' ? `${value}px` : `${Math.round(Number(value) * 100)}%`;
+    if (out) out.textContent = el.dataset.key === 'size' ? `${value}px` : el.dataset.key === 'grabDelay' ? `${Number(value).toFixed(1)} s` : `${Math.round(Number(value) * 100)}%`;
   }
   for (const box of document.querySelectorAll<HTMLInputElement>('[data-hotkey]')) box.value = String(settings[box.dataset.hotkey as 'hotkey' | 'quitHotkey' | 'liveScreenHotkey']).replace(/\+/g, ' + ');
   (document.getElementById('liveScreenAutoOffMinutes') as HTMLInputElement).disabled = !settings.liveScreenAutoOff;
@@ -72,9 +74,12 @@ liveToggle.addEventListener('click', () => core.send({ type: 'toggle_live_screen
 // ---- Brain: each brain's Light / Balanced / Heavy slots list the models that brain offers.
 type ModelList = { id: string; label: string }[];
 const modelLists = new Map<string, ModelList | 'loading' | { error: string }>();
+// The exact model behind each slot right now (an automatic choice resolved, or what last answered).
+const modelsInUse = new Map<string, Partial<Record<keyof SlotModels, string>>>();
 core.on(m => {
   if (m.type !== 'models') return;
   modelLists.set(m.provider, m.error && !m.models.length ? { error: m.error } : m.models);
+  if (m.inUse) modelsInUse.set(m.provider, m.inUse);
   renderBrains();
 });
 
@@ -105,8 +110,16 @@ function renderBrains(): void {
         options.unshift({ id: slots[slot], label: why ? `${slots[slot]} (${why})` : slots[slot] });
       }
       for (const o of options) select.append(new Option(o.label, o.id, false, o.id === slots[slot]));
-      select.onchange = () => void update({ brainModels: { ...settings.brainModels, [brain]: { ...slots, [slot]: select.value } } });
+      // A new choice: ask again which exact models the slots now use.
+      select.onchange = () => { modelLists.delete(brain); void update({ brainModels: { ...settings.brainModels, [brain]: { ...slots, [slot]: select.value } } }); };
       label.append(select);
+      const using = modelsInUse.get(brain)?.[slot];
+      if (using) {
+        const now = document.createElement('small');
+        now.className = 'in-use';
+        now.textContent = `→ ${modelLabel(using)}`;
+        label.append(now);
+      }
       return label;
     }));
     if (list !== 'loading' && !Array.isArray(list)) {
@@ -164,6 +177,17 @@ function renderVoices(id: string, list: VoiceOption[], engine: 'elevenlabs' | 'e
 }
 
 // ElevenLabs key: stored encrypted by the main process and never sent back to the page.
+// A new Gemini family on offer (from the model watcher): Use it or Not now.
+const offer = document.getElementById('modelOffer')!;
+const showOffer = (s: ModelSuggestion | null) => {
+  offer.hidden = !s;
+  if (s) offer.querySelector('p')!.textContent = `${s.label} is now on your plan. Use it instead of ${s.current || 'the current model'} for Balanced and Heavy?`;
+};
+void bridge.modelSuggestion().then(showOffer);
+bridge.onModelSuggestion(s => { showOffer(s); modelLists.delete('gemini'); renderBrains(); });
+document.getElementById('offerUse')!.addEventListener('click', () => { bridge.answerModelSuggestion(true); showOffer(null); });
+document.getElementById('offerLater')!.addEventListener('click', () => { bridge.answerModelSuggestion(false); showOffer(null); });
+
 // Each time Settings opens and on every save, the key is checked with ElevenLabs (no credits spent).
 const keyStatus = document.getElementById('keyStatus')!;
 const showKey = (text: string, tone: '' | 'ok' | 'warn' | 'bad' = '') => { keyStatus.textContent = text; keyStatus.className = `hint ${tone}`.trim(); };

@@ -436,9 +436,19 @@ input.addEventListener('keydown', e => {
 form.querySelector('.gear')!.addEventListener('click', () => bridge.openSettings());
 // A quiet dot on the gear when an update is ready (details in Settings → Updates).
 const gear = form.querySelector('.gear') as HTMLElement;
-const showUpdate = (s: { state: string }) => { gear.classList.toggle('has-update', s.state === 'available'); gear.title = s.state === 'available' ? 'Settings · an update is ready' : 'Settings'; };
+// The same dot when a new Gemini model is on offer (Settings → Brain).
+let updateReady = false;
+let modelOffered = false;
+const showGearDot = () => {
+  gear.classList.toggle('has-update', updateReady || modelOffered);
+  gear.title = updateReady ? 'Settings · an update is ready' : modelOffered ? 'Settings · a new Gemini model is on offer' : 'Settings';
+};
+const showUpdate = (s: { state: string }) => { updateReady = s.state === 'available'; showGearDot(); };
 bridge.onUpdate(showUpdate);
 void bridge.updateStatus().then(showUpdate);
+const showModelOffer = (s: unknown) => { modelOffered = !!s; showGearDot(); };
+bridge.onModelSuggestion(showModelOffer);
+void bridge.modelSuggestion().then(showModelOffer);
 
 // ------------------------------------------------------------------ approvals
 
@@ -479,7 +489,7 @@ function wantsMouse(x: number, y: number): boolean {
     if (!settings.clickThroughWhenIdle || state !== 'idle' || altDown || !form.hidden) return true;
     if (clickedThrough) return false;
     if (!hoverSince) hoverSince = performance.now();
-    return performance.now() - hoverSince > 350;
+    return performance.now() - hoverSince > settings.grabDelay * 1000; // Settings → Hover before Ghost can be grabbed
   }
   hoverSince = 0;
   clickedThrough = false;

@@ -135,20 +135,6 @@ export function writeAgyPersona(paths: AgyPaths, persona: string): void {
 `);
 }
 
-/** Pick a model id from `agy models` for a family hint ('flash' / 'pro'). Empty when none matches. */
-export function pickAgyModel(ids: string[], hint: string): string {
-  if (!hint) return '';
-  const version = (id: string) => Number(id.match(/^gemini-(\d+(?:\.\d+)?)/)?.[1] ?? 0);
-  const effortRank = (id: string) => {
-    const order = hint === 'pro' ? ['high', 'medium', 'low'] : ['medium', 'high', 'low'];
-    const i = order.findIndex(e => id.endsWith(`-${e}`));
-    return i < 0 ? order.length : i;
-  };
-  const candidates = [...new Set(ids)].filter(id => id.startsWith('gemini-') && id.includes(`-${hint}`) && !/lite|image|tts|embed/.test(id));
-  candidates.sort((a, b) => version(b) - version(a) || effortRank(a) - effortRank(b));
-  return candidates[0] ?? '';
-}
-
 /** Gemini model ids mentioned in `agy models` output. */
 export function parseAgyModels(output: string): string[] {
   return parseAgyCatalog(output).filter(id => id.startsWith('gemini-'));
@@ -169,17 +155,4 @@ export function parseAgyCatalog(output: string): string[] {
   return ids;
 }
 
-/** "gemini-3.8-flash-high" → "Gemini 3.8 Flash (high)", "claude-opus-4-6-thinking" → "Claude Opus 4.6 (thinking)". */
-export function agyModelLabel(id: string): string {
-  const parts = id.split('-');
-  const suffix = /^(low|medium|high|thinking|max|minimal)$/.test(parts.at(-1) ?? '') ? parts.pop() : undefined;
-  const words: string[] = [];
-  for (let i = 0; i < parts.length; i++) {
-    const p = parts[i];
-    // Claude's versions come as separate numbers ("4-6" → "4.6").
-    if (/^\d+$/.test(p) && /^\d+$/.test(parts[i + 1] ?? '')) { words.push(`${p}.${parts[++i]}`); continue; }
-    words.push(p === 'gpt' || p === 'oss' ? p.toUpperCase() : p.charAt(0).toUpperCase() + p.slice(1));
-  }
-  const name = words.join(' ').replace('GPT OSS', 'GPT-OSS');
-  return suffix ? `${name} (${suffix})` : name;
-}
+export { modelLabel as agyModelLabel } from '../../shared/modelLabel';

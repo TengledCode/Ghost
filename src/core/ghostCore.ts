@@ -23,7 +23,7 @@ import { buildPersona, buildTurnPrompt } from './persona';
 import { PresenceStore } from './presence';
 import type { Provider, ProviderEvent } from './providers/types';
 import { ReminderScheduler } from './reminders/scheduler';
-import { modelFor, routeTier } from './router';
+import { modelFor, routeTier, type ConcreteTier } from './router';
 import { SentenceSplitter, type Segment } from './sentenceSplitter';
 import { TOOL_DEFS, type ToolName } from './tools/definitions';
 import { CLAUDE_BUILTIN_TOOLS } from './providers/claude';
@@ -91,6 +91,8 @@ export class GhostCore {
   private mcpConfigPath: string;
   private presence: PresenceStore;
   private agy: AgyPaths;
+  /** The exact model each brain's slot last answered with (Claude's aliases only resolve as it replies). */
+  private inUse: Partial<Record<ProviderId, Partial<Record<ConcreteTier, string>>>> = {};
   private googleInSync = false; // whether the Google brain's own conversation holds everything said so far
   private greeted = false;
   private presenceTimer: NodeJS.Timeout | null = null;
@@ -317,7 +319,7 @@ export class GhostCore {
         const provider = this.o.providers[msg.provider as ProviderId];
         try {
           const models = (await provider?.listModels?.()) ?? [];
-          this.send(client, { type: 'models', provider: msg.provider, models });
+          this.send(client, { type: 'models', provider: msg.provider, models, inUse: await this.modelsInUse(msg.provider as ProviderId) });
         } catch (e) {
           this.send(client, { type: 'models', provider: msg.provider, models: [], error: String((e as Error).message ?? e) });
         }
@@ -381,6 +383,19 @@ export class GhostCore {
   }
 
   /** The last lines of the conversation, for a brain that may not have seen them. */
+  /** What each slot of a brain uses right now: resolved ahead for Gemini, last seen for Claude. */
+  private async modelsInUse(pid: ProviderId): Promise<Partial<Record<ConcreteTier, string>>> {
+    const provider = this.o.providers[pid];
+    const out: Partial<Record<ConcreteTier, string>> = { ...this.inUse[pid] };
+    if (provider?.resolveModel) {
+      for (const tier of ['fast', 'balanced', 'deep'] as ConcreteTier[]) {
+        const id = await provider.resolveModel(modelFor(pid, tier, this.o.settings().brainModels)).catch(() => '');
+        if (id) out[tier] = id;
+      }
+    }
+    return out;
+  }
+
   private recentLines(): string[] {
     const s = this.o.settings();
     return this.log.lines().slice(-12).map(l => `${l.role === 'user' ? s.userName : s.assistantName}: ${l.text}`);
@@ -440,6 +455,7 @@ export class GhostCore {
       const provider = this.o.providers[pid];
       if (!provider) continue;
       const model = modelFor(pid, tier, s.brainModels);
+      let exact = ''; // the model that actually answered, when the brain says (e.g. "sonnet" → claude-sonnet-5-5)
       let failed: ProviderEvent & { type: 'error' } | null = null;
       try {
         for await (const ev of provider.send({
@@ -450,6 +466,7 @@ export class GhostCore {
         })) {
           if (this.turn !== turn) return;
           if (ev.type === 'session' && pid === 'claude') this.setSession(ev.sessionId);
+          else if (ev.type === 'model') { exact = ev.id; (this.inUse[pid] ??= {})[tier] = ev.id; }
           else if (ev.type === 'text_delta') {
             sawText = true;
             this.markText(turn);
@@ -482,8 +499,8 @@ export class GhostCore {
         this.googleInSync = pid === 'gemini';
         const command = isCommandTurn(message, turn.tools, turn.actions, reply);
         this.log.append('user', message, { command });
-        this.log.append('assistant', reply, { provider: pid, model: model || 'default', command, actions: turn.actions, screen: screenNote.screen });
-        this.broadcast({ type: 'turn_end', turnId: turn.id, text: reply, provider: pid, model: model || 'default' });
+        this.log.append('assistant', reply, { provider: pid, model: exact || model || 'default', command, actions: turn.actions, screen: screenNote.screen });
+        this.broadcast({ type: 'turn_end', turnId: turn.id, text: reply, provider: pid, model: exact || model || 'default' });
         turn.textDone = true;
         this.markText(turn);
         this.maybeFinish(turn);

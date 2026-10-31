@@ -1,5 +1,6 @@
 import { existsSync, rmSync } from 'node:fs';
-import { agyModelLabel, agyPaths, parseAgyCatalog, pickAgyModel, type AgyPaths } from './agyPlugin';
+import { agyModelLabel, agyPaths, parseAgyCatalog, type AgyPaths } from './agyPlugin';
+import { familyName, pickGemini, topGeminiFamily } from '../models';
 import { commandExists, runCli, spawnLive, type LiveCli } from './spawnCli';
 import type { ModelOption, Provider, ProviderEvent, SendRequest } from './types';
 import { classifyError } from './types';
@@ -44,10 +45,14 @@ export class AntigravityProvider implements Provider {
   private handlers: ((line: AgyLine) => void)[] = [];
   private models: Promise<string[]> | null = null;
 
-  constructor(opts: { dir: string; command?: string; idleCloseMs?: number }) {
+  private readonly topFamily: () => string;
+
+  /** `topFamily`: the Gemini family Aaron uses for Balanced and Heavy (settings.geminiTopFamily). */
+  constructor(opts: { dir: string; command?: string; idleCloseMs?: number; topFamily?: () => string }) {
     this.paths = agyPaths(opts.dir);
     this.command = opts.command ?? 'agy';
     this.idleCloseMs = opts.idleCloseMs ?? IDLE_CLOSE_MS;
+    this.topFamily = opts.topFamily ?? (() => '');
   }
 
   isAvailable(): Promise<boolean> { return commandExists(this.command); }
@@ -77,6 +82,7 @@ export class AntigravityProvider implements Provider {
     if (req.oneShot) { yield* this.oneShot(req); return; }
     if (this.idleTimer) { clearTimeout(this.idleTimer); this.idleTimer = null; }
     const model = await this.resolveModel(req.model);
+    if (model) yield { type: 'model', id: model };
     if (this.proc?.alive() && model !== this.model) this.stop(); // switching model: resume in a new process
     if (!this.proc?.alive()) this.start(model);
     const proc = this.proc!;
@@ -223,22 +229,31 @@ export class AntigravityProvider implements Provider {
     void proc.exit.then(() => { if (this.proc === proc) { this.proc = null; this.init = null; } });
   }
 
-  /** Everything agy offers (Gemini, and Claude / GPT-OSS models on the same plan), newest-first automatic picks on top. */
+  /** Everything agy offers (Gemini, and Claude / GPT-OSS models on the same plan), the automatic picks on top. */
   async listModels(): Promise<ModelOption[]> {
     this.models ??= this.catalog();
     const ids = await this.models;
+    const now = (hint: string) => { const id = pickGemini(ids, hint, this.topFamily()); return id ? ` (${agyModelLabel(id)})` : ''; };
+    const top = familyName(topGeminiFamily(ids, this.topFamily()) || 'strongest');
     return [
-      { id: 'flash', label: `Automatic: newest Gemini Flash${pickAgyModel(ids, 'flash') ? ` (${agyModelLabel(pickAgyModel(ids, 'flash'))})` : ''}` },
-      { id: 'pro', label: `Automatic: newest Gemini Pro${pickAgyModel(ids, 'pro') ? ` (${agyModelLabel(pickAgyModel(ids, 'pro'))})` : ''}` },
+      { id: 'flash', label: `Automatic: newest Gemini Flash${now('flash')}` },
+      { id: 'top-medium', label: `Automatic: Gemini ${top}, medium${now('top-medium')}` },
+      { id: 'top-high', label: `Automatic: Gemini ${top}, high${now('top-high')}` },
       ...ids.map(id => ({ id, label: agyModelLabel(id) })),
     ];
   }
 
-  /** `flash` / `pro` become the newest matching id from `agy models`; any other id is used as it is. */
-  private async resolveModel(hint: string): Promise<string> {
-    if (hint !== 'flash' && hint !== 'pro') return hint;
+  /** The exact model a slot uses right now (an automatic hint resolved against `agy models`). */
+  async resolveModel(hint: string): Promise<string> {
+    if (!['flash', 'top-medium', 'top-high', 'pro'].includes(hint)) return hint;
     this.models ??= this.catalog();
-    return pickAgyModel(await this.models, hint);
+    return pickGemini(await this.models, hint, this.topFamily());
+  }
+
+  /** Read `agy models` again (the watcher does this now and then); returns every id on offer. */
+  async refreshCatalog(): Promise<string[]> {
+    this.models = this.catalog();
+    return this.models;
   }
 
   private async catalog(): Promise<string[]> {

@@ -4,6 +4,7 @@ export type ProviderEvent =
   | { type: 'tool_start'; name: string }
   | { type: 'tool_end'; name: string }
   | { type: 'done'; text: string; sessionId?: string }
+  | { type: 'model'; id: string } // the exact model answering (e.g. "Sonnet" resolved to claude-sonnet-5-5)
   | { type: 'error'; message: string; kind?: 'auth' | 'limit' | 'missing' | 'other' };
 
 export interface SendRequest {
@@ -26,6 +27,8 @@ export interface Provider {
   send(req: SendRequest): AsyncIterable<ProviderEvent>;
   /** Models this brain offers, for the slot dropdowns in Settings. */
   listModels?(): Promise<ModelOption[]>;
+  /** The exact model a slot setting means right now (for automatic choices like "flash"). */
+  resolveModel?(hint: string): Promise<string>;
 }
 
 export interface ModelOption { id: string; label: string }

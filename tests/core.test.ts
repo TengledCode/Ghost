@@ -307,7 +307,10 @@ describe('Google brain history', () => {
 describe('model lists for Settings', () => {
   it('answers list_models with the brain\'s models, to the asking window only', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'ghost-models-'));
-    const brain = Object.assign(new MockProvider(), { listModels: async () => [{ id: 'haiku', label: 'Haiku (newest)' }] });
+    const brain = Object.assign(new MockProvider(), {
+      listModels: async () => [{ id: 'haiku', label: 'Haiku (newest)' }],
+      resolveModel: async (hint: string) => (hint === 'haiku' ? 'claude-haiku-5-5' : ''), // which exact model a slot means
+    });
     core = new GhostCore({
       dataDir: dir, personaPath: join(__dirname, '../config/persona.md'), mcpServerPath: '/x.js', nodeExecPath: process.execPath,
       providers: { claude: brain as never }, tts: new TtsService(fakeTts, fakeTts),
@@ -320,7 +323,7 @@ describe('model lists for Settings', () => {
     await Promise.all([settingsWin.ready, overlay.ready]);
     await settingsWin.waitFor(m => m.type === 'welcome');
     settingsWin.send({ type: 'list_models', provider: 'claude' });
-    expect(await settingsWin.waitFor(m => m.type === 'models')).toEqual({ type: 'models', provider: 'claude', models: [{ id: 'haiku', label: 'Haiku (newest)' }] });
+    expect(await settingsWin.waitFor(m => m.type === 'models')).toEqual({ type: 'models', provider: 'claude', models: [{ id: 'haiku', label: 'Haiku (newest)' }], inUse: { fast: 'claude-haiku-5-5' } });
     expect(overlay.inbox.some(m => m.type === 'models')).toBe(false);
   });
 });

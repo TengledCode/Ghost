@@ -61,14 +61,20 @@ describe('router', () => {
   it('maps tiers to CLI models', () => {
     expect(modelFor('claude', 'fast')).toBe('haiku');
     expect(modelFor('claude', 'deep')).toBe('opus');
-    expect(modelFor('gemini', 'balanced')).toBe('flash'); // resolved against `agy models` by the provider
-    expect(modelFor('gemini', 'deep')).toBe('pro');
+    expect(modelFor('gemini', 'balanced')).toBe('top-medium'); // resolved against `agy models` by the provider
+    expect(modelFor('gemini', 'deep')).toBe('top-high');
   });
   it("uses the model Aaron picked for each brain's slot", () => {
     const s = mergeSettings({ brainModels: { gemini: { fast: 'gemini-3.8-flash-low' } } as never });
     expect(modelFor('gemini', 'fast', s.brainModels)).toBe('gemini-3.8-flash-low');
-    expect(modelFor('gemini', 'deep', s.brainModels)).toBe('pro'); // untouched slots keep their defaults
+    expect(modelFor('gemini', 'deep', s.brainModels)).toBe('top-high'); // untouched slots keep their defaults
     expect(modelFor('claude', 'balanced', s.brainModels)).toBe('sonnet');
+  });
+  it("moves Gemini's old Flash / Flash / Pro slots to the Claude-matched ones, keeping a picked model", () => {
+    expect(mergeSettings({ brainModels: { gemini: { fast: 'flash', balanced: 'flash', deep: 'pro' } } as never }).brainModels.gemini)
+      .toEqual({ fast: 'flash', balanced: 'top-medium', deep: 'top-high' });
+    expect(mergeSettings({ brainModels: { gemini: { fast: 'flash', balanced: 'gemini-3.8-flash-high', deep: 'pro' } } as never }).brainModels.gemini.balanced)
+      .toBe('gemini-3.8-flash-high');
   });
   it("won't let a brain be its own backup", () => {
     expect(mergeSettings({ provider: 'gemini', fallbackProvider: 'gemini' }).fallbackProvider).toBeNull();

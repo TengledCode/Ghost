@@ -25,6 +25,10 @@ input:disabled { opacity: .45; }
 .hint.ok { color: #8fd9a8; }
 .hint.warn { color: #ffcf85; }
 .hint.bad { color: #ff9aa2; }
+.in-use { display: block; color: var(--muted); font-size: 11.5px; margin-top: 2px; }
+.offer { border: 1px solid #6b5a2e; border-radius: 10px; padding: 10px 12px; color: #ffcf85; }
+.offer p { margin: 0 0 8px; }
+.offer .row { display: flex; gap: 8px; }
 .themes { display: flex; flex-wrap: wrap; gap: 8px; }
 .swatch { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 10px; border: 1px solid var(--line); background: #0f1219; cursor: pointer; }
 .swatch[aria-pressed=true] { border-color: var(--accent); }

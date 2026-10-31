@@ -2,7 +2,8 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { agyHookDecision, agyModelLabel, agyPaths, parseAgyCatalog, parseAgyModels, pickAgyModel, writeAgyPlugin } from '../src/core/providers/agyPlugin';
+import { agyHookDecision, agyModelLabel, agyPaths, parseAgyCatalog, parseAgyModels, writeAgyPlugin } from '../src/core/providers/agyPlugin';
+import { pickGemini } from '../src/core/models';
 import { AntigravityProvider } from '../src/core/providers/antigravity';
 import type { ProviderEvent, SendRequest } from '../src/core/providers/types';
 import { fakeCli } from './fakeCli';
@@ -89,9 +90,10 @@ describe('AntigravityProvider (Gemini on a Google AI Pro subscription)', () => {
     expect(reply(await collect(provider!.send(req('hi', { model: 'claude-opus-4-6-thinking' }))))).toBe('[claude-opus-4-6-thinking] hi');
     expect(launches()[0]).toBe('launch model=claude-opus-4-6-thinking conversation=-');
     const list = await provider!.listModels();
-    expect(list.slice(0, 2)).toEqual([
+    expect(list.slice(0, 3)).toEqual([
       { id: 'flash', label: 'Automatic: newest Gemini Flash (Gemini 3.8 Flash (high))' },
-      { id: 'pro', label: 'Automatic: newest Gemini Pro (Gemini 3.8 Pro (high))' },
+      { id: 'top-medium', label: 'Automatic: Gemini Pro, medium (Gemini 3.8 Pro (high))' }, // no medium on offer: the next best
+      { id: 'top-high', label: 'Automatic: Gemini Pro, high (Gemini 3.8 Pro (high))' },
     ]);
     expect(list.map(m => m.id)).toContain('claude-opus-4-6-thinking');
   });
@@ -131,9 +133,9 @@ describe('Antigravity plugin rules', () => {
 
   it('picks the newest model of a family', () => {
     const ids = parseAgyModels('Fetching...\ngemini-3.8-flash-high\tx\ngemini-3.8-flash-low\ngemini-3.1-pro-high\ngemini-3.8-pro-medium\ngemini-3.8-pro-high\ngemini-3.8-flash-lite-low\nclaude-opus-4-6');
-    expect(pickAgyModel(ids, 'flash')).toBe('gemini-3.8-flash-high');
-    expect(pickAgyModel(ids, 'pro')).toBe('gemini-3.8-pro-high');
-    expect(pickAgyModel([], 'pro')).toBe('');
+    expect(pickGemini(ids, 'flash')).toBe('gemini-3.8-flash-high');
+    expect(pickGemini(ids, 'pro')).toBe('gemini-3.8-pro-high'); // the old Heavy setting: the strongest family, high
+    expect(pickGemini([], 'pro')).toBe('');
   });
 
   it('writes Windows hook wrappers that agy can run through cmd', () => {

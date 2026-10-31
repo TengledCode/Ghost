@@ -40,6 +40,7 @@ export class ClaudeStreamParser {
   private sawPartial = false;
   private openTools = new Map<number, string>();
   private text = '';
+  private model = '';
 
   parse(line: string): ProviderEvent[] {
     let msg: any;
@@ -67,6 +68,9 @@ export class ClaudeStreamParser {
         break;
       }
       case 'assistant': {
+        // The exact model behind an alias ("sonnet" → claude-sonnet-5-5), once per reply.
+        const model = String(msg.message?.model ?? '');
+        if (model && model !== this.model) { this.model = model; out.push({ type: 'model', id: model }); }
         const blocks: any[] = msg.message?.content ?? [];
         for (const b of blocks) {
           if (b.type === 'text' && !this.sawPartial) {

@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { Orientation, Settings } from '../shared/settings';
 import type { UpdateStatus } from '../main/updater';
 import type { KeyCheck } from '../core/tts/elevenlabs';
+import type { ModelSuggestion } from '../main/modelWatcher';
 
 /** The ElevenLabs key as Settings shows it: whether one is stored, and whether it works. */
 export interface KeyState { has: boolean; saved?: boolean; check?: KeyCheck }
@@ -14,6 +15,10 @@ const api = {
   /** Checks a new key with ElevenLabs and saves it unless it's rejected ('' removes the key). */
   saveElevenLabsKey: (value: string): Promise<KeyState> => ipcRenderer.invoke('ghost:save-eleven-key', value),
   checkElevenLabsKey: (): Promise<KeyState> => ipcRenderer.invoke('ghost:check-eleven-key'),
+  /** A new Gemini family on offer for Balanced and Heavy (null when there's none). */
+  modelSuggestion: (): Promise<ModelSuggestion | null> => ipcRenderer.invoke('ghost:model-suggestion'),
+  answerModelSuggestion: (use: boolean) => ipcRenderer.send('ghost:model-suggestion-answer', use),
+  onModelSuggestion: (cb: (s: ModelSuggestion | null) => void): void => { ipcRenderer.on('ghost:model-suggestion', (_e, s) => cb(s)); },
   setInteractive: (on: boolean) => ipcRenderer.send('ghost:interactive', on),
   dragArm: () => ipcRenderer.send('ghost:drag-arm'),
   dragStart: () => ipcRenderer.send('ghost:drag-start'),

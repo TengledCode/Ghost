@@ -12,7 +12,8 @@ export const SLOT_LABELS: Record<keyof SlotModels, string> = { fast: 'Light', ba
 /** Claude takes the CLI's aliases (newest of each family); for Gemini, `flash`/`pro` mean "newest of that family". */
 export const DEFAULT_BRAIN_MODELS: Record<BrainId, SlotModels> = {
   claude: { fast: 'haiku', balanced: 'sonnet', deep: 'opus' },
-  gemini: { fast: 'flash', balanced: 'flash', deep: 'pro' },
+  // Matched to Claude's: Light ≈ Haiku, Balanced ≈ Sonnet, Heavy ≈ Opus (see src/core/models.ts).
+  gemini: { fast: 'flash', balanced: 'top-medium', deep: 'top-high' },
 };
 export type Skin = 'ghost-shell' | 'classic-orb';
 export type RenderQuality = 'auto' | 'high' | 'medium' | 'low';
@@ -59,6 +60,7 @@ export interface Settings {
   size: number; // px, shell diameter
   idleOpacity: number; // 0.2 - 1
   clickThroughWhenIdle: boolean;
+  grabDelay: number; // seconds of hovering before an idle, click-through Ghost can be grabbed (0.2 - 2)
   theme: string; // key of THEMES or 'custom'
   customTheme: ThemeColors;
   skin: Skin;
@@ -76,6 +78,7 @@ export interface Settings {
   fallbackProvider: ProviderId | null;
   modelTier: ModelTier;
   brainModels: Record<BrainId, SlotModels>;
+  geminiTopFamily: string; // the strongest Gemini family to use (e.g. "argon"); '' = not chosen yet
   showTimings: boolean; // show how long each reply took under the bubble
   obsidian: ObsidianSettings;
   // Voice
@@ -102,6 +105,7 @@ export const DEFAULT_SETTINGS: Settings = {
   size: 180,
   idleOpacity: 0.85,
   clickThroughWhenIdle: true,
+  grabDelay: 0.9,
   theme: 'classic',
   customTheme: THEMES.classic,
   skin: 'ghost-shell',
@@ -117,6 +121,7 @@ export const DEFAULT_SETTINGS: Settings = {
   fallbackProvider: 'gemini',
   modelTier: 'auto',
   brainModels: DEFAULT_BRAIN_MODELS,
+  geminiTopFamily: '',
   showTimings: false,
   obsidian: DEFAULT_OBSIDIAN,
   voiceEnabled: true,
@@ -143,6 +148,7 @@ export function mergeSettings(stored: Partial<Settings> | null | undefined): Set
   for (const key of Object.keys(merged)) if (!Object.hasOwn(DEFAULT_SETTINGS, key)) delete (merged as Record<string, unknown>)[key];
   merged.size = clamp(merged.size, 90, 420);
   merged.idleOpacity = clamp(merged.idleOpacity, 0.2, 1);
+  merged.grabDelay = clamp(merged.grabDelay, 0.2, 2);
   merged.ghostFilter = clamp(merged.ghostFilter, 0, 1);
   merged.volume = clamp(merged.volume, 0, 1);
   merged.voiceStability = clamp(merged.voiceStability, 0, 1);
@@ -156,6 +162,9 @@ export function mergeSettings(stored: Partial<Settings> | null | undefined): Set
     claude: { ...DEFAULT_BRAIN_MODELS.claude, ...saved.claude },
     gemini: { ...DEFAULT_BRAIN_MODELS.gemini, ...saved.gemini },
   };
+  // Gemini's old slots (Flash / Flash / "newest Pro") become the Claude-matched ones. Pro is gone.
+  const g = merged.brainModels.gemini;
+  if (g.deep === 'pro') { merged.brainModels.gemini = { ...g, deep: 'top-high', balanced: g.balanced === 'flash' ? 'top-medium' : g.balanced }; }
   if (merged.fallbackProvider === merged.provider) merged.fallbackProvider = null; // a brain can't be its own backup
   merged.obsidian = { ...DEFAULT_OBSIDIAN, ...(stored?.obsidian ?? {}) };
   merged.obsidian.folder = merged.obsidian.folder.replace(/[\\/:*?"<>|]+/g, '').trim() || 'Ghost';

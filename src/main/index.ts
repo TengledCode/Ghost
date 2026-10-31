@@ -12,6 +12,7 @@ import { TtsService } from '../core/tts/service';
 import type { Settings } from '../shared/settings';
 import { ForegroundWatcher, hwndOf } from './foregroundWatcher';
 import { initLog, log } from './log';
+import { ModelWatcher } from './modelWatcher';
 import { WindowEvents } from './windowEvents';
 import { FullscreenWatcher } from './fullscreenWatcher';
 import { OverlayWindow } from './overlayWindow';
@@ -66,6 +67,7 @@ app.whenReady().then(async () => {
 
   const mock = process.env.GHOST_PROVIDER === 'mock' || settings().provider === 'mock';
   const tts = new TtsService(new ElevenLabsTts(() => store.getSecret('elevenlabs')), new EdgeTts());
+  const gemini = mock ? null : new AntigravityProvider({ dir: join(app.getPath('userData'), 'data', 'agy'), topFamily: () => settings().geminiTopFamily });
   const core = new GhostCore({
     dataDir: join(app.getPath('userData'), 'data'),
     personaPath: resource('config', 'persona.md'),
@@ -73,7 +75,7 @@ app.whenReady().then(async () => {
     nodeExecPath: process.execPath,
     providers: mock
       ? { mock: new MockProvider(), claude: new MockProvider() as never, gemini: new MockProvider() as never }
-      : { claude: new ClaudeLiveProvider(), gemini: new AntigravityProvider({ dir: join(app.getPath('userData'), 'data', 'agy') }) },
+      : { claude: new ClaudeLiveProvider(), gemini: gemini! },
     tts,
     host: {
       openExternal: url => shell.openExternal(url),
@@ -230,6 +232,20 @@ app.whenReady().then(async () => {
     },
   });
   updater.on('status', status => { for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send('ghost:update', status); });
+
+  // Keeping up with new Gemini models (Claude's aliases do that by themselves).
+  const models = gemini && new ModelWatcher({
+    file: join(app.getPath('userData'), 'data', 'models.json'),
+    // Testing from source only: GHOST_EXTRA_MODELS="gemini-4-carbon-high,…" pretends agy offers more.
+    refresh: async () => [...(!app.isPackaged ? (process.env.GHOST_EXTRA_MODELS ?? '').split(',').filter(Boolean) : []), ...await gemini.refreshCatalog()],
+    settings,
+    save: patch => store.update(patch),
+    notify: (level, text) => core.notify(level, text),
+    onSuggestion: s => { for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send('ghost:model-suggestion', s); },
+  });
+  models?.start();
+  ipcMain.handle('ghost:model-suggestion', () => models?.suggestion ?? null);
+  ipcMain.on('ghost:model-suggestion-answer', (_e, use: boolean) => models?.answer(!!use));
   ipcMain.handle('ghost:update-status', () => updater.current);
   ipcMain.handle('ghost:update-check', () => updater.check());
   ipcMain.on('ghost:update-run', () => { void updater.update(); });
