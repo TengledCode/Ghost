@@ -35,8 +35,10 @@ export class ScreenRecorder {
   constructor(private readonly o: RecorderOptions) {
     // The hidden page may use the screen and the microphone; nothing else gets this session.
     const ses = session.fromPartition(PARTITION);
-    ses.setPermissionRequestHandler((_wc, permission, cb) => cb(permission === 'media'));
-    ses.setPermissionCheckHandler((_wc, permission) => permission === 'media');
+    // Since Electron 45, recording a screen asks for 'display-capture' (the microphone is still 'media').
+    const allowed = (permission: string) => permission === 'media' || permission === 'display-capture';
+    ses.setPermissionRequestHandler((_wc, permission, cb) => cb(allowed(permission)));
+    ses.setPermissionCheckHandler((_wc, permission) => allowed(permission));
     const fromRecorder = (e: IpcMainEvent) => !!this.win && e.sender === this.win.webContents;
     ipcMain.on('recorder:started', (e, mime: string) => {
       if (!fromRecorder(e)) return;

@@ -33,6 +33,7 @@ export class OverlayWindow {
       movable: true,
       skipTaskbar: true,
       hasShadow: false,
+      roundedCorners: false, // the default since Electron 43; a transparent overlay wants no corner treatment
       alwaysOnTop: true,
       show: false,
       backgroundColor: '#00000000',

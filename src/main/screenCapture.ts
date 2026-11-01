@@ -1,4 +1,4 @@
-import { clipboard, desktopCapturer, screen, type NativeImage } from 'electron';
+import { clipboard, ClipboardItem, desktopCapturer, screen, type NativeImage } from 'electron';
 import { mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { stamp } from './recorder';
@@ -54,8 +54,10 @@ export async function saveScreenshot(dir: string, hideGhost: HideGhost): Promise
   mkdirSync(dir, { recursive: true });
   const now = new Date();
   const path = join(dir, `Screenshot ${stamp(now)}.png`);
-  writeFileSync(path, img.toPNG());
-  clipboard.writeImage(img);
+  const png = img.toPNG();
+  writeFileSync(path, png);
+  // Electron 45's clipboard: web-style items (writeImage is gone).
+  await clipboard.write([new ClipboardItem({ 'image/png': new Blob([new Uint8Array(png)], { type: 'image/png' }) })]);
   const size = img.getSize();
   return { path, width: size.width, height: size.height, takenAt: now.toISOString() };
 }
