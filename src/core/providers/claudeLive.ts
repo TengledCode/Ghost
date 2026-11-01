@@ -102,7 +102,7 @@ export class ClaudeLiveProvider implements Provider {
     this.stop();
     const args = claudeArgs({ model: req.model, personaFile: req.personaFile, mcpConfigPath: req.mcpConfigPath, sessionId: req.sessionId })
       .filter(a => a !== '-p');
-    const proc = spawnLive(this.command, ['-p', '--input-format', 'stream-json', ...args], { cwd: req.workspace });
+    const proc = spawnLive(this.command, ['-p', '--input-format', 'stream-json', ...args], { cwd: req.workspace, subscriptionOnly: true });
     this.proc = proc;
     this.key = key;
     this.model = req.model;

@@ -347,3 +347,11 @@ describe('output soft clipper', () => {
     expect(c[0]).toBeCloseTo(-c[2000]);
   });
 });
+
+import { subscriptionEnv } from '../src/core/providers/spawnCli';
+describe("claude runs on Aaron's subscription only", () => {
+  it('leaves out API keys and host-app Claude settings, keeping everything else', () => {
+    const env = subscriptionEnv({ PATH: 'C:\Windows', SystemRoot: 'C:\Windows', ANTHROPIC_API_KEY: 'sk-x', ANTHROPIC_BASE_URL: 'http://proxy', CLAUDE_CODE_OAUTH_TOKEN: 't', CLAUDECODE: '1', GHOST_TOKEN: 'g' });
+    expect(env).toEqual({ PATH: 'C:\Windows', SystemRoot: 'C:\Windows', GHOST_TOKEN: 'g' });
+  });
+});

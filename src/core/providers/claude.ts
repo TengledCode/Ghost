@@ -108,7 +108,7 @@ export class ClaudeCliProvider implements Provider {
   isAvailable(): Promise<boolean> { return commandExists(this.command); }
 
   async *send(req: SendRequest): AsyncIterable<ProviderEvent> {
-    const run = runCli(this.command, claudeArgs(req), { stdin: req.prompt, cwd: req.workspace, signal: req.signal });
+    const run = runCli(this.command, claudeArgs(req), { stdin: req.prompt, cwd: req.workspace, signal: req.signal, subscriptionOnly: true });
     const parser = new ClaudeStreamParser();
     let finished = false;
     for await (const line of run.lines) {

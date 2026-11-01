@@ -37,6 +37,8 @@ for (const el of document.querySelectorAll<HTMLInputElement | HTMLSelectElement>
   el.addEventListener(el instanceof HTMLInputElement && el.type === 'range' ? 'input' : 'change', () => {
     const patch: Partial<Settings> = { [key]: read() };
     if (key === 'corner') patch.customPosition = null;
+    // A new primary brain gets the other one as its backup (Claude ↔ Gemini).
+    if (key === 'provider') patch.fallbackProvider = patch.provider === 'claude' ? 'gemini' : patch.provider === 'gemini' ? 'claude' : null;
     void update(patch);
   });
 }

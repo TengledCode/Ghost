@@ -11,16 +11,27 @@ export function quoteWin(arg: string): string {
   return `"${arg.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/, '$1$1').replace(/%/g, '"%"')}"`;
 }
 
+/**
+ * The environment for a CLI that must run on Aaron's subscription: anything that would point it at
+ * an API key, another account or a host app's proxy is left out (ANTHROPIC_*, CLAUDE_CODE_* and the
+ * like, e.g. inherited when Ghost is started from inside another Claude app). No API keys, ever.
+ */
+export function subscriptionEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const out: NodeJS.ProcessEnv = {};
+  for (const [k, v] of Object.entries(env)) if (!/^(ANTHROPIC_|CLAUDE_|CLAUDECODE$)/i.test(k)) out[k] = v;
+  return out;
+}
+
 export interface CliRun {
   lines: AsyncIterable<string>;
   stderr: () => string;
   exit: Promise<number | null>;
 }
 
-export function runCli(cmd: string, args: string[], opts: { stdin: string; cwd: string; env?: NodeJS.ProcessEnv; signal: AbortSignal }): CliRun {
+export function runCli(cmd: string, args: string[], opts: { stdin: string; cwd: string; env?: NodeJS.ProcessEnv; signal: AbortSignal; subscriptionOnly?: boolean }): CliRun {
   const child = spawn(isWin ? [cmd, ...args].map(quoteWin).join(' ') : cmd, isWin ? [] : args, {
     cwd: opts.cwd,
-    env: { ...process.env, ...opts.env },
+    env: { ...(opts.subscriptionOnly ? subscriptionEnv() : process.env), ...opts.env },
     shell: isWin,
     windowsHide: true,
     stdio: ['pipe', 'pipe', 'pipe'],
@@ -52,10 +63,10 @@ export interface LiveCli {
 }
 
 /** A long-running CLI process that takes JSON lines on stdin (used to keep Claude warm between messages). */
-export function spawnLive(cmd: string, args: string[], opts: { cwd: string; env?: NodeJS.ProcessEnv }): LiveCli {
+export function spawnLive(cmd: string, args: string[], opts: { cwd: string; env?: NodeJS.ProcessEnv; subscriptionOnly?: boolean }): LiveCli {
   const child = spawn(isWin ? [cmd, ...args].map(quoteWin).join(' ') : cmd, isWin ? [] : args, {
     cwd: opts.cwd,
-    env: { ...process.env, ...opts.env },
+    env: { ...(opts.subscriptionOnly ? subscriptionEnv() : process.env), ...opts.env },
     shell: isWin,
     windowsHide: true,
     stdio: ['pipe', 'pipe', 'pipe'],
