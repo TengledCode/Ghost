@@ -105,7 +105,7 @@ export const DEFAULT_SETTINGS: Settings = {
   size: 180,
   idleOpacity: 0.85,
   clickThroughWhenIdle: true,
-  grabDelay: 0.9,
+  grabDelay: 0.6,
   theme: 'classic',
   customTheme: THEMES.classic,
   skin: 'ghost-shell',

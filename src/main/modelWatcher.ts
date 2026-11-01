@@ -39,7 +39,8 @@ export class ModelWatcher {
     return { family, label: f ? `Gemini ${f.version} ${familyName(family)}` : `Gemini ${familyName(family)}`, current: familyName(this.o.settings().geminiTopFamily) };
   }
 
-  async check(): Promise<void> {
+  /** `quiet`: just note the slots' new models (after Aaron's own "Use it", which already said so). */
+  async check(quiet = false): Promise<void> {
     try {
       const ids = await this.o.refresh();
       if (ids.length) this.ids = ids;
@@ -48,7 +49,10 @@ export class ModelWatcher {
       if (r.pinTop && !s.geminiTopFamily) this.o.save({ geminiTopFamily: r.pinTop });
       const had = this.state.suggestion;
       this.setState(r.state);
-      for (const n of r.notices) { log('models', n.text); this.o.notify(n.level, n.text); }
+      for (const n of r.notices) {
+        log('models', n.text);
+        if (!quiet || n.level === 'warn') this.o.notify(n.level, n.text);
+      }
       if (this.state.suggestion !== had) this.o.onSuggestion(this.suggestion);
     } catch (e) {
       log('model check failed', String(e));
@@ -65,7 +69,7 @@ export class ModelWatcher {
     }
     this.setState({ ...this.state, suggestion: null, dismissed: use ? this.state.dismissed : [...this.state.dismissed, family] });
     this.o.onSuggestion(null);
-    void this.check(); // note the slots' new models
+    void this.check(true); // note the slots' new models
   }
 
   private setState(s: ModelWatchState): void {
