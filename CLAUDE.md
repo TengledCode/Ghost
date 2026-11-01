@@ -158,11 +158,16 @@ Work through it one item at a time, asking Aaron before design-level changes.
   - update check soon after start;
   - TFT hiding;
   - the 4 Oct memory mix-up: recall now ignores chat filler, uses the previous message for short follow-ups, and labels memories as background.
-- **Next: the brains (models).** Aaron wants:
-  - Ghost to **keep up with the newest Claude and Gemini models on its own**, adjusting as they appear;
-  - each Gemini slot (Light / Balanced / Heavy) **matched to its Claude counterpart**, so either brain gives as equal an experience as possible;
-  - ambiguity checked with him.
-  - Facts as of 31 Oct 2026: `agy models` offers Gemini 4 Argon (low/medium/high), Gemini 3.8 Flash (low/medium/high), Claude Opus/Sonnet 5.5 and GPT-OSS. There's no Gemini "Pro" any more, so the old `pro` hint resolves to nothing and agy uses its default. Gemini 4 Carbon was announced 28 Oct (limited access).
+- **Done (1 Nov 2026): the brains.** Aaron's decisions:
+  - Gemini slots are **matched to Claude's**, as equal as possible: Light ≈ Haiku is the newest Flash (medium); Balanced ≈ Sonnet is the strongest Gemini family at medium; Heavy ≈ Opus is the strongest at high. Today that's Gemini 3.8 Flash / 4 Argon Medium / 4 Argon High.
+  - Claude's slots stay **Haiku / Sonnet / Opus**: never Fable (Aaron is on Pro and avoids usage credits). Use Gemini's best even when it's below Opus.
+  - Rules are in `src/core/models.ts`; settings hints are `flash` / `top-medium` / `top-high`, and the old `pro` maps to `top-high`. `settings.geminiTopFamily` holds the chosen strongest family (pinned to Argon on the first check).
+  - `src/main/modelWatcher.ts` reads `agy models` 30 s after start and every 6 h (state in `data/models.json`):
+    - newer models and generations are followed automatically, with an info notice;
+    - a **new family in the same generation** (e.g. Carbon beside Argon) is offered: a yellow notice, the gear dot, and **Use it / Not now** in Settings → Brain.
+  - Brains report the exact model that answered (`ProviderEvent` `model`). It shows under each slot in Settings, in the reply's model label and in conversation notes.
+  - Testing from source: `GHOST_EXTRA_MODELS=gemini-4-carbon-high,…` pretends agy offers more. Tested on Aaron's PC with a pretend Carbon.
+  - The grab delay is a setting ("Hover before Ghost can be grabbed"), 0.6 s.
 - **Open:**
   - **Ghost staring at the blinking text cursor:** look at the input only while typing (a key in the last second or two) or just after clicking into it. Proposed; not yet confirmed.
   - **Terminal flash at login:** not seen in three restarts with a console-window watcher, so it's login-only. Proposed: a one-time logon watcher (needs Aaron's OK).
@@ -170,11 +175,17 @@ Work through it one item at a time, asking Aaron before design-level changes.
   - **Include Ghost in recordings:** a Settings switch. His voice is always recorded anyway, so this is about his picture.
   - **Ghost changes his own settings on request:** an Undo notice or a confirm card (Aaron to choose). Safety settings, the ElevenLabs key and the vault location are off-limits.
   - **Read-out-friendly replies** (persona).
-  - **Model self-check:** Settings shows the exact model per slot, and Ghost tells Aaron when a new family appears or a slot's model vanishes. Agreed; part of the brains work.
   - **Hide Ghost:** interview Aaron first about how it should work.
   - **Google Drive,** and later the phone and its gallery. Ask what Ghost should do with it. Simplest route: Drive for desktop as a safe folder.
   - **Ghost's conversational capabilities.**
   - **Ghost's ability to self-update, bug-fix and improve.**
+  - **Security items from the 1 Nov review (Aaron: do 1–6):**
+    1. Electron 38 is out of support (last patch March 2026; current is 45). Upgrade carefully, testing on Aaron's PC: remember the drawing freeze.
+    2. Keep the `claude` and `agy` CLIs updated. Ghost's `claude` was 2.1.283 against the latest 2.1.316, so new model aliases may lag.
+    3. Separate passwords for Ghost's windows (UI) and the MCP relay. The relay's token is on disk in the CLIs' configs, and could otherwise send `approval_response`.
+    4. `npm audit`: 9 production findings (MCP SDK, body-parser, follow-redirects, zod…). Fix the non-breaking ones; zod 4 later.
+    5. A catch-all for unexpected errors in the main process (log, and keep running).
+    6. Leftovers: the old Gemini CLI config in `data/workspace/.gemini` (with a stale token), and so on.
   - **A full security sweep,** keeping security practices up to date (for example, dependency checks on each update).
   - **Last:** clear redundant logs and test leftovers, keeping core memories and facts about Aaron (list it for his approval first).
 
