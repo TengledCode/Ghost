@@ -169,12 +169,13 @@ Work through it one item at a time, asking Aaron before design-level changes.
   - Testing from source: `GHOST_EXTRA_MODELS=gemini-4-carbon-high,…` pretends agy offers more. Tested on Aaron's PC with a pretend Carbon.
   - The grab delay is a setting ("Hover before Ghost can be grabbed"), 0.6 s.
 - **Open:**
-  - **Ghost staring at the blinking text cursor:** look at the input only while typing (a key in the last second or two) or just after clicking into it. Proposed; not yet confirmed.
-  - **Terminal flash at login:** not seen in three restarts with a console-window watcher, so it's login-only. Proposed: a one-time logon watcher (needs Aaron's OK).
-  - **Starting sooner after boot:** Run-key apps are delayed by Windows. Proposed: a Task Scheduler "at log on" task (needs Aaron's OK).
+  - **Next, approved by Aaron on 2 Nov (in this order):**
+    1. **Ghost staring at the blinking text cursor:** look at the input only while typing (a key in the last second or two) or just after clicking into it; otherwise follow the mouse.
+    2. **Starting sooner after boot:** Run-key apps are delayed by Windows. Replace the login item with a Task Scheduler "at log on" task.
+    3. **Ghost changes his own settings on request:** Aaron chose **an Undo notice** (change straight away, with Undo on the notice). Safety settings, the ElevenLabs key and the vault location are off-limits.
+  - **Viewing a screenshot (new, 2 Nov):** Aaron wants a way to see a screenshot once it's taken (open it, or show it in its folder), and would like Ghost to be part of showing it. Ask him exactly what before building.
   - **Include Ghost in recordings:** a Settings switch. His voice is always recorded anyway, so this is about his picture.
   - **Secondary brain follows the primary** (Claude ↔ Gemini) when the primary is changed in Settings: done.
-  - **Ghost changes his own settings on request:** an Undo notice or a confirm card (Aaron to choose). Safety settings, the ElevenLabs key and the vault location are off-limits.
   - **Read-out-friendly replies** (persona).
   - **Hide Ghost:** interview Aaron first about how it should work.
   - **Google Drive,** and later the phone and its gallery. Ask what Ghost should do with it. Simplest route: Drive for desktop as a safe folder.
@@ -188,8 +189,11 @@ Work through it one item at a time, asking Aaron before design-level changes.
     - (6) removed the old Gemini CLI config (`data/workspace/.gemini`) and the unused `data/ack-cache`.
     - Also: `claude` is started without `ANTHROPIC_*` / `CLAUDE_*` variables (`subscriptionEnv`), so it can only use the subscription login. A test copy started from inside the Claude app had inherited them ("signed out", then "API Usage Billing"). Aaron's real login had broken on 27 Oct (no expiry or refresh token) and he signed in again on 1 Nov.
     - **Start test copies with a clean environment:** no `ANTHROPIC_*` / `CLAUDE_*`, and a normal Windows `PATH` / `SystemRoot`. A Git-Bash environment made `Start-Process notepad` show the "Select an app" box.
-    - **Left: (1) the Electron upgrade, 38 → 45.** Plan: go straight to 45 and keep the current version to fall back on. Watch for click-through (44 rewrote mouse forwarding on Windows), `setContentProtection` (changed several times), and the drawing freeze. Test drawing, click-through, grabbing, capture exclusion, recording with sound, and fullscreen hiding.
-    - The terminal flash isn't reproduced. Starting `agy`, replies, tool calls and the update check all show no console window under a watcher. One "Windows Terminal" window was seen once and couldn't be attributed. Next step: the one-time login watcher (needs Aaron's OK).
+    - **(1) The Electron upgrade, 38 → 45:** committed **on Aaron's PC only** ("Electron 38 -> 45"), not pushed until it's fully tested.
+      - Changes: `clipboard.writeImage` → `ClipboardItem` (screenshots); the recorder's session also allows `display-capture`; `roundedCorners: false` on the overlay; npm `allowScripts` for the install scripts. `safeStorage`'s sync methods are deprecated (removed in 46): move to the async ones before 46.
+      - Passed on Aaron's PC (2 Nov): no freeze, drawing, click-through, grabbing (0.6 s and Alt), Settings, fullscreen hiding.
+      - **Still to test (Aaron, 3 Nov): "take a screenshot"** (Ghost absent; pastes into Paint) **and "record my screen"** with sound playing (REC tag, sound, length, Ghost absent). Then push.
+    - **The terminal flash: solved (2 Nov).** `agy` runs its own background updater (at most every 15 min), which starts `agy.exe --version` in a new console that Windows Terminal shows. Ghost now starts `agy` with `AGY_CLI_DISABLE_AUTO_UPDATE=true` (`'1'` doesn't work). Settings → Updates still runs `agy update`. Verified: no window at Ghost's start, and agy's log says auto-update is disabled.
   - **A full security sweep,** keeping security practices up to date (for example, dependency checks on each update).
   - **Last:** clear redundant logs and test leftovers, keeping core memories and facts about Aaron (list it for his approval first).
 
