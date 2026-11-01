@@ -64,6 +64,15 @@ describe('AntigravityProvider (Gemini on a Google AI Pro subscription)', () => {
     expect(launches()[1]).toMatch(/conversation=[0-9a-f-]{36}$/);
   });
 
+  it("doesn't send a message cancelled while agy is starting, so its reply can't land on the next one", async () => {
+    const { req } = setup();
+    const ctl = new AbortController();
+    const cancelled = collect(provider!.send(req('slow one', { signal: ctl.signal })));
+    ctl.abort(); // straight away: agy hasn't finished starting
+    expect(reply(await cancelled)).toBeUndefined();
+    expect(reply(await collect(provider!.send(req('next'))))).toBe('[gemini-3.8-flash-high] next');
+  });
+
   it('brings a new or lost conversation up to date with the recent history', async () => {
     const { req, state } = setup();
     const first = await collect(provider!.send(req('hello', { history: { lines: ['Aaron: earlier', 'Ghost: yes'], inSync: false } })));

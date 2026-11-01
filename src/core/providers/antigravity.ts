@@ -93,6 +93,9 @@ export class AntigravityProvider implements Provider {
       yield { type: 'error', message, kind: classifyError(message) };
       return;
     }
+    // Cancelled while agy was starting (Esc, or a new message): don't send it, or its late reply
+    // would be taken for the next message's.
+    if (req.signal.aborted) return;
 
     // Bring agy up to date when its conversation doesn't hold what's been said (new, or Claude answered meanwhile).
     const history = req.history && (this.fresh || !req.history.inSync) && req.history.lines.length
