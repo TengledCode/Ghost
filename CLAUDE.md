@@ -173,19 +173,23 @@ Work through it one item at a time, asking Aaron before design-level changes.
   - **Terminal flash at login:** not seen in three restarts with a console-window watcher, so it's login-only. Proposed: a one-time logon watcher (needs Aaron's OK).
   - **Starting sooner after boot:** Run-key apps are delayed by Windows. Proposed: a Task Scheduler "at log on" task (needs Aaron's OK).
   - **Include Ghost in recordings:** a Settings switch. His voice is always recorded anyway, so this is about his picture.
+  - **Secondary brain follows the primary** (Claude ↔ Gemini) when the primary is changed in Settings: done.
   - **Ghost changes his own settings on request:** an Undo notice or a confirm card (Aaron to choose). Safety settings, the ElevenLabs key and the vault location are off-limits.
   - **Read-out-friendly replies** (persona).
   - **Hide Ghost:** interview Aaron first about how it should work.
   - **Google Drive,** and later the phone and its gallery. Ask what Ghost should do with it. Simplest route: Drive for desktop as a safe folder.
   - **Ghost's conversational capabilities.**
   - **Ghost's ability to self-update, bug-fix and improve.**
-  - **Security items from the 1 Nov review (Aaron: do 1–6):**
-    1. Electron 38 is out of support (last patch March 2026; current is 45). Upgrade carefully, testing on Aaron's PC: remember the drawing freeze.
-    2. Keep the `claude` and `agy` CLIs updated. Ghost's `claude` was 2.1.283 against the latest 2.1.316, so new model aliases may lag.
-    3. Separate passwords for Ghost's windows (UI) and the MCP relay. The relay's token is on disk in the CLIs' configs, and could otherwise send `approval_response`.
-    4. `npm audit`: 9 production findings (MCP SDK, body-parser, follow-redirects, zod…). Fix the non-breaking ones; zod 4 later.
-    5. A catch-all for unexpected errors in the main process (log, and keep running).
-    6. Leftovers: the old Gemini CLI config in `data/workspace/.gemini` (with a stale token), and so on.
+  - **Security items from the 1 Nov review.** Done and tested on 1 Nov:
+    - (2) Settings → Updates keeps the `claude` and `agy` CLIs current: the check lists "Claude Code x → y"; Update stops the brains, runs `claude update` / `agy update` (failures non-fatal), then rebuilds, or just restarts when Ghost itself has nothing new;
+    - (3) separate tokens: `core.token` (UI, memory only) and `core.mcpToken` (the relay, in the CLIs' configs), so the relay can't answer confirm cards;
+    - (4) `npm audit`: 0 production vulnerabilities (fixes plus zod 4);
+    - (5) uncaught errors are logged, and Ghost keeps running;
+    - (6) removed the old Gemini CLI config (`data/workspace/.gemini`) and the unused `data/ack-cache`.
+    - Also: `claude` is started without `ANTHROPIC_*` / `CLAUDE_*` variables (`subscriptionEnv`), so it can only use the subscription login. A test copy started from inside the Claude app had inherited them ("signed out", then "API Usage Billing"). Aaron's real login had broken on 27 Oct (no expiry or refresh token) and he signed in again on 1 Nov.
+    - **Start test copies with a clean environment:** no `ANTHROPIC_*` / `CLAUDE_*`, and a normal Windows `PATH` / `SystemRoot`. A Git-Bash environment made `Start-Process notepad` show the "Select an app" box.
+    - **Left: (1) the Electron upgrade, 38 → 45.** Plan: go straight to 45 and keep the current version to fall back on. Watch for click-through (44 rewrote mouse forwarding on Windows), `setContentProtection` (changed several times), and the drawing freeze. Test drawing, click-through, grabbing, capture exclusion, recording with sound, and fullscreen hiding.
+    - The terminal flash isn't reproduced. Starting `agy`, replies, tool calls and the update check all show no console window under a watcher. One "Windows Terminal" window was seen once and couldn't be attributed. Next step: the one-time login watcher (needs Aaron's OK).
   - **A full security sweep,** keeping security practices up to date (for example, dependency checks on each update).
   - **Last:** clear redundant logs and test leftovers, keeping core memories and facts about Aaron (list it for his approval first).
 
