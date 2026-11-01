@@ -96,3 +96,55 @@ describe('Settings → Updates', () => {
     expect(explain('Installing packages', "'npm' is not recognized as an internal or external command,", 1)).toMatch(/isn't available/);
   });
 });
+
+describe("Settings → Updates: the brains' CLIs", () => {
+  // Real git for the Ghost folder; claude / npm / agy answered by a fake.
+  const fakeClis = (opts: { claude?: string; latest?: string; agyFails?: boolean } = {}) => {
+    const ran: string[] = [];
+    const run: Runner = async (cmd, args, cwd) => {
+      ran.push(`${cmd} ${args.join(' ')}`);
+      if (cmd === 'git') return runCommand(cmd, args, cwd);
+      if (cmd === 'claude' && args[0] === '--version') return { code: 0, out: `${opts.claude ?? '2.1.283'} (Claude Code)\n` };
+      if (cmd === 'npm' && args[0] === 'view') return { code: 0, out: `${opts.latest ?? '2.1.316'}\n` };
+      if (cmd === 'agy' && opts.agyFails) return { code: 1, out: 'agy: update server unreachable' };
+      if (args.includes('dist:win')) { mkdirSync(join(cwd, 'dist'), { recursive: true }); writeFileSync(join(cwd, 'dist', 'Ghost Setup 0.1.0.exe'), 'exe'); }
+      return { code: 0, out: 'ok' };
+    };
+    return { ran, run };
+  };
+
+  it('lists a newer Claude Code as an update', async () => {
+    const r = repos();
+    const { run } = fakeClis();
+    const clis = { stopBrains: () => {}, restart: () => {} };
+    const u = new Updater({ info: { sourceDir: r.src, branch: 'main', commit: r.commit }, version: '0.1.0', installable: true, logFile: join(r.root, 'log'), run, install: () => {}, clis });
+    expect(await u.check()).toMatchObject({ state: 'available', changes: ['Claude Code 2.1.283 → 2.1.316'] });
+    const same = new Updater({ info: { sourceDir: r.src, branch: 'main', commit: r.commit }, version: '0.1.0', installable: true, logFile: join(r.root, 'log'), run: fakeClis({ latest: '2.1.283' }).run, install: () => {}, clis });
+    expect((await same.check()).state).toBe('up-to-date');
+  });
+
+  it('updates the CLIs with the brains stopped, and just restarts when Ghost itself has nothing new', async () => {
+    const r = repos();
+    const { ran, run } = fakeClis({ agyFails: true }); // one CLI failing doesn't stop the rest
+    const events: string[] = [];
+    let installed = false;
+    const u = new Updater({ info: { sourceDir: r.src, branch: 'main', commit: r.commit }, version: '0.1.0', installable: true, logFile: join(r.root, 'log'), run,
+      install: () => { installed = true; }, clis: { stopBrains: () => events.push('brains stopped'), restart: () => events.push('restarted') } });
+    await u.update();
+    expect(events).toEqual(['brains stopped', 'restarted']);
+    expect(ran.filter(c => !c.startsWith('git'))).toEqual(['claude update', 'agy update']); // no rebuild
+    expect(installed).toBe(false);
+  });
+
+  it('updates the CLIs and then Ghost itself when there are new changes', async () => {
+    const r = repos();
+    r.push('New thing');
+    const { ran, run } = fakeClis();
+    let installed = '';
+    const u = new Updater({ info: { sourceDir: r.src, branch: 'main', commit: r.commit }, version: '0.1.0', installable: true, logFile: join(r.root, 'log'), run,
+      install: p => { installed = p; }, clis: { stopBrains: () => {}, restart: () => { throw new Error('should rebuild, not just restart'); } } });
+    await u.update();
+    expect(ran.filter(c => !c.startsWith('git log'))).toEqual(['claude update', 'agy update', 'git fetch --quiet origin main', 'git pull --ff-only origin main', 'npm install --no-audit --no-fund', 'npm run dist:win']);
+    expect(installed).toBe(join(r.src, 'dist', 'Ghost Setup 0.1.0.exe'));
+  });
+});

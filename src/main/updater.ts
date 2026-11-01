@@ -55,6 +55,15 @@ export interface UpdaterOptions {
   run?: Runner;
   /** Start the installer after Ghost quits (Windows), then quit. */
   install: (installer: string) => void;
+  /** Keep the brains' CLIs (claude, agy) up to date too: Ghost only gets new models through them. */
+  clis?: { stopBrains: () => void; restart: () => void };
+}
+
+/** "2.1.283" vs "2.1.316": whether `b` is newer. */
+export function newerVersion(a: string, b: string): boolean {
+  const pa = a.split('.').map(Number), pb = b.split('.').map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) if ((pb[i] ?? 0) !== (pa[i] ?? 0)) return (pb[i] ?? 0) > (pa[i] ?? 0);
+  return false;
 }
 
 export class Updater extends EventEmitter {
@@ -82,19 +91,50 @@ export class Updater extends EventEmitter {
     const log = await this.run('git', ['log', '--format=%s', `${info.commit}..origin/${info.branch}`], info.sourceDir);
     if (log.code !== 0) return this.set({ state: 'error', error: explain('Checking for updates', log.out), checkedAt: Date.now() });
     const changes = log.out.split('\n').map(l => l.trim()).filter(Boolean);
+    if (this.o.clis) changes.push(...await this.cliChanges(info.sourceDir));
     return this.set({ state: changes.length ? 'available' : 'up-to-date', changes, checkedAt: Date.now() });
+  }
+
+  /** "Claude Code 2.1.283 → 2.1.316" when the claude CLI is behind (agy can't say, so it's just updated with the rest). */
+  private async cliChanges(cwd: string): Promise<string[]> {
+    const version = (out: string) => out.match(/\d+\.\d+\.\d+/)?.[0] ?? '';
+    const [mine, latest] = await Promise.all([
+      this.run('claude', ['--version'], cwd).then(r => (r.code === 0 ? version(r.out) : '')),
+      this.run('npm', ['view', '@anthropic-ai/claude-code', 'version'], cwd).then(r => (r.code === 0 ? version(r.out) : '')),
+    ]);
+    return mine && latest && newerVersion(mine, latest) ? [`Claude Code ${mine} → ${latest}`] : [];
   }
 
   /** Pull, install packages, build the installer, then hand over to it. */
   async update(): Promise<UpdateStatus> {
     const info = this.o.info;
     if (!info || !this.o.installable || this.status.state === 'updating') return this.current;
+    this.log(`\n=== Update started ${new Date().toISOString()} (${info.branch} @ ${info.commit.slice(0, 7)})`);
+    if (this.o.clis) {
+      // The brains' CLIs first, with the brains stopped so their files aren't in use. A CLI that
+      // won't update is noted and the rest carries on: it keeps working on its current version.
+      this.o.clis.stopBrains();
+      for (const [label, cmd] of [['Updating Claude Code', 'claude'], ['Updating Antigravity', 'agy']] as const) {
+        this.set({ state: 'updating', step: label, progress: 0, error: undefined });
+        this.log(`--- ${label}: ${cmd} update`);
+        const r = await this.run(cmd, ['update'], info.sourceDir);
+        this.log(r.code === 0 ? r.out : `(not updated, carrying on) ${r.out}`);
+      }
+      // Nothing new for Ghost itself (fetched afresh): no need to rebuild, just restart on the updated CLIs.
+      const fetched = await this.run('git', ['fetch', '--quiet', 'origin', info.branch], info.sourceDir);
+      const pending = await this.run('git', ['log', '--format=%s', `${info.commit}..origin/${info.branch}`], info.sourceDir);
+      if (fetched.code === 0 && pending.code === 0 && !pending.out.trim()) {
+        this.set({ state: 'updating', step: 'Restarting Ghost', progress: 0.9 });
+        this.log('--- Restarting (no changes to Ghost itself)');
+        this.o.clis.restart();
+        return this.current;
+      }
+    }
     const steps: [string, string, string[]][] = [
       ['Downloading the changes', 'git', ['pull', '--ff-only', 'origin', info.branch]],
       ['Installing packages', 'npm', ['install', '--no-audit', '--no-fund']],
       ['Building the new version (about a minute)', 'npm', ['run', 'dist:win']],
     ];
-    this.log(`\n=== Update started ${new Date().toISOString()} (${info.branch} @ ${info.commit.slice(0, 7)})`);
     for (const [i, [label, cmd, args]] of steps.entries()) {
       this.set({ state: 'updating', step: label, progress: i / (steps.length + 1), error: undefined });
       this.log(`--- ${label}: ${cmd} ${args.join(' ')}`);

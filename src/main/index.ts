@@ -39,6 +39,11 @@ app.on('web-contents-created', (_e, contents) => {
 // closes: Ghost's window is still there but draws nothing. Ghost is tiny, so it simply keeps drawing.
 app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
 
+// A stray error somewhere (a watcher's timer, a failed promise) is logged and Ghost carries on,
+// instead of an error box popping up or Ghost quietly dying.
+process.on('uncaughtException', e => log('unexpected error', e instanceof Error ? e.stack ?? e.message : String(e)));
+process.on('unhandledRejection', e => log('unexpected error (promise)', e instanceof Error ? e.stack ?? e.message : String(e)));
+
 const resource = (...p: string[]) => (app.isPackaged ? join(process.resourcesPath, ...p) : join(app.getAppPath(), ...p));
 
 let tray: Tray | null = null;
@@ -230,6 +235,8 @@ app.whenReady().then(async () => {
       spawn(installer, ['/S', '--force-run'], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
       setTimeout(() => app.quit(), 300);
     },
+    // Also keep `claude` and `agy` current, so new models reach Ghost.
+    clis: { stopBrains: () => core.stopBrains(), restart: () => { app.relaunch(); app.quit(); } },
   });
   updater.on('status', status => { for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send('ghost:update', status); });
 
