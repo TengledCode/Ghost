@@ -19,6 +19,7 @@ function setup(opts: { hooks?: boolean } = {}) {
   if (opts.hooks === false) rmSync(join(paths.plugin, 'hooks.json'));
   process.env.FAKE_AGY_LOG = join(dir, 'launches.log');
   process.env.FAKE_AGY_STATE = join(dir, 'conversations');
+  process.env.FAKE_AGY_ENV_LOG = join(dir, 'env.log');
   provider = new AntigravityProvider({ dir: join(dir, 'agy'), command: FAKE });
   const req = (prompt: string, extra: Partial<SendRequest> = {}): SendRequest => ({
     prompt, model: 'flash', persona: '', personaFile: '', mcpConfigPath: '', workspace: dir, signal: new AbortController().signal, ...extra,
@@ -71,6 +72,15 @@ describe('AntigravityProvider (Gemini on a Google AI Pro subscription)', () => {
     ctl.abort(); // straight away: agy hasn't finished starting
     expect(reply(await cancelled)).toBeUndefined();
     expect(reply(await collect(provider!.send(req('next'))))).toBe('[gemini-3.8-flash-high] next');
+  });
+
+  it("keeps agy's own background updater off (it flashed a terminal), for chats and the model list", async () => {
+    const { req } = setup();
+    await collect(provider!.send(req('hello')));
+    await provider!.listModels();
+    const starts = readFileSync(process.env.FAKE_AGY_ENV_LOG!, 'utf8').trim().split('\n');
+    expect(starts.length).toBeGreaterThanOrEqual(2);
+    expect(starts.every(l => l.endsWith('autoupdate=off'))).toBe(true);
   });
 
   it('brings a new or lost conversation up to date with the recent history', async () => {

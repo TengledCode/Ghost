@@ -13,6 +13,8 @@ import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 
 const args = process.argv.slice(2);
+// Every start, with or without agy's own background updater (Ghost turns it off).
+if (process.env.FAKE_AGY_ENV_LOG) appendFileSync(process.env.FAKE_AGY_ENV_LOG, `${args[0] ?? ''} autoupdate=${process.env.AGY_CLI_DISABLE_AUTO_UPDATE === 'true' ? 'off' : 'on'}\n`);
 const arg = name => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : undefined; };
 if (args[0] === 'models') {
   console.log('Fetching available models...\nMODEL\tDESCRIPTION\ngemini-3.8-flash-high\tFast\ngemini-3.8-flash-low\tFaster\ngemini-3.8-pro-high\tDeep\ngemini-3.1-pro-high\tOlder\nclaude-opus-4-6-thinking\tAnthropic');

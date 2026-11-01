@@ -5,6 +5,11 @@ import { commandExists, runCli, spawnLive, type LiveCli } from './spawnCli';
 import type { ModelOption, Provider, ProviderEvent, SendRequest } from './types';
 import { classifyError } from './types';
 
+// agy otherwise runs its own background updater (at most every 15 min), which starts `agy --version`
+// in a visible console: the terminal that flashed up as Ghost started. Ghost updates agy itself
+// (Settings → Updates runs `agy update`), so its own updater stays off.
+const AGY_ENV = { AGY_CLI_DISABLE_AUTO_UPDATE: 'true' };
+
 // Ghost's Google brain: the Antigravity CLI (`agy`), signed in with Aaron's Google AI Pro account.
 // (Google retired Gemini CLI sign-in for personal accounts in June 2026.)
 //
@@ -173,7 +178,7 @@ export class AntigravityProvider implements Provider {
     const model = await this.resolveModel(req.model);
     const args = ['--output-format', 'stream-json', '--input-format', 'stream-json', '--print', ''];
     if (model) args.push('--model', model);
-    const proc = spawnLive(this.command, args, { cwd: this.paths.workspace });
+    const proc = spawnLive(this.command, args, { cwd: this.paths.workspace, env: AGY_ENV });
     const onAbort = () => proc.kill();
     req.signal.addEventListener('abort', onAbort, { once: true });
     try {
@@ -206,7 +211,7 @@ export class AntigravityProvider implements Provider {
     if (model) args.push('--model', model);
     const resume = this.conversationId;
     if (resume) args.push('--conversation', resume);
-    const proc = spawnLive(this.command, args, { cwd: this.paths.workspace });
+    const proc = spawnLive(this.command, args, { cwd: this.paths.workspace, env: AGY_ENV });
     this.proc = proc;
     this.model = model;
     let settle: (ok: boolean) => void = () => {};
@@ -261,7 +266,7 @@ export class AntigravityProvider implements Provider {
 
   private async catalog(): Promise<string[]> {
     try {
-      const run = runCli(this.command, ['models'], { stdin: '', cwd: this.paths.workspace, signal: AbortSignal.timeout(30_000) });
+      const run = runCli(this.command, ['models'], { stdin: '', cwd: this.paths.workspace, env: AGY_ENV, signal: AbortSignal.timeout(30_000) });
       let out = '';
       for await (const line of run.lines) out += `${line}\n`;
       await run.exit;
