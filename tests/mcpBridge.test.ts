@@ -27,7 +27,7 @@ describe.skipIf(!existsSync(bridge))('MCP bridge (built)', () => {
       settings: () => mergeSettings({ provider: 'mock', fallbackProvider: null }), port: 0,
     });
     await core.start();
-    const child = spawn(process.execPath, [bridge], { env: { ...process.env, GHOST_CORE_URL: core.url, GHOST_TOKEN: core.token }, stdio: ['pipe', 'pipe', 'inherit'] });
+    const child = spawn(process.execPath, [bridge], { env: { ...process.env, GHOST_CORE_URL: core.url, GHOST_TOKEN: core.mcpToken }, stdio: ['pipe', 'pipe', 'inherit'] });
     const replies = new Map<number, (v: any) => void>();
     createInterface({ input: child.stdout }).on('line', l => { const m = JSON.parse(l); replies.get(m.id)?.(m); });
     let n = 0;

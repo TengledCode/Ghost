@@ -94,10 +94,20 @@ describe('GhostCore', () => {
     ui.ws.close();
   });
 
+  it("keeps the tool relay's password from opening a window session (so it can never approve a card)", async () => {
+    const { core } = await setup();
+    const closed = (c: ReturnType<typeof client>) => new Promise<number>(r => c.ws.on('close', code => r(code)));
+    const relayAsUi = closed(client(core.url, core.mcpToken, 'ui'));
+    const uiAsRelay = closed(client(core.url, core.token, 'mcp'));
+    expect(await relayAsUi).toBe(4003);
+    expect(await uiAsRelay).toBe(4003);
+    expect(core.mcpToken).not.toBe(core.token);
+  });
+
   it('runs safe tools directly and gates risky ones behind approval', async () => {
     const { core, dir } = await setup();
     const ui = client(core.url, core.token, 'ui');
-    const mcp = client(core.url, core.token, 'mcp');
+    const mcp = client(core.url, core.mcpToken, 'mcp');
     await Promise.all([ui.ready, mcp.ready]);
     await ui.waitFor(m => m.type === 'welcome');
 
@@ -133,10 +143,10 @@ describe('GhostCore', () => {
   it('writes CLI config pointing the MCP bridge at this core', async () => {
     const { core, dir } = await setup();
     const cfg = JSON.parse(readFileSync(join(dir, 'ghost-mcp.json'), 'utf8'));
-    expect(cfg.mcpServers.ghost.env).toMatchObject({ GHOST_CORE_URL: core.url, GHOST_TOKEN: core.token, ELECTRON_RUN_AS_NODE: '1' });
+    expect(cfg.mcpServers.ghost.env).toMatchObject({ GHOST_CORE_URL: core.url, GHOST_TOKEN: core.mcpToken, ELECTRON_RUN_AS_NODE: '1' });
     // Antigravity gets the same server as a plugin, with its permission hooks and the persona.
     const plugin = join(dir, 'agy/root/.agents/plugins/ghost');
-    expect(JSON.parse(readFileSync(join(plugin, 'mcp_config.json'), 'utf8')).mcpServers.ghost.env).toMatchObject({ GHOST_CORE_URL: core.url, GHOST_TOKEN: core.token });
+    expect(JSON.parse(readFileSync(join(plugin, 'mcp_config.json'), 'utf8')).mcpServers.ghost.env).toMatchObject({ GHOST_CORE_URL: core.url, GHOST_TOKEN: core.mcpToken });
     const hooks = JSON.parse(readFileSync(join(plugin, 'hooks.json'), 'utf8'))['ghost-permissions'];
     expect(hooks.PreToolUse[0].hooks[0].command).toMatch(/[\\/]hook\.(cmd|sh)$/);
     expect(readFileSync(join(dir, 'agy/workspace/GEMINI.md'), 'utf8')).toContain('ghost_ghost');

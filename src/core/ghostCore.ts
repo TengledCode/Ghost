@@ -65,7 +65,10 @@ const SESSION_IDLE_MS = 2 * 3600_000; // start a fresh conversation after 2h of 
 const TOOL_LABEL: Record<string, string> = { WebSearch: 'Searching the web', WebFetch: 'Reading a page', google_web_search: 'Searching the web', web_fetch: 'Reading a page' };
 
 export class GhostCore {
+  /** Ghost's own windows (the UI). Never leaves Electron's memory; only it may answer confirm cards. */
   readonly token = randomBytes(24).toString('hex');
+  /** The tool relay the brains' CLIs launch. It sits in their config files on disk, so it can only call tools. */
+  readonly mcpToken = randomBytes(24).toString('hex');
   port = 0;
   private wss: WebSocketServer | null = null;
   private clients = new Set<Client>();
@@ -210,7 +213,8 @@ export class GhostCore {
     if (s.provider === 'gemini') (this.o.providers.gemini as { warm?: (r: object) => void } | undefined)?.warm?.({ model: modelFor('gemini', tier, s.brainModels) });
   }
 
-  private stopBrains(): void {
+  /** End the brains' CLI processes (they start again with the next message). */
+  stopBrains(): void {
     for (const p of Object.values(this.o.providers)) (p as { stop?: () => void } | undefined)?.stop?.();
   }
 
@@ -240,11 +244,11 @@ export class GhostCore {
     const server = {
       command: this.o.nodeExecPath,
       args: [this.o.mcpServerPath],
-      env: { ELECTRON_RUN_AS_NODE: '1', GHOST_CORE_URL: this.url, GHOST_TOKEN: this.token },
+      env: { ELECTRON_RUN_AS_NODE: '1', GHOST_CORE_URL: this.url, GHOST_TOKEN: this.mcpToken },
     };
     writeFileSync(this.mcpConfigPath, JSON.stringify({ mcpServers: { ghost: server } }, null, 2));
     // Antigravity: Ghost's tools and permission hooks as a plugin, and the persona as GEMINI.md.
-    writeAgyPlugin(this.agy, { nodeExecPath: this.o.nodeExecPath, mcpServerPath: this.o.mcpServerPath, env: { GHOST_CORE_URL: this.url, GHOST_TOKEN: this.token }, safeReadRoots: this.safeReadRoots() });
+    writeAgyPlugin(this.agy, { nodeExecPath: this.o.nodeExecPath, mcpServerPath: this.o.mcpServerPath, env: { GHOST_CORE_URL: this.url, GHOST_TOKEN: this.mcpToken }, safeReadRoots: this.safeReadRoots() });
     writeAgyPersona(this.agy, buildPersona(this.o.personaPath, s));
     // Claude Code: keep this folder free of project instructions.
     writeFileSync(join(this.workspace, 'README.txt'), 'Ghost working folder for the Claude CLI. Safe to leave empty.\n');
@@ -263,7 +267,9 @@ export class GhostCore {
       const msg = parseMessage<ClientMessage>(raw);
       if (!msg) return;
       if (!client.role) {
-        if (msg.type !== 'hello' || msg.token !== this.token || (msg.role !== 'ui' && msg.role !== 'mcp')) { ws.close(4003, 'bad token'); return; }
+        // Each role has its own password: the relay's can't open a UI session (and so can't approve anything).
+        const expected = msg.type === 'hello' ? (msg.role === 'ui' ? this.token : msg.role === 'mcp' ? this.mcpToken : null) : null;
+        if (msg.type !== 'hello' || !expected || msg.token !== expected) { ws.close(4003, 'bad token'); return; }
         client.role = msg.role;
         clearTimeout(authTimer);
         if (msg.role === 'ui') {
