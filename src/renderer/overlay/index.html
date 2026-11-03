@@ -23,6 +23,13 @@
       </div>
       <div id="bubble" class="panel interactive" hidden>
         <div class="bubble-text"></div>
+        <div class="bubble-file" hidden>
+          <button type="button" class="file-preview" title="Open"><img alt="" /></button>
+          <div class="file-actions">
+            <button type="button" data-how="open">Open</button>
+            <button type="button" data-how="folder">Show in folder</button>
+          </div>
+        </div>
         <div class="bubble-meta"><span class="meta-label"></span><span class="provider-chip" hidden></span><button class="history-toggle" type="button" title="Show transcript">Transcript</button></div>
       </div>
       <form id="input" class="panel interactive" hidden autocomplete="off">
@@ -49,6 +56,8 @@
       </div>
     </div>
   </div>
+  <!-- The light Ghost projects a screenshot with: from his eye to the picture in the bubble. -->
+  <svg id="projection" aria-hidden="true"><defs><linearGradient id="projection-fade" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="var(--edge)" stop-opacity=".75" /><stop offset="1" stop-color="var(--edge)" stop-opacity=".12" /></linearGradient></defs><polygon /></svg>
   <script type="module" src="./main.ts"></script>
 </body>
 </html>

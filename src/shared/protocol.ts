@@ -43,7 +43,8 @@ export type CoreMessage =
   | { type: 'state'; state: GhostState; detail?: string }
   | { type: 'text_delta'; turnId: string; text: string }
   // `silent`: no voice follows (e.g. "Recording your screen."), so the words show at once.
-  | { type: 'turn_end'; turnId: string; text: string; provider: string; model: string; silent?: boolean }
+  // `file`: a screenshot or recording the line is about; the bubble shows it with Open / Show in folder.
+  | { type: 'turn_end'; turnId: string; text: string; provider: string; model: string; silent?: boolean; file?: CaptureFile }
   // `display` is the reply text this audio speaks, revealed in step with it (empty `data` = nothing to say).
   | { type: 'audio'; turnId: string; seq: number; mime: string; data: string; engine: TtsEngineId; last: boolean; display?: string }
   | { type: 'approval_request'; id: string; tool: string; summary: string; args: Record<string, unknown> }
@@ -63,6 +64,8 @@ export type CoreMessage =
   | { type: 'timing'; turnId: string; firstTextMs?: number; firstAudioMs?: number };
 
 export type TtsEngineId = 'elevenlabs' | 'edge' | 'none';
+
+export interface CaptureFile { path: string; kind: 'screenshot' | 'recording' }
 
 export interface ObsidianStatusInfo {
   vaults: { path: string; name: string; open: boolean }[]; // vaults Obsidian knows about on this PC

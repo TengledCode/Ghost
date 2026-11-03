@@ -3,13 +3,13 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { WebSocketServer, WebSocket } from 'ws';
-import type { ClientMessage, ClientRole, CoreMessage, GhostState } from '../shared/protocol';
+import type { CaptureFile, ClientMessage, ClientRole, CoreMessage, GhostState } from '../shared/protocol';
 import { parseMessage } from '../shared/protocol';
 import type { ProviderId, Settings } from '../shared/settings';
 import { classify, describe } from './approvals/classify';
 import { pickGreeting } from './greeting';
 import { isPureCommand, parseScreenCommand } from './liveScreen';
-import { duration, parseCaptureCommand, type CaptureCommand } from './captureCommands';
+import { duration, folderName, parseCaptureCommand, when, type CaptureCommand } from './captureCommands';
 import { ConversationLog, type HistoryStore } from './memory/conversations';
 import { MemoryStore, type FactStore } from './memory/store';
 import { ObsidianConnection } from './obsidian/connection';
@@ -706,25 +706,32 @@ export class GhostCore {
     this.liveOffAt = undefined;
   }
 
-  /** A short line from Ghost itself (no model call): shown in the bubble and spoken (`speech` if the shown text has a path in it). */
-  /** Shows a line in the bubble and speaks it (or `speech` instead; '' keeps it silent). */
-  private say(text: string, speech = text): void {
+  /**
+   * A short line from Ghost itself (no model call): shown in the bubble and spoken (`speech` instead
+   * if given; '' keeps it silent). `file`: the screenshot or recording it's about, shown with it.
+   */
+  private say(text: string, speech = text, file?: CaptureFile): void {
     const turnId = `say-${randomUUID()}`;
     this.broadcast({ type: 'text_delta', turnId, text });
-    this.broadcast({ type: 'turn_end', turnId, text, provider: 'ghost', model: '', ...(speech ? {} : { silent: true }) });
+    this.broadcast({ type: 'turn_end', turnId, text, provider: 'ghost', model: '', ...(speech ? {} : { silent: true }), ...(file ? { file } : {}) });
     if (speech) void this.speakStandalone(turnId, speech, undefined, text);
   }
 
   // ---------------------------------------------------------------- screenshots and recording
 
-  /** "take a screenshot", "record my screen", "stop recording" (or the REC tag's stop button): done at once. */
+  /** "take a screenshot", "record my screen", "stop recording" (or the REC tag's stop button), "show my last screenshot": done at once. */
   private async captureCommand(cmd: Exclude<CaptureCommand, null>): Promise<void> {
     const capture = this.o.host.capture;
     if (!capture) return;
     try {
       if (cmd === 'screenshot') {
         const shot = await capture.screenshot();
-        this.say(`Screenshot saved and copied to the clipboard.\n${shot.path}`, 'Screenshot saved and copied to the clipboard.');
+        this.say(`Screenshot saved in ${folderName(shot.path)} and copied to the clipboard.`, 'Screenshot saved and copied to the clipboard.', { path: shot.path, kind: 'screenshot' });
+      } else if (cmd === 'last-screenshot' || cmd === 'last-recording') {
+        const kind = cmd === 'last-screenshot' ? 'screenshot' : 'recording';
+        const last = await capture.latest(kind);
+        if (!last) { this.say(kind === 'screenshot' ? "I haven't taken any screenshots yet." : "I haven't made any recordings yet."); return; }
+        this.say(`Previous ${kind} saved in ${folderName(last.path)} (${when(last.at)}).`, `Here's your previous ${kind}.`, { path: last.path, kind });
       } else if (cmd === 'record') {
         if (capture.recording().on) { this.say('Already recording your screen.'); return; }
         await capture.startRecording();
@@ -735,10 +742,11 @@ export class GhostCore {
         if (!state.on) { this.say("I'm not recording."); return; }
         const path = await capture.stopRecording();
         const took = duration(Date.now() - (state.startedAt ?? Date.now()));
-        this.say(`Recording saved (${took}).\n${path}`, 'Recording saved.');
+        this.say(`Recording saved in ${folderName(path)} (${took}).`, 'Recording saved.', { path, kind: 'recording' });
       }
     } catch (e) {
-      this.notify('error', `${cmd === 'screenshot' ? "Couldn't take the screenshot" : cmd === 'record' ? "Couldn't start recording" : "Couldn't save the recording"}: ${String((e as Error).message ?? e).slice(0, 200)}`);
+      const what = { screenshot: "Couldn't take the screenshot", record: "Couldn't start recording", stop: "Couldn't save the recording", 'last-screenshot': "Couldn't find your screenshots", 'last-recording': "Couldn't find your recordings" }[cmd];
+      this.notify('error', `${what}: ${String((e as Error).message ?? e).slice(0, 200)}`);
     }
   }
 

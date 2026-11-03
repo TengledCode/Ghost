@@ -32,6 +32,18 @@ const browserApi: GhostApi = {
   pickFolder: async title => window.prompt(`${title} (full path)`) || null,
   openObsidian: url => { location.href = url; },
   openCaptureFolder: () => {},
+  // The browser preview has no files: a test card stands in for the picture.
+  capturePreview: async () => {
+    const c = Object.assign(document.createElement('canvas'), { width: 640, height: 360 });
+    const g = c.getContext('2d')!;
+    const grad = g.createLinearGradient(0, 0, 640, 360);
+    grad.addColorStop(0, '#2b5876'); grad.addColorStop(1, '#4e4376');
+    g.fillStyle = grad; g.fillRect(0, 0, 640, 360);
+    g.fillStyle = '#f4f4f4'; g.fillRect(40, 40, 560, 40); g.fillRect(40, 110, 260, 200); g.fillRect(330, 110, 270, 90);
+    g.fillStyle = '#222'; g.font = 'bold 26px Segoe UI, sans-serif'; g.fillText('Test screenshot', 52, 70);
+    return c.toDataURL();
+  },
+  openCapture: (path, how) => console.info('[ghost] open capture', how, path),
   // The browser preview can't update itself.
   updateStatus: async () => ({ state: 'unavailable', version: 'preview', commit: '', changes: [], canInstall: false }),
   checkForUpdates: async () => ({ state: 'unavailable', version: 'preview', commit: '', changes: [], canInstall: false }),

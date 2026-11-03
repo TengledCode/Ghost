@@ -17,6 +17,7 @@ import { WindowEvents } from './windowEvents';
 import { FullscreenWatcher } from './fullscreenWatcher';
 import { OverlayWindow } from './overlayWindow';
 import { SettingsStore } from './settingsStore';
+import { isCaptureFile, latestCapture, RECORDING_TYPES, SCREENSHOT_TYPES } from './captureFiles';
 import { captureScreen, saveScreenshot } from './screenCapture';
 import { ScreenRecorder, type RecordingStatus } from './recorder';
 import { openSettingsWindow } from './settingsWindow';
@@ -103,6 +104,7 @@ app.whenReady().then(async () => {
         stopRecording: () => recorder.stop(),
         setRecordingMic: on => recorder.setMic(on),
         recording: () => recorder.current,
+        latest: async kind => (kind === 'screenshot' ? latestCapture(screenshotsDir, SCREENSHOT_TYPES) : latestCapture(recordingsDir, RECORDING_TYPES)),
       },
     },
     readableDirs: [screenshotsDir, recordingsDir],
@@ -158,6 +160,24 @@ app.whenReady().then(async () => {
     if (!dir) return;
     mkdirSync(dir, { recursive: true });
     void shell.openPath(dir);
+  });
+  // The bubble's screenshot / recording: its preview, Open and Show in folder. Only Ghost's own
+  // captures, whatever path the page sends.
+  const captureDirs = [screenshotsDir, recordingsDir];
+  ipcMain.handle('ghost:capture-preview', async (_e, path: unknown) => {
+    if (!isCaptureFile(path, captureDirs)) return null;
+    try {
+      // Windows' own thumbnail: works for videos too (a frame from the recording).
+      const img = await nativeImage.createThumbnailFromPath(path, { width: 640, height: 360 });
+      if (!img.isEmpty()) return img.toDataURL();
+    } catch { /* no thumbnail: a picture can still be scaled down here */ }
+    const img = nativeImage.createFromPath(path);
+    return img.isEmpty() ? null : img.resize({ width: 640, quality: 'good' }).toDataURL();
+  });
+  ipcMain.on('ghost:capture-open', (_e, path: unknown, how: unknown) => {
+    if (!isCaptureFile(path, captureDirs)) return;
+    if (how === 'folder') shell.showItemInFolder(path);
+    else void shell.openPath(path);
   });
   // Only Obsidian links (obsidian://…) from the Settings window.
   ipcMain.on('ghost:open-obsidian', (_e, url: string) => { if (/^obsidian:\/\//.test(url)) void shell.openExternal(url); });

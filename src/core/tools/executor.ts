@@ -26,6 +26,8 @@ export interface CaptureHost {
   stopRecording(): Promise<string>; // the saved file
   setRecordingMic(on: boolean): void;
   recording(): RecordingState;
+  /** The newest screenshot or recording Ghost saved, if any (`at`: when, in ms). */
+  latest(kind: 'screenshot' | 'recording'): Promise<{ path: string; at: number } | null>;
 }
 
 /** What a tool hands back to the model: text, and for read_file on a picture, the picture itself. */

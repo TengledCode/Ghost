@@ -1,9 +1,9 @@
-import { mkdtempSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import WebSocket from 'ws';
 import { afterEach, describe, expect, it } from 'vitest';
-import { duration, parseCaptureCommand } from '../src/core/captureCommands';
+import { duration, folderName, parseCaptureCommand, when } from '../src/core/captureCommands';
 import { GhostCore } from '../src/core/ghostCore';
 import { MockProvider } from '../src/core/providers/mock';
 import type { CaptureHost, RecordingState } from '../src/core/tools/executor';
@@ -11,6 +11,7 @@ import { TtsService } from '../src/core/tts/service';
 import type { TtsEngine } from '../src/core/tts/types';
 import type { CoreMessage } from '../src/shared/protocol';
 import { mergeSettings } from '../src/shared/settings';
+import { isCaptureFile, latestCapture, SCREENSHOT_TYPES } from '../src/main/captureFiles';
 
 describe('capture commands', () => {
   it('recognises screenshot, record and stop said plainly', () => {
@@ -21,8 +22,19 @@ describe('capture commands', () => {
     for (const t of ['stop recording', 'Stop the recording.', 'ok, stop recording now', 'end screen recording', 'save the recording'])
       expect(parseCaptureCommand(t), t).toBe('stop');
   });
+  it('recognises asking for the last screenshot or recording', () => {
+    for (const t of ['show me my last screenshot', 'previous screenshot', "where's my latest screenshot?", 'open the last screenshot please', 'show my previous screenshot again'])
+      expect(parseCaptureCommand(t), t).toBe('last-screenshot');
+    for (const t of ['show my last recording', 'previous screen recording', 'where did you save my last recording?'])
+      expect(parseCaptureCommand(t), t).toBe('last-recording');
+  });
+  it('names the folder and the time the way Aaron reads them', () => {
+    expect(folderName('C:\\Users\\Aaron\\Pictures\\Ghost\\Screenshot 1.png')).toBe('Pictures\\Ghost');
+    expect(when(new Date(2026, 10, 3, 21, 42).getTime())).toBe('3 Nov, 9:42 pm');
+    expect(when(new Date(2026, 10, 3, 0, 5).getTime())).toBe('3 Nov, 12:05 am');
+  });
   it('leaves real questions to the brain', () => {
-    for (const t of ['how do I take a screenshot on Windows?', 'record a reminder to call mum', 'what is screen recording', 'stop', 'take a screenshot and send it to Sam'])
+    for (const t of ['how do I take a screenshot on Windows?', 'record a reminder to call mum', 'what is screen recording', 'stop', 'take a screenshot and send it to Sam', 'what was in my last screenshot?', 'delete my last screenshot'])
       expect(parseCaptureCommand(t), t).toBeNull();
   });
   it('says how long a recording ran', () => {
@@ -45,6 +57,7 @@ function fakeCapture() {
     stopRecording: async () => { calls.push('stop'); state = { on: false, mic: false }; notify(state); return 'C:\\Users\\Aaron\\Videos\\Ghost\\Ghost recording.mp4'; },
     setRecordingMic: on => { calls.push(`mic:${on}`); state = { ...state, mic: false, micError: on ? 'No microphone found' : undefined }; notify(state); },
     recording: () => state,
+    latest: async kind => { calls.push(`latest:${kind}`); return kind === 'screenshot' ? { path: 'C:\\Users\\Aaron\\Pictures\\Ghost\\Screenshot 0.png', at: new Date(2026, 10, 3, 21, 42).getTime() } : null; },
   };
   return { host, calls, onChange: (f: (s: RecordingState) => void) => { notify = f; } };
 }
@@ -80,8 +93,25 @@ describe('screenshots and recording in the core', () => {
     await core.userMessage('take a screenshot');
     const line = await until(m => m.type === 'turn_end' && m.provider === 'ghost');
     expect(cap.calls).toEqual(['screenshot']);
-    expect((line as { text: string }).text).toMatch(/^Screenshot saved and copied to the clipboard\.\nC:\\Users\\Aaron\\Pictures\\Ghost/);
+    expect(line).toMatchObject({
+      text: 'Screenshot saved in Pictures\\Ghost and copied to the clipboard.',
+      file: { path: 'C:\\Users\\Aaron\\Pictures\\Ghost\\Screenshot 1.png', kind: 'screenshot' }, // shown with Open / Show in folder
+    });
     expect(core.log.lines()).toHaveLength(0); // a command, not a conversation
+  });
+
+  it('brings back the previous screenshot, and says when there is no recording yet', async () => {
+    const { core, until, inbox } = await setup();
+    await core.userMessage('show me my last screenshot');
+    expect(await until(m => m.type === 'turn_end')).toMatchObject({
+      text: 'Previous screenshot saved in Pictures\\Ghost (3 Nov, 9:42 pm).',
+      file: { path: 'C:\\Users\\Aaron\\Pictures\\Ghost\\Screenshot 0.png', kind: 'screenshot' },
+    });
+    inbox.length = 0;
+    await core.userMessage('previous recording');
+    const none = await until(m => m.type === 'turn_end');
+    expect(none).toMatchObject({ text: "I haven't made any recordings yet." });
+    expect((none as { file?: unknown }).file).toBeUndefined();
   });
 
   it('records, switches the mic from the REC tag, and stops with the length', async () => {
@@ -98,7 +128,8 @@ describe('screenshots and recording in the core', () => {
     ws.send(JSON.stringify({ type: 'recording_stop' }));
     await until(m => m.type === 'recording' && !m.on);
     const saved = await until(m => m.type === 'turn_end' && /Recording saved/.test((m as { text: string }).text));
-    expect((saved as { text: string }).text).toMatch(/^Recording saved \(1 min \d+ s\)\.\nC:\\.*Ghost recording\.mp4$/);
+    expect((saved as { text: string }).text).toMatch(/^Recording saved in Videos\\Ghost \(1 min \d+ s\)\.$/);
+    expect(saved).toMatchObject({ file: { path: 'C:\\Users\\Aaron\\Videos\\Ghost\\Ghost recording.mp4', kind: 'recording' } });
     await until(m => m.type === 'audio' && m.turnId === (saved as { turnId: string }).turnId); // spoken once it's stopped
     expect(cap.calls).toEqual(['start', 'mic:true', 'stop']);
     expect(inbox.filter(m => m.type === 'recording').length).toBeGreaterThanOrEqual(3);
@@ -108,5 +139,33 @@ describe('screenshots and recording in the core', () => {
     const { core, until } = await setup();
     await core.userMessage('stop recording');
     expect(((await until(m => m.type === 'turn_end')) as { text: string }).text).toBe("I'm not recording.");
+  });
+});
+
+describe('the files the bubble may open', () => {
+  const root = mkdtempSync(join(tmpdir(), 'ghost-files-'));
+  const pics = join(root, 'Pictures', 'Ghost');
+  const vids = join(root, 'Videos', 'Ghost');
+  mkdirSync(pics, { recursive: true });
+  mkdirSync(vids, { recursive: true });
+  const put = (path: string, at: number) => { writeFileSync(path, 'x'); utimesSync(path, at / 1000, at / 1000); return path; };
+
+  it("opens only Ghost's own screenshots and recordings", () => {
+    const shot = put(join(pics, 'Screenshot 1.png'), Date.now());
+    const video = put(join(vids, 'Ghost recording 1.mp4'), Date.now());
+    const script = put(join(pics, 'run.cmd'), Date.now());
+    const outside = put(join(root, 'elsewhere.png'), Date.now());
+    const dirs = [pics, vids];
+    expect(isCaptureFile(shot, dirs)).toBe(true);
+    expect(isCaptureFile(video, dirs)).toBe(true);
+    for (const bad of [script, outside, pics, join(pics, '..', '..', 'elsewhere.png'), join(pics, 'missing.png'), '', 42, null]) expect(isCaptureFile(bad, dirs), String(bad)).toBe(false);
+  });
+
+  it('finds the newest one of a kind', () => {
+    put(join(pics, 'Screenshot old.png'), Date.now() - 60_000);
+    const newest = put(join(pics, 'Screenshot new.png'), Date.now() + 60_000);
+    put(join(pics, 'notes.txt'), Date.now() + 120_000);
+    expect(latestCapture(pics, SCREENSHOT_TYPES)?.path).toBe(newest);
+    expect(latestCapture(join(root, 'nowhere'), SCREENSHOT_TYPES)).toBeNull();
   });
 });

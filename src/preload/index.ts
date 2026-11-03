@@ -31,6 +31,10 @@ const api = {
   pickFolder: (title: string): Promise<string | null> => ipcRenderer.invoke('ghost:pick-folder', title),
   openObsidian: (url: string) => ipcRenderer.send('ghost:open-obsidian', url),
   openCaptureFolder: (kind: 'screenshots' | 'recordings') => ipcRenderer.send('ghost:open-capture-folder', kind),
+  /** A screenshot's or recording's preview as a data URL (null if there's none). */
+  capturePreview: (path: string): Promise<string | null> => ipcRenderer.invoke('ghost:capture-preview', path),
+  /** Open a screenshot or recording, or show it in its folder. */
+  openCapture: (path: string, how: 'open' | 'folder') => ipcRenderer.send('ghost:capture-open', path, how),
   updateStatus: (): Promise<UpdateStatus> => ipcRenderer.invoke('ghost:update-status'),
   checkForUpdates: (): Promise<UpdateStatus> => ipcRenderer.invoke('ghost:update-check'),
   runUpdate: () => ipcRenderer.send('ghost:update-run'),

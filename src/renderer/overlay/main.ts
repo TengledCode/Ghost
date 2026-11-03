@@ -1,4 +1,4 @@
-import type { CoreMessage, GhostState } from '../../shared/protocol';
+import type { CaptureFile, CoreMessage, GhostState } from '../../shared/protocol';
 import { themeColors, type Orientation, type Settings } from '../../shared/settings';
 import { bridge, inElectron } from '../shared/bridge';
 import { CoreClient } from '../shared/coreClient';
@@ -94,6 +94,7 @@ const player = new VoicePlayer(settings.ghostFilter, settings.volume, settings.v
 const subtitles = new Subtitles(text => showBubble(text));
 player.onChunkStart = (turnId, seq, at, duration) => {
   subtitles.started(turnId, seq, at, duration);
+  if (pendingFile?.turnId === turnId) { const { file } = pendingFile; setTimeout(() => showFile(turnId, file), Math.max(0, at * 1000 - performance.now())); }
   if (sentAt && !standalone(turnId) && timing.heard === undefined) { timing.heard = at * 1000 - sentAt; renderMeta(); }
 };
 player.onFinished = turnId => { subtitles.revealAll(turnId); core.send({ type: 'playback_finished', turnId }); };
@@ -244,7 +245,7 @@ core.on((m: CoreMessage) => {
   switch (m.type) {
     case 'state': setState(m.state, m.detail); break;
     case 'text_delta':
-      if (m.turnId !== currentTurn) { currentTurn = m.turnId; replyText = ''; }
+      if (m.turnId !== currentTurn) { currentTurn = m.turnId; replyText = ''; if (shownFile || pendingFile) clearFile(); }
       replyText += m.text;
       // With voice on, the words appear as they're spoken (subtitles); otherwise straight away.
       if (!settings.voiceEnabled) showBubble(replyText);
@@ -255,8 +256,20 @@ core.on((m: CoreMessage) => {
       renderMeta();
       // Safety net: no voice came for this reply at all, so show the text. Generous, as the Edge voice
       // takes ~3 s to start; a sentence whose voice fails still arrives (silent) with its words.
-      if (m.silent) showBubble(m.text);
-      else if (settings.voiceEnabled && subtitles.activeTurn !== m.turnId) setTimeout(() => { if (subtitles.activeTurn !== m.turnId) showBubble(m.text); }, 8000);
+      if (m.silent || !settings.voiceEnabled) {
+        if (m.silent) showBubble(m.text);
+        if (m.file) showFile(m.turnId, m.file);
+      } else {
+        // The picture comes with the words, when the voice starts (see player.onChunkStart).
+        if (m.file) pendingFile = { turnId: m.turnId, file: m.file };
+        if (subtitles.activeTurn !== m.turnId) {
+          setTimeout(() => {
+            if (subtitles.activeTurn === m.turnId) return;
+            showBubble(m.text);
+            if (pendingFile?.turnId === m.turnId) showFile(m.turnId, pendingFile.file);
+          }, 8000);
+        }
+      }
       pushHistory({ who: 'ghost', text: m.text });
       renderHistory();
       if (thankedThisTurn) { shell?.express('happy'); thankedThisTurn = false; }
@@ -328,6 +341,75 @@ function showBubble(text: string): void {
   bubbleText.replaceChildren(renderMarkdownLite(text));
   bubbleText.scrollTop = bubbleText.scrollHeight;
   refreshInteractivity();
+}
+
+// A screenshot or recording Ghost talks about: he projects its preview into the bubble (a cone of
+// light from his eye, the picture scanning in), with Open and Show in folder beside it. It goes when
+// the bubble does, or when the next reply starts.
+const fileRow = $('#bubble .bubble-file');
+const filePreview = fileRow.querySelector('img')!;
+const projection = document.querySelector('#projection') as SVGSVGElement;
+let shownFile: { turnId: string; file: CaptureFile } | null = null;
+let pendingFile: { turnId: string; file: CaptureFile } | null = null; // waiting for its words to be spoken
+
+function showFile(turnId: string, file: CaptureFile): void {
+  if (shownFile?.turnId === turnId) return;
+  shownFile = { turnId, file };
+  pendingFile = null;
+  fileRow.dataset.kind = file.kind;
+  fileRow.classList.remove('projecting');
+  filePreview.removeAttribute('src');
+  fileRow.hidden = false;
+  refreshInteractivity();
+  void bridge.capturePreview(file.path).then(async url => {
+    if (shownFile?.file !== file) return;
+    if (url) { filePreview.src = url; await filePreview.decode().catch(() => {}); }
+    if (shownFile?.file === file && visible(fileRow)) project();
+  });
+}
+
+function clearFile(): void {
+  shownFile = pendingFile = null;
+  fileRow.hidden = true;
+  filePreview.removeAttribute('src');
+}
+
+function project(): void {
+  const target = fileRow.querySelector<HTMLElement>('.file-preview')!;
+  const s = boxOf(shellEl), b = boxOf(target);
+  const eye = { x: s.left + s.width / 2, y: s.top + s.height / 2 };
+  // The picture scans in from the side nearest Ghost.
+  fileRow.classList.toggle('from-below', eye.y > b.top + b.height / 2);
+  fileRow.classList.remove('projecting');
+  void fileRow.offsetWidth; // restart the animation
+  fileRow.classList.add('projecting');
+  const corners = [{ x: b.left, y: b.top }, { x: b.left + b.width, y: b.top }, { x: b.left + b.width, y: b.top + b.height }, { x: b.left, y: b.top + b.height }];
+  projection.querySelector('polygon')!.setAttribute('points', hull([eye, ...corners]).map(p => `${p.x},${p.y}`).join(' '));
+  const fade = projection.querySelector('linearGradient')!;
+  for (const [k, v] of Object.entries({ x1: eye.x, y1: eye.y, x2: b.left + b.width / 2, y2: b.top + b.height / 2 })) fade.setAttribute(k, String(v));
+  projection.classList.remove('on');
+  void projection.getBoundingClientRect();
+  projection.classList.add('on');
+  glanceAt(target);
+  shell?.express('perk');
+  setTimeout(() => fileRow.classList.remove('projecting'), 1600);
+}
+
+/** The convex outline around some points (the eye and the picture's corners): the cone of light. */
+function hull(points: { x: number; y: number }[]): { x: number; y: number }[] {
+  const p = [...points].sort((a, b) => a.x - b.x || a.y - b.y);
+  const cross = (o: typeof p[0], a: typeof p[0], b: typeof p[0]) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+  const half = (list: typeof p) => {
+    const out: typeof p = [];
+    for (const q of list) { while (out.length >= 2 && cross(out[out.length - 2], out[out.length - 1], q) <= 0) out.pop(); out.push(q); }
+    return out.slice(0, -1);
+  };
+  return [...half(p), ...half([...p].reverse())];
+}
+
+fileRow.querySelector('.file-preview')!.addEventListener('click', () => { if (shownFile) bridge.openCapture(shownFile.file.path, 'open'); });
+for (const b of fileRow.querySelectorAll<HTMLButtonElement>('.file-actions button')) {
+  b.addEventListener('click', () => { if (shownFile) bridge.openCapture(shownFile.file.path, b.dataset.how === 'folder' ? 'folder' : 'open'); });
 }
 
 function scheduleBubbleHide(): void {
