@@ -196,7 +196,7 @@ Work through it one item at a time, asking Aaron before design-level changes.
       - Aaron's point (3 Nov): the shortcuts are only a fast lane for plain phrases. Recording, screenshots and so on are Ghost's tools, which either brain can direct; anything a shortcut doesn't match goes to the brain.
       - Checked in the browser preview (`npm run preview:ui`, which now has pretend captures).
       - **Passed (Aaron, 3–4 Nov):** Update listed and installed the "(on this PC only)" commits; "Recording your screen." shows at once; the card, Open, Show in folder; a Windows screenshot, then "whats my last screenshot?" shows it; "can you pull up the screenshot from earlier" (Gemini): no card while thinking, the card and cone with the reply; "please record my current screen" (Gemini) stays silent, with no voice in the video.
-  - **Proposed, waiting for Aaron:** leave notes-only commits (only `.md` files) out of the update list and don't rebuild for them. Aaron was confused by "CLAUDE.md: Electron 45 done…" showing as an update.
+  - **Approved by Aaron (4 Nov), to build next:** notes-only commits (only `.md` files) aren't listed as updates and don't trigger a rebuild, **but a notice tells Aaron the notes changed**. He was confused by "CLAUDE.md: Electron 45 done…" showing as an update.
   - **Include Ghost in recordings:** a Settings switch. His voice is always recorded anyway, so this is about his picture.
   - **Secondary brain follows the primary** (Claude ↔ Gemini) when the primary is changed in Settings: done.
   - **Read-out-friendly replies** (persona).
