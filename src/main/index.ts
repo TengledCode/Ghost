@@ -38,6 +38,9 @@ app.on('web-contents-created', (_e, contents) => {
 // transparent always-on-top overlay that check can get stuck after a covering app (e.g. Photos)
 // closes: Ghost's window is still there but draws nothing. Ghost is tiny, so it simply keeps drawing.
 app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
+// Since Electron 45 the GPU's H.264 encoder gives recordings no picture at all (only the sound
+// track is written). The software encoder works. Only recording encodes video; drawing is untouched.
+app.commandLine.appendSwitch('disable-accelerated-video-encode');
 
 // A stray error somewhere (a watcher's timer, a failed promise) is logged and Ghost carries on,
 // instead of an error box popping up or Ghost quietly dying.
