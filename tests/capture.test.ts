@@ -208,11 +208,16 @@ describe('the files the bubble may open', () => {
     for (const bad of [script, outside, pics, join(pics, '..', '..', 'elsewhere.png'), join(pics, 'missing.png'), '', 42, null]) expect(isCaptureFile(bad, dirs), String(bad)).toBe(false);
   });
 
-  it('finds the newest one of a kind', () => {
+  it("finds the newest one of a kind, Ghost's or Windows'", () => {
+    const windows = join(root, 'Pictures', 'Screenshots');
+    mkdirSync(windows, { recursive: true });
     put(join(pics, 'Screenshot old.png'), Date.now() - 60_000);
-    const newest = put(join(pics, 'Screenshot new.png'), Date.now() + 60_000);
+    const ghosts = put(join(pics, 'Screenshot new.png'), Date.now() + 60_000);
     put(join(pics, 'notes.txt'), Date.now() + 120_000);
-    expect(latestCapture(pics, SCREENSHOT_TYPES)?.path).toBe(newest);
+    expect(latestCapture(pics, SCREENSHOT_TYPES)?.path).toBe(ghosts);
+    const snipped = put(join(windows, 'Screenshot 2026-11-03 231619.png'), Date.now() + 90_000);
+    expect(latestCapture([pics, windows], SCREENSHOT_TYPES)?.path).toBe(snipped);
+    expect(latestCapture([join(root, 'nowhere'), pics], SCREENSHOT_TYPES)?.path).toBe(ghosts);
     expect(latestCapture(join(root, 'nowhere'), SCREENSHOT_TYPES)).toBeNull();
   });
 });

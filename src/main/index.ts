@@ -62,6 +62,7 @@ app.whenReady().then(async () => {
   // Screenshots and recordings Aaron asks for land in his own Pictures and Videos folders.
   const screenshotsDir = join(app.getPath('pictures'), 'Ghost');
   const recordingsDir = join(app.getPath('videos'), 'Ghost');
+  const windowsShotsDir = join(app.getPath('pictures'), 'Screenshots'); // Win+PrtScn and Snipping Tool
   const hideGhost = (on: boolean) => overlay.hideFromCapture(on);
   const recorder = new ScreenRecorder({
     dir: () => recordingsDir,
@@ -104,11 +105,12 @@ app.whenReady().then(async () => {
         stopRecording: () => recorder.stop(),
         setRecordingMic: on => recorder.setMic(on),
         recording: () => recorder.current,
-        latest: async kind => (kind === 'screenshot' ? latestCapture(screenshotsDir, SCREENSHOT_TYPES) : latestCapture(recordingsDir, RECORDING_TYPES)),
+        // "My last screenshot": the newest one, Ghost's own or one Aaron took with Windows (Aaron, 3 Nov).
+        latest: async kind => (kind === 'screenshot' ? latestCapture([screenshotsDir, windowsShotsDir], SCREENSHOT_TYPES) : latestCapture(recordingsDir, RECORDING_TYPES)),
       },
     },
     // Plus Windows' own screenshots (Win+PrtScn, Snipping Tool), which Aaron may ask about too.
-    readableDirs: [screenshotsDir, recordingsDir, join(app.getPath('pictures'), 'Screenshots')],
+    readableDirs: [screenshotsDir, recordingsDir, windowsShotsDir],
     settings,
     // Snapshots land in the CLIs' working folder, where the model's file-reading tool can open them.
     captureScreen: () => captureScreen(join(app.getPath('userData'), 'data', 'workspace', 'screens'), hideGhost),
@@ -164,7 +166,7 @@ app.whenReady().then(async () => {
   });
   // The bubble's screenshot / recording: its preview, Open and Show in folder. Only Ghost's own
   // captures, whatever path the page sends.
-  const captureDirs = [screenshotsDir, recordingsDir];
+  const captureDirs = [screenshotsDir, recordingsDir, windowsShotsDir];
   ipcMain.handle('ghost:capture-preview', async (_e, path: unknown) => {
     if (!isCaptureFile(path, captureDirs)) return null;
     try {

@@ -35,7 +35,7 @@ export const TOOL_DEFS = {
   },
   stop_recording: { description: 'Stop the screen recording and save it. Returns the file path.', shape: {} },
   show_last_capture: {
-    description: "Show Aaron the newest screenshot or recording Ghost made (Pictures\\Ghost, Videos\\Ghost): your reply then carries its preview with Open and Show in folder buttons. Use it for \"my last screenshot\", \"the recording from earlier\" and the like. Windows' own Print Screen / Snipping Tool screenshots are a different folder (Pictures\\Screenshots): look there only when he means those.",
+    description: "Show Aaron his newest screenshot (Ghost's own in Pictures\\Ghost or one he took with Windows in Pictures\\Screenshots, whichever is newer) or Ghost's newest recording (Videos\\Ghost): your reply then carries its preview with Open and Show in folder buttons. Use it for \"my last screenshot\", \"the recording from earlier\" and the like.",
     shape: { kind: z.enum(['screenshot', 'recording']) },
   },
   read_file: {

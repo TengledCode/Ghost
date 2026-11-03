@@ -24,7 +24,7 @@ export function parseCaptureCommand(text: string): CaptureCommand {
   return null;
 }
 
-/** "Pictures\Ghost" for a file in C:\Users\Aaron\Pictures\Ghost: the folder as Aaron knows it. */
+/** "Pictures\Ghost" for a file in C:\Users\Aaron\Pictures\Ghost (or "Pictures\Screenshots"): the folder as Aaron knows it. */
 export function folderName(path: string): string {
   return path.split(/[\\/]/).slice(-3, -1).join('\\');
 }

@@ -495,6 +495,7 @@ form.addEventListener('submit', e => {
   core.send({ type: 'user_message', text });
   input.value = '';
   replyText = '';
+  clearFile(); // the last reply's screenshot card doesn't belong under the new "…"
   showBubble('…');
   sentAt = performance.now();
   timing = {};

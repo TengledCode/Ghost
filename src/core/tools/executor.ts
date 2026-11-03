@@ -27,7 +27,7 @@ export interface CaptureHost {
   stopRecording(): Promise<string>; // the saved file
   setRecordingMic(on: boolean): void;
   recording(): RecordingState;
-  /** The newest screenshot or recording Ghost saved, if any (`at`: when, in ms). */
+  /** The newest screenshot (Ghost's or Windows') or recording, if any (`at`: when, in ms). */
   latest(kind: 'screenshot' | 'recording'): Promise<{ path: string; at: number } | null>;
 }
 

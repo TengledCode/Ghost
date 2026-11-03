@@ -73,7 +73,7 @@ Logs: `%APPDATA%\Ghost\data\ghost.log` (app) and `%APPDATA%\Ghost\data\update.lo
   - running commands, writing, deleting and closing apps;
   - opening programs or scripts, and starting an app from a path;
   - writing to the vault;
-  - **reading files outside the safe folders** (Ghost's own folders, the vault, Desktop, Documents, Downloads, Pictures\Ghost, Videos\Ghost, and Pictures\Screenshots, which holds Windows' own screenshots; Aaron added that one on 3 Nov).
+  - **reading files outside the safe folders** (Ghost's own folders, the vault, Desktop, Documents, Downloads, Pictures\Ghost, Videos\Ghost, and Pictures\Screenshots, which holds Windows' own screenshots; Aaron added that one on 3 Nov). "My last screenshot" is the newest from Pictures\Ghost or Pictures\Screenshots (Aaron, 3 Nov).
 - **No file tools of the brains' own outside the safe folders:**
   - Claude's built-in tools are only WebSearch and WebFetch; files go through Ghost's `read_file` / `list_folder`.
   - Antigravity's own file tools are limited to the safe folders by the hook in `agyPlugin.ts`.
