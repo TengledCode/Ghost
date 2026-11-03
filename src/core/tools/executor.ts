@@ -7,6 +7,7 @@ import type { VaultTools } from '../obsidian/vaultTools';
 import type { ReminderScheduler } from '../reminders/scheduler';
 import type { ToolName } from './definitions';
 import { duration } from '../captureCommands';
+import type { CaptureFile } from '../../shared/protocol';
 
 /** Host hooks, injected so the executor can be tested without Electron. */
 export interface Host {
@@ -79,6 +80,16 @@ async function findStartMenuShortcut(name: string): Promise<string | null> {
 }
 
 export class ToolExecutor {
+  /** The screenshot or recording the last tool call made or found, for the reply's card (see takeCapture). */
+  private captured: CaptureFile | null = null;
+
+  /** Hands over (once) the capture the last tool call produced. */
+  takeCapture(): CaptureFile | null {
+    const c = this.captured;
+    this.captured = null;
+    return c;
+  }
+
   constructor(
     private readonly host: Host,
     private readonly memory: FactStore,
@@ -129,7 +140,16 @@ export class ToolExecutor {
       case 'take_screenshot': {
         if (!this.host.capture) return "Screenshots aren't available here.";
         const shot = await this.host.capture.screenshot();
-        return `Saved the screenshot to ${shot.path} and copied it to the clipboard.`;
+        this.captured = { path: shot.path, kind: 'screenshot' };
+        return `Saved the screenshot to ${shot.path} and copied it to the clipboard. Your reply shows it with Open and Show in folder buttons.`;
+      }
+      case 'show_last_capture': {
+        if (!this.host.capture) return "Screenshots and recordings aren't available here.";
+        const kind = a.kind === 'recording' ? 'recording' : 'screenshot';
+        const last = await this.host.capture.latest(kind);
+        if (!last) return `Ghost hasn't made any ${kind}s yet.`;
+        this.captured = { path: last.path, kind };
+        return `The newest ${kind} is ${last.path}, from ${new Date(last.at).toString()}. Your reply shows it with Open and Show in folder buttons, so just say briefly what it is and when.`;
       }
       case 'start_recording': {
         if (!this.host.capture) return "Screen recording isn't available here.";
@@ -141,7 +161,8 @@ export class ToolExecutor {
         if (!this.host.capture?.recording().on) return "Ghost isn't recording.";
         const started = this.host.capture.recording().startedAt ?? Date.now();
         const path = await this.host.capture.stopRecording();
-        return `Saved the recording (${duration(Date.now() - started)}) to ${path}.`;
+        this.captured = { path, kind: 'recording' };
+        return `Saved the recording (${duration(Date.now() - started)}) to ${path}. Your reply shows it with Open and Show in folder buttons.`;
       }
       case 'read_file': return this.readFile(String(a.path ?? ''));
       case 'list_folder': return this.listFolder(String(a.path ?? ''));

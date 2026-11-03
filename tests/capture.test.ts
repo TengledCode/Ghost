@@ -7,6 +7,7 @@ import { duration, folderName, parseCaptureCommand, when } from '../src/core/cap
 import { GhostCore } from '../src/core/ghostCore';
 import { MockProvider } from '../src/core/providers/mock';
 import type { CaptureHost, RecordingState } from '../src/core/tools/executor';
+import type { Provider, ProviderEvent } from '../src/core/providers/types';
 import { TtsService } from '../src/core/tts/service';
 import type { TtsEngine } from '../src/core/tts/types';
 import type { CoreMessage } from '../src/shared/protocol';
@@ -17,15 +18,17 @@ describe('capture commands', () => {
   it('recognises screenshot, record and stop said plainly', () => {
     for (const t of ['take a screenshot', 'Take a screenshot please', 'screenshot', 'ghost, grab a screenshot of my screen', 'can you take a screen shot?', 'screenshot my screen'])
       expect(parseCaptureCommand(t), t).toBe('screenshot');
-    for (const t of ['record my screen', 'start recording', 'Start recording my screen please', 'screen record', 'begin a screen recording', 'record the screen'])
+    for (const t of ['record my screen', 'start recording', 'Start recording my screen please', 'screen record', 'begin a screen recording', 'record the screen',
+      'please record my current screen', 'record my whole screen', 'start a recording of my screen'])
       expect(parseCaptureCommand(t), t).toBe('record');
     for (const t of ['stop recording', 'Stop the recording.', 'ok, stop recording now', 'end screen recording', 'save the recording'])
       expect(parseCaptureCommand(t), t).toBe('stop');
   });
   it('recognises asking for the last screenshot or recording', () => {
-    for (const t of ['show me my last screenshot', 'previous screenshot', "where's my latest screenshot?", 'open the last screenshot please', 'show my previous screenshot again'])
+    for (const t of ['show me my last screenshot', 'previous screenshot', "where's my latest screenshot?", 'open the last screenshot please', 'show my previous screenshot again',
+      'whats my last screenshot?', "what's the previous screenshot", 'show me the screenshot I just took', 'the last screenshot you took'])
       expect(parseCaptureCommand(t), t).toBe('last-screenshot');
-    for (const t of ['show my last recording', 'previous screen recording', 'where did you save my last recording?'])
+    for (const t of ['show my last recording', 'previous screen recording', 'where did you save my last recording?', 'whats my latest recording'])
       expect(parseCaptureCommand(t), t).toBe('last-recording');
   });
   it('names the folder and the time the way Aaron reads them', () => {
@@ -34,7 +37,7 @@ describe('capture commands', () => {
     expect(when(new Date(2026, 10, 3, 0, 5).getTime())).toBe('3 Nov, 12:05 am');
   });
   it('leaves real questions to the brain', () => {
-    for (const t of ['how do I take a screenshot on Windows?', 'record a reminder to call mum', 'what is screen recording', 'stop', 'take a screenshot and send it to Sam', 'what was in my last screenshot?', 'delete my last screenshot'])
+    for (const t of ['how do I take a screenshot on Windows?', 'record a reminder to call mum', 'what is screen recording', 'stop', 'take a screenshot and send it to Sam', 'what was in my last screenshot?', 'delete my last screenshot', 'record my current screen and the webcam'])
       expect(parseCaptureCommand(t), t).toBeNull();
   });
   it('says how long a recording ran', () => {
@@ -62,11 +65,33 @@ function fakeCapture() {
   return { host, calls, onChange: (f: (s: RecordingState) => void) => { notify = f; } };
 }
 
-async function setup(voiceEnabled = false) {
+/** A brain that, like Gemini on "please record my current screen", uses one of Ghost's tools through the relay, then answers. */
+class ToolBrain implements Provider {
+  readonly id = 'claude' as const;
+  relay: { url: string; token: string } | null = null;
+  constructor(private readonly tool: string, private readonly args: Record<string, unknown> = {}) {}
+  async isAvailable(): Promise<boolean> { return true; }
+  async *send(): AsyncIterable<ProviderEvent> {
+    yield { type: 'tool_start', name: `mcp__ghost__${this.tool}` };
+    const ws = new WebSocket(this.relay!.url);
+    await new Promise(r => ws.on('open', r));
+    ws.send(JSON.stringify({ type: 'hello', token: this.relay!.token, role: 'mcp' }));
+    const result = new Promise(r => ws.on('message', raw => { const m = JSON.parse(String(raw)); if (m.type === 'tool_result') r(m); }));
+    ws.send(JSON.stringify({ type: 'tool_call', id: 'b1', tool: this.tool, args: this.args }));
+    await result;
+    ws.close();
+    yield { type: 'tool_end', name: `mcp__ghost__${this.tool}` };
+    const text = 'Done. Let me know when you want me to stop.';
+    yield { type: 'text_delta', text };
+    yield { type: 'done', text };
+  }
+}
+
+async function setup(voiceEnabled = false, brain?: ToolBrain) {
   const cap = fakeCapture();
   core = new GhostCore({
     dataDir: mkdtempSync(join(tmpdir(), 'ghost-cap-')), personaPath: join(__dirname, '../config/persona.md'),
-    mcpServerPath: '/out/main/mcpServer.js', nodeExecPath: process.execPath, providers: { claude: new MockProvider() as never },
+    mcpServerPath: '/out/main/mcpServer.js', nodeExecPath: process.execPath, providers: { claude: (brain ?? new MockProvider()) as never },
     tts: new TtsService(fakeTts, fakeTts),
     host: { openExternal: async () => {}, openPath: async () => '', trash: async () => {}, capture: cap.host },
     settings: () => mergeSettings({ provider: 'claude', fallbackProvider: null, voiceEnabled }), port: 0,
@@ -74,6 +99,7 @@ async function setup(voiceEnabled = false) {
   const c = core;
   cap.onChange(s => c.recordingChanged(s));
   await core.start();
+  if (brain) brain.relay = { url: core.url, token: core.mcpToken };
   const ws = new WebSocket(core.url);
   const inbox: CoreMessage[] = [];
   ws.on('message', raw => inbox.push(JSON.parse(String(raw))));
@@ -133,6 +159,27 @@ describe('screenshots and recording in the core', () => {
     await until(m => m.type === 'audio' && m.turnId === (saved as { turnId: string }).turnId); // spoken once it's stopped
     expect(cap.calls).toEqual(['start', 'mic:true', 'stop']);
     expect(inbox.filter(m => m.type === 'recording').length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("keeps a brain's reply quiet once it has started a recording (it would be in the video)", async () => {
+    const { core, inbox, until } = await setup(true, new ToolBrain('start_recording'));
+    await core.userMessage('could you capture what I am doing on screen');
+    const end = await until(m => m.type === 'turn_end' && m.provider === 'claude');
+    expect(end).toMatchObject({ silent: true, text: 'Done. Let me know when you want me to stop.' });
+    await new Promise(r => setTimeout(r, 150));
+    expect(inbox.some(m => m.type === 'audio' && m.turnId === (end as { turnId: string }).turnId && m.data)).toBe(false);
+  });
+
+  it("shows a brain's screenshot, and the last one it looked up, with the card", async () => {
+    const { core, until } = await setup(false, new ToolBrain('take_screenshot'));
+    await core.userMessage('grab the screen for me and keep it');
+    expect(await until(m => m.type === 'turn_end' && m.provider === 'claude')).toMatchObject({ file: { path: 'C:\\Users\\Aaron\\Pictures\\Ghost\\Screenshot 1.png', kind: 'screenshot' } });
+    core.stop();
+    const again = await setup(false, new ToolBrain('show_last_capture', { kind: 'screenshot' }));
+    await again.core.userMessage('the screenshot from earlier, where is it');
+    const end = await again.until(m => m.type === 'turn_end' && m.provider === 'claude');
+    expect(end).toMatchObject({ file: { path: 'C:\\Users\\Aaron\\Pictures\\Ghost\\Screenshot 0.png', kind: 'screenshot' } });
+    expect((end as { silent?: boolean }).silent).toBeUndefined();
   });
 
   it("says so instead of failing when there's nothing to stop", async () => {

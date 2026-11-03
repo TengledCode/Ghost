@@ -6,7 +6,7 @@
 const QUICK_TOOLS = new Set([
   'open_app', 'open_path_or_url', 'focus_window', 'close_app', 'list_windows',
   'set_reminder', 'list_reminders', 'cancel_reminder', 'remember', 'forget', 'get_datetime',
-  'take_screenshot', 'start_recording', 'stop_recording',
+  'take_screenshot', 'start_recording', 'stop_recording', 'show_last_capture',
 ]);
 
 const SMALL_TALK = /^(hi|hey|hello|yo|thanks|thank you|cheers|ok|okay|cool|great|nice|good (morning|afternoon|evening|night)|bye|goodnight)\b[\s!.,]*(ghost)?[\s!.,]*$/i;
@@ -33,6 +33,7 @@ export function actionLabel(tool: string, args: Record<string, unknown>): string
     case 'take_screenshot': return 'took a screenshot';
     case 'start_recording': return 'started a screen recording';
     case 'stop_recording': return 'saved a screen recording';
+    case 'show_last_capture': return `showed the last ${a('kind') || 'screenshot'}`;
     case 'remember': return `noted "${a('fact')}"`;
     case 'forget': return `forgot "${a('match')}"`;
     case 'run_command': return `ran \`${a('command').slice(0, 60)}\``;

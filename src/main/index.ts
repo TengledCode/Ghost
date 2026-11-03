@@ -107,7 +107,8 @@ app.whenReady().then(async () => {
         latest: async kind => (kind === 'screenshot' ? latestCapture(screenshotsDir, SCREENSHOT_TYPES) : latestCapture(recordingsDir, RECORDING_TYPES)),
       },
     },
-    readableDirs: [screenshotsDir, recordingsDir],
+    // Plus Windows' own screenshots (Win+PrtScn, Snipping Tool), which Aaron may ask about too.
+    readableDirs: [screenshotsDir, recordingsDir, join(app.getPath('pictures'), 'Screenshots')],
     settings,
     // Snapshots land in the CLIs' working folder, where the model's file-reading tool can open them.
     captureScreen: () => captureScreen(join(app.getPath('userData'), 'data', 'workspace', 'screens'), hideGhost),

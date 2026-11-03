@@ -34,8 +34,12 @@ export const TOOL_DEFS = {
     shape: {},
   },
   stop_recording: { description: 'Stop the screen recording and save it. Returns the file path.', shape: {} },
+  show_last_capture: {
+    description: "Show Aaron the newest screenshot or recording Ghost made (Pictures\\Ghost, Videos\\Ghost): your reply then carries its preview with Open and Show in folder buttons. Use it for \"my last screenshot\", \"the recording from earlier\" and the like. Windows' own Print Screen / Snipping Tool screenshots are a different folder (Pictures\\Screenshots): look there only when he means those.",
+    shape: { kind: z.enum(['screenshot', 'recording']) },
+  },
   read_file: {
-    description: "Read a text file, or look at an image (screenshots, photos). Ghost's own folders, the Obsidian vault, Desktop, Documents and Downloads open straight away; anywhere else Aaron confirms first.",
+    description: "Read a text file, or look at an image (screenshots, photos). Ghost's own folders, the Obsidian vault, Desktop, Documents, Downloads and Pictures\\Screenshots open straight away; anywhere else Aaron confirms first.",
     shape: { path: z.string().describe('Absolute path') },
   },
   list_folder: {

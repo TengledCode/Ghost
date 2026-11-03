@@ -58,6 +58,8 @@ interface Turn {
   id: string; abort: AbortController; spoken: number; audioSent: number; audioDone: boolean; textDone: boolean;
   startedAt: number; firstText?: number; firstAudio?: number;
   tools: string[]; actions: string[]; // tools the brain used, and what Ghost did on the PC
+  quiet?: boolean; // a recording started during this turn: the rest of the reply is shown, not spoken (it would be in the video)
+  file?: CaptureFile; // a screenshot or recording the reply is about, shown with it
 }
 
 const PRIMARY_RETRY_MS = 15 * 60_000; // while fallen back, try the primary again at most this often
@@ -506,7 +508,10 @@ export class GhostCore {
         const command = isCommandTurn(message, turn.tools, turn.actions, reply);
         this.log.append('user', message, { command });
         this.log.append('assistant', reply, { provider: pid, model: exact || model || 'default', command, actions: turn.actions, screen: screenNote.screen });
-        this.broadcast({ type: 'turn_end', turnId: turn.id, text: reply, provider: pid, model: exact || model || 'default' });
+        this.broadcast({
+          type: 'turn_end', turnId: turn.id, text: reply, provider: pid, model: exact || model || 'default',
+          ...(turn.quiet ? { silent: true } : {}), ...(turn.file ? { file: turn.file } : {}),
+        });
         turn.textDone = true;
         this.markText(turn);
         this.maybeFinish(turn);
@@ -555,7 +560,7 @@ export class GhostCore {
    */
   private queueSpeech(turn: Turn, seg: Segment): void {
     const s = this.o.settings();
-    if (!s.voiceEnabled) return;
+    if (!s.voiceEnabled || turn.quiet) return;
     const seq = turn.spoken++;
     const display = seg.display;
     const synth = !seg.speech ? Promise.resolve(null) : this.o.tts
@@ -613,6 +618,12 @@ export class GhostCore {
     this.setState('searching', prettyTool(tool));
     try {
       const result = await this.executor.run(tool as ToolName, args);
+      // Before the reply goes back to the brain, so its answer is already quiet / carries the card.
+      const file = this.executor.takeCapture();
+      if (this.turn) {
+        if (tool === 'start_recording' && this.o.host.capture?.recording().on) this.turn.quiet = true;
+        if (file) this.turn.file = file;
+      }
       if (typeof result === 'string') reply(true, result); else reply(true, result.text, result.image);
       const label = actionLabel(tool, args);
       if (label && this.turn) this.turn.actions.push(label);
@@ -829,6 +840,7 @@ function prettyTool(name: string): string {
     set_reminder: 'Setting a reminder', list_reminders: 'Checking reminders', cancel_reminder: 'Cancelling a reminder',
     remember: 'Committing to memory', recall: 'Recalling', forget: 'Forgetting', get_datetime: 'Checking the time',
     read_file: 'Reading a file', list_folder: 'Looking in a folder',
+    take_screenshot: 'Taking a screenshot', start_recording: 'Starting to record', stop_recording: 'Saving the recording', show_last_capture: 'Finding it',
     Read: 'Reading a file', Glob: 'Looking for files', Grep: 'Searching files',
   };
   return map[bare] ?? (CLAUDE_BUILTIN_TOOLS.includes(bare) ? bare : 'Working');
