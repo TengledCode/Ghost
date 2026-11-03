@@ -48,19 +48,33 @@ describe("Antigravity's own file tools", () => {
     expect(deny({ DirectoryPath: '\\\\server\\share' }, 'list_dir').decision).toBe('deny');
     expect(deny({ SearchDirectory: 'C:\\' }, 'find_by_name').reason).toMatch(/read_file/);
   });
+  it("may read the current conversation's own results folder, but no other conversation's", () => {
+    const brain = 'C:/Users/Aaron/.gemini/antigravity-cli/brain';
+    const own = `${brain}/70a80928-e508-4c70-9554-7a8142ddd08a`;
+    const read = (path: string, ownDir: unknown = own) => agyHookDecision({ name: 'view_file', args: { AbsolutePath: path } }, roots, ownDir).decision;
+    expect(read(`${own}/.system_generated/steps/8/output.txt`)).toBe('allow');
+    expect(read(`${own.replace(/\//g, '\\')}\\.system_generated\\steps\\8\\output.txt`)).toBe('allow');
+    expect(read(`${brain}/e2b9f36a-accf-410a-ae9c-75d82397a536/.system_generated/steps/8/output.txt`)).toBe('deny'); // an older conversation
+    expect(read(`${own}/../e2b9f36a-accf-410a-ae9c-75d82397a536/x.txt`)).toBe('deny');
+    // Only a real conversation folder counts, whatever else the payload says.
+    expect(read('C:/Users/Aaron/.ssh/id', 'C:/Users/Aaron/.ssh')).toBe('deny');
+    expect(read(`${brain}/x.txt`, brain)).toBe('deny');
+  });
   it('works as the real hook script agy runs', () => {
     // This platform's hook, run the way agy runs it: hook.cmd through cmd on Windows, hook.sh elsewhere.
     const win = process.platform === 'win32';
     const home = win ? 'C:\\Users\\Aaron' : '/home/aaron';
     const paths = agyPaths(tmp('ghost-hook-'));
     writeAgyPlugin(paths, { nodeExecPath: process.execPath, mcpServerPath: 'x.js', env: {}, safeReadRoots: [join(home, 'Documents')] });
+    const own = join(home, '.gemini', 'antigravity-cli', 'brain', '70a80928-e508-4c70-9554-7a8142ddd08a');
     const run = (toolCall: object) => {
-      const input = JSON.stringify({ toolCall });
+      const input = JSON.stringify({ toolCall, artifactDirectoryPath: own.replace(/\\/g, '/') }); // as agy sends it
       const out = win ? execSync(`"${join(paths.plugin, 'hook.cmd')}"`, { input, windowsHide: true }) : execFileSync(join(paths.plugin, 'hook.sh'), { input });
       return JSON.parse(out.toString());
     };
     expect(run({ name: 'view_file', args: { AbsolutePath: join(home, 'Documents', 'a.md') } }).decision).toBe('allow');
     expect(run({ name: 'view_file', args: { AbsolutePath: join(home, '.ssh', 'id') } }).decision).toBe('deny');
+    expect(run({ name: 'view_file', args: { AbsolutePath: join(own, '.system_generated', 'steps', '8', 'output.txt') } }).decision).toBe('allow');
     expect(run({ name: 'run_command', args: { CommandLine: 'whoami' } }).decision).toBe('deny');
     expect(run({ name: 'call_mcp_tool', args: { ServerName: 'ghost_ghost' } }).decision).toBe('allow');
   });

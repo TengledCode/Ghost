@@ -32,16 +32,20 @@ export function agyPaths(dir: string): AgyPaths {
  * outside names. agy's own file tools may only look inside `safeRoots` (Ghost's folders, the vault,
  * Desktop, Documents, Downloads); anywhere else the model must use Ghost's read_file, which asks Aaron.
  */
-export function agyHookDecision(call: { name?: unknown; args?: Record<string, unknown> }, safeRoots: string[] = []): { decision: 'allow' | 'deny'; reason?: string } {
+export function agyHookDecision(call: { name?: unknown; args?: Record<string, unknown> }, safeRoots: string[] = [], ownDir?: unknown): { decision: 'allow' | 'deny'; reason?: string } {
   const allowed = ['view_file', 'list_dir', 'grep_search', 'find_by_name', 'read_resource', 'list_resources', 'search_web', 'read_url_content', 'finish', 'wait', 'wait_5_seconds'];
   const fileTools = ['view_file', 'list_dir', 'grep_search', 'find_by_name'];
   const name = String(call.name ?? '');
   const args = call.args ?? {};
   const server = String(args.ServerName ?? '');
   if (fileTools.includes(name)) {
+    // agy keeps long tool results in the current conversation's own folder (…/antigravity-cli/brain/<id>,
+    // given to the hook as artifactDirectoryPath) and reads them back: that folder only, never older
+    // conversations' ones.
+    const own = typeof ownDir === 'string' && /[\\/]antigravity-cli[\\/]brain[\\/][0-9a-f-]{36}[\\/]?$/i.test(ownDir) ? [ownDir] : [];
     // Paths compared with forward slashes, drive paths in lower case. (No named helper functions in
     // here: the bundler would wrap them in a helper that doesn't exist once this is copied to hook.js.)
-    const roots = safeRoots.map(r => r.replace(/\\/g, '/').replace(/\/+$/, '')).map(r => (/^[a-zA-Z]:/.test(r) ? r.toLowerCase() : r));
+    const roots = [...safeRoots, ...own].map(r => r.replace(/\\/g, '/').replace(/\/+$/, '')).map(r => (/^[a-zA-Z]:/.test(r) ? r.toLowerCase() : r));
     const values = Object.values(args).flatMap(v => (Array.isArray(v) ? v : [v])).filter((v): v is string => typeof v === 'string');
     for (const v of values) {
       const slashed = v.trim().replace(/\\/g, '/').replace(/\/+$/, '');
@@ -91,7 +95,7 @@ process.stdin.on('data', c => (input += c));
 process.stdin.on('end', () => {
   let payload = {};
   try { payload = JSON.parse(input); } catch {}
-  process.stdout.write(JSON.stringify(decide(payload.toolCall || {}, SAFE_ROOTS)));
+  process.stdout.write(JSON.stringify(decide(payload.toolCall || {}, SAFE_ROOTS, payload.artifactDirectoryPath)));
 });
 `);
   file('preinvoke.js', `// Proves to Ghost that its hooks are loaded (generated).

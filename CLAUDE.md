@@ -73,10 +73,11 @@ Logs: `%APPDATA%\Ghost\data\ghost.log` (app) and `%APPDATA%\Ghost\data\update.lo
   - running commands, writing, deleting and closing apps;
   - opening programs or scripts, and starting an app from a path;
   - writing to the vault;
-  - **reading files outside the safe folders** (Ghost's own folders, the vault, Desktop, Documents, Downloads, Pictures\Ghost, Videos\Ghost).
+  - **reading files outside the safe folders** (Ghost's own folders, the vault, Desktop, Documents, Downloads, Pictures\Ghost, Videos\Ghost, and Pictures\Screenshots, which holds Windows' own screenshots; Aaron added that one on 3 Nov).
 - **No file tools of the brains' own outside the safe folders:**
   - Claude's built-in tools are only WebSearch and WebFetch; files go through Ghost's `read_file` / `list_folder`.
   - Antigravity's own file tools are limited to the safe folders by the hook in `agyPlugin.ts`.
+    - They may also read the **current** conversation's own results folder: the hook payload's `artifactDirectoryPath`, `…\.gemini\antigravity-cli\brain\<id>`, where agy saves long tool output and reads it back. Older conversations' folders still need a card. Aaron OK'd this on 3 Nov ("so long as there's no major risk").
 - **The agy hook is copied into `hook.js` as source:** keep `agyHookDecision` self-contained, with **no named inner functions** (the bundler wraps them in `__name`, which doesn't exist there, and every Gemini tool call would fail). `tests/safety.test.ts` runs the real hook script.
 - **One-shot model calls get no tools:** filing and summarising conversations (`claudeArgs({ oneShot: true })`).
 - **The confirm card focuses Deny,** so an Enter meant for the text box never approves.
@@ -188,7 +189,11 @@ Work through it one item at a time, asking Aaron before design-level changes.
       - Recordings get the same, with a video frame (Windows' thumbnail) and a ▶.
       - **"show my last screenshot" / "previous recording"** gives "Previous screenshot saved in Pictures\Ghost (3 Nov, 9:42 pm)." with the same card.
       - How it works: `turn_end.file` carries the capture; IPC `ghost:capture-preview` / `ghost:capture-open`; `src/main/captureFiles.ts` allows only .png/.mp4/.webm inside Pictures\Ghost and Videos\Ghost.
-      - Only Ghost's own commands get the card. A brain's `take_screenshot` tool reply doesn't (yet).
+      - The brains get the card too (commit "Brains' screenshots and recordings …"):
+        - `take_screenshot`, `stop_recording` and the new `show_last_capture` tool set `turn.file`;
+        - a turn that starts a recording goes quiet (`turn.quiet`: shown, not spoken), so its reply isn't in the video;
+        - the shortcuts understand more wordings.
+      - Aaron's point (3 Nov): the shortcuts are only a fast lane for plain phrases. Recording, screenshots and so on are Ghost's tools, which either brain can direct; anything a shortcut doesn't match goes to the brain.
       - Checked in the browser preview (`npm run preview:ui`, which now has pretend captures).
       - **Aaron to check:** the update installs; "Recording your screen." shows at once; screenshot card, Open, Show in folder; "show my last screenshot".
   - **Proposed, waiting for Aaron:** leave notes-only commits (only `.md` files) out of the update list and don't rebuild for them. Aaron was confused by "CLAUDE.md: Electron 45 done…" showing as an update.
