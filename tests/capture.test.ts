@@ -92,6 +92,7 @@ describe('screenshots and recording in the core', () => {
     const started = await until(m => m.type === 'turn_end' && (m as { text: string }).text === 'Recording your screen.');
     await new Promise(r => setTimeout(r, 100));
     expect(inbox.some(m => m.type === 'audio' && m.turnId === (started as { turnId: string }).turnId)).toBe(false);
+    expect((started as { silent?: boolean }).silent).toBe(true); // so the bubble shows it at once, not after waiting for a voice
     ws.send(JSON.stringify({ type: 'recording_mic', on: true }));
     await until(m => m.type === 'notice' && /No microphone found, so the recording carries on/.test(m.text));
     ws.send(JSON.stringify({ type: 'recording_stop' }));

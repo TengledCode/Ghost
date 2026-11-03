@@ -711,7 +711,7 @@ export class GhostCore {
   private say(text: string, speech = text): void {
     const turnId = `say-${randomUUID()}`;
     this.broadcast({ type: 'text_delta', turnId, text });
-    this.broadcast({ type: 'turn_end', turnId, text, provider: 'ghost', model: '' });
+    this.broadcast({ type: 'turn_end', turnId, text, provider: 'ghost', model: '', ...(speech ? {} : { silent: true }) });
     if (speech) void this.speakStandalone(turnId, speech, undefined, text);
   }
 

@@ -255,7 +255,8 @@ core.on((m: CoreMessage) => {
       renderMeta();
       // Safety net: no voice came for this reply at all, so show the text. Generous, as the Edge voice
       // takes ~3 s to start; a sentence whose voice fails still arrives (silent) with its words.
-      if (settings.voiceEnabled && subtitles.activeTurn !== m.turnId) setTimeout(() => { if (subtitles.activeTurn !== m.turnId) showBubble(m.text); }, 8000);
+      if (m.silent) showBubble(m.text);
+      else if (settings.voiceEnabled && subtitles.activeTurn !== m.turnId) setTimeout(() => { if (subtitles.activeTurn !== m.turnId) showBubble(m.text); }, 8000);
       pushHistory({ who: 'ghost', text: m.text });
       renderHistory();
       if (thankedThisTurn) { shell?.express('happy'); thankedThisTurn = false; }

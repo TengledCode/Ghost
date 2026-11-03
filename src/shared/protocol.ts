@@ -42,7 +42,8 @@ export type CoreMessage =
   | { type: 'welcome'; name: string; userName: string }
   | { type: 'state'; state: GhostState; detail?: string }
   | { type: 'text_delta'; turnId: string; text: string }
-  | { type: 'turn_end'; turnId: string; text: string; provider: string; model: string }
+  // `silent`: no voice follows (e.g. "Recording your screen."), so the words show at once.
+  | { type: 'turn_end'; turnId: string; text: string; provider: string; model: string; silent?: boolean }
   // `display` is the reply text this audio speaks, revealed in step with it (empty `data` = nothing to say).
   | { type: 'audio'; turnId: string; seq: number; mime: string; data: string; engine: TtsEngineId; last: boolean; display?: string }
   | { type: 'approval_request'; id: string; tool: string; summary: string; args: Record<string, unknown> }
