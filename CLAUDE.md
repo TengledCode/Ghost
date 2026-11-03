@@ -11,6 +11,12 @@ Handoff from the cloud sessions that built Ghost, so a local session can carry s
 - Commit and push after each change. Aaron installs new versions with **Settings → Updates** (git pull → npm install → `npm run dist:win` → silent install), or by running those steps by hand.
 - Explain things plainly and briefly. Ask Aaron before big or design-level changes. Make one change at a time and say what changed.
 - **Test in the real app before pushing**, and say plainly what you could not test. A pushed change that broke Ghost on Windows cost Aaron a lot of time once (see "Compatible drawing" below).
+  - A change can be held back: commit it locally, don't push. **Settings → Updates** builds from this folder, lists such commits as "(on this PC only)" and installs them. Push once Aaron confirms. (By hand: `npm run dist:win`, then `dist\Ghost Setup 0.1.0.exe /S --force-run`.)
+- **Windows shell gotchas:**
+  - PowerShell 5.1 mangles quotes in `git commit -m`: write the message to a file and use `git commit -F`.
+  - Commands run through cmd (the updater's `runCommand`) lose a `^`: use git's `--not` instead of `^commit`.
+  - There's no `python`; use node for scripts.
+  - Test copies need a clean environment (see the security items below).
 
 ## What Ghost is
 
@@ -173,7 +179,19 @@ Work through it one item at a time, asking Aaron before design-level changes.
     1. **Ghost staring at the blinking text cursor:** look at the input only while typing (a key in the last second or two) or just after clicking into it; otherwise follow the mouse.
     2. **Starting sooner after boot:** Run-key apps are delayed by Windows. Replace the login item with a Task Scheduler "at log on" task.
     3. **Ghost changes his own settings on request:** Aaron chose **an Undo notice** (change straight away, with Undo on the notice). Safety settings, the ElevenLabs key and the vault location are off-limits.
-  - **Viewing a screenshot (new, 2 Nov):** Aaron wants a way to see a screenshot once it's taken (open it, or show it in its folder), and would like Ghost to be part of showing it. Ask him exactly what before building.
+  - **Built 3 Nov, committed on this PC only, waiting for Aaron's test, then push:**
+    - **Silent lines show at once** (commit "Show 'Recording your screen.' at once"). "record my screen" never goes to a brain and the recorder starts in ~0.5 s. Ghost seemed to take 8 s because the overlay waited for a voice that never comes (its no-voice safety net). `turn_end` now carries `silent: true`.
+    - **Screenshot viewer** (commit "Screenshot viewer: …"), as Aaron specified:
+      - The reply says where the file went ("Screenshot saved in Pictures\Ghost and copied to the clipboard.", "Recording saved in Videos\Ghost (9 s).").
+      - The same bubble shows a preview, with **Open** and **Show in folder**; clicking the preview opens it too. It stays as long as the reply.
+      - Ghost "projects" it: he glances at it, a cone of light runs from his eye to the picture (`#projection` SVG), and the picture scans in cyan, then settles to full colour.
+      - Recordings get the same, with a video frame (Windows' thumbnail) and a ▶.
+      - **"show my last screenshot" / "previous recording"** gives "Previous screenshot saved in Pictures\Ghost (3 Nov, 9:42 pm)." with the same card.
+      - How it works: `turn_end.file` carries the capture; IPC `ghost:capture-preview` / `ghost:capture-open`; `src/main/captureFiles.ts` allows only .png/.mp4/.webm inside Pictures\Ghost and Videos\Ghost.
+      - Only Ghost's own commands get the card. A brain's `take_screenshot` tool reply doesn't (yet).
+      - Checked in the browser preview (`npm run preview:ui`, which now has pretend captures).
+      - **Aaron to check:** the update installs; "Recording your screen." shows at once; screenshot card, Open, Show in folder; "show my last screenshot".
+  - **Proposed, waiting for Aaron:** leave notes-only commits (only `.md` files) out of the update list and don't rebuild for them. Aaron was confused by "CLAUDE.md: Electron 45 done…" showing as an update.
   - **Include Ghost in recordings:** a Settings switch. His voice is always recorded anyway, so this is about his picture.
   - **Secondary brain follows the primary** (Claude ↔ Gemini) when the primary is changed in Settings: done.
   - **Read-out-friendly replies** (persona).
@@ -193,7 +211,7 @@ Work through it one item at a time, asking Aaron before design-level changes.
       - Changes: `clipboard.writeImage` → `ClipboardItem` (screenshots); the recorder's session also allows `display-capture`; `roundedCorners: false` on the overlay; npm `allowScripts` for the install scripts. `safeStorage`'s sync methods are deprecated (removed in 46): move to the async ones before 46.
       - **Recordings had no picture on 45:** the GPU's H.264 encoder writes nothing (MediaRecorder MP4 got only the sound track; same for HEVC, even from a canvas). Ghost starts with `disable-accelerated-video-encode`, so the software encoder is used: picture, sound and length are back. It only affects encoding, not drawing.
       - Passed: no freeze, drawing, click-through, grabbing (0.6 s and Alt), Settings, fullscreen hiding, screenshots (Ghost absent, pastes into Paint), recording with sound.
-    - **Updates also count commits only on this PC** (not pushed yet, e.g. held back for testing): listed as "(on this PC only)", and Update rebuilds them. Before, Update just restarted Ghost because GitHub had nothing new. Tested in `tests/updater.test.ts`; not yet seen in the real app.
+    - **Updates also count commits only on this PC** (not pushed yet, e.g. held back for testing): listed as "(on this PC only)", and Update rebuilds them. Before, Update just restarted Ghost because GitHub had nothing new. Seen working on Aaron's PC on 3 Nov: two "(on this PC only)" changes were listed.
     - **The terminal flash: solved (2 Nov).** `agy` runs its own background updater (at most every 15 min), which starts `agy.exe --version` in a new console that Windows Terminal shows. Ghost now starts `agy` with `AGY_CLI_DISABLE_AUTO_UPDATE=true` (`'1'` doesn't work). Settings → Updates still runs `agy update`. Verified: no window at Ghost's start, and agy's log says auto-update is disabled.
   - **A full security sweep,** keeping security practices up to date (for example, dependency checks on each update).
   - **Last:** clear redundant logs and test leftovers, keeping core memories and facts about Aaron (list it for his approval first).
