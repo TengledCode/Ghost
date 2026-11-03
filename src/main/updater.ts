@@ -4,7 +4,7 @@ import { appendFileSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 // Settings → Updates: Ghost updates itself from the folder it was built from. It checks the branch on
-// GitHub for new commits, and on "Update" runs the same steps Aaron would (git pull, npm install,
+// GitHub (and the folder itself) for commits it doesn't have, and on "Update" runs the same steps Aaron would (git pull, npm install,
 // npm run dist:win), then runs the new installer silently and restarts. If any step fails nothing is
 // installed: Ghost keeps running as it is and says what went wrong.
 
@@ -88,11 +88,26 @@ export class Updater extends EventEmitter {
     this.set({ state: 'checking', error: undefined });
     const fetch = await this.run('git', ['fetch', '--quiet', 'origin', info.branch], info.sourceDir);
     if (fetch.code !== 0) return this.set({ state: 'error', error: explain('Checking for updates', fetch.out), checkedAt: Date.now() });
-    const log = await this.run('git', ['log', '--format=%s', `${info.commit}..origin/${info.branch}`], info.sourceDir);
-    if (log.code !== 0) return this.set({ state: 'error', error: explain('Checking for updates', log.out), checkedAt: Date.now() });
-    const changes = log.out.split('\n').map(l => l.trim()).filter(Boolean);
+    const pending = await this.notInstalled(info);
+    if (!pending.ok) return this.set({ state: 'error', error: explain('Checking for updates', pending.out), checkedAt: Date.now() });
+    const changes = pending.changes;
     if (this.o.clis) changes.push(...await this.cliChanges(info.sourceDir));
     return this.set({ state: changes.length ? 'available' : 'up-to-date', changes, checkedAt: Date.now() });
+  }
+
+  /**
+   * Commits this build doesn't have, newest first: those on GitHub, and those only in the Ghost folder
+   * (made on this PC and not pushed yet, e.g. a fix held back until it's tested), which are marked.
+   */
+  private async notInstalled(info: BuildInfo): Promise<{ ok: boolean; out: string; changes: string[] }> {
+    const [local, remote] = await Promise.all([
+      // `--not` rather than `^commit`: on Windows this runs through cmd, which swallows a `^`.
+      this.run('git', ['log', '--format=%s', 'HEAD', '--not', `origin/${info.branch}`, info.commit], info.sourceDir),
+      this.run('git', ['log', '--format=%s', `${info.commit}..origin/${info.branch}`], info.sourceDir),
+    ]);
+    const lines = (out: string) => out.split('\n').map(l => l.trim()).filter(Boolean);
+    const failed = [local, remote].find(r => r.code !== 0);
+    return { ok: !failed, out: failed?.out ?? '', changes: [...lines(local.out).map(l => `${l} (on this PC only)`), ...lines(remote.out)] };
   }
 
   /** "Claude Code 2.1.283 → 2.1.316" when the claude CLI is behind (agy can't say, so it's just updated with the rest). */
@@ -122,8 +137,8 @@ export class Updater extends EventEmitter {
       }
       // Nothing new for Ghost itself (fetched afresh): no need to rebuild, just restart on the updated CLIs.
       const fetched = await this.run('git', ['fetch', '--quiet', 'origin', info.branch], info.sourceDir);
-      const pending = await this.run('git', ['log', '--format=%s', `${info.commit}..origin/${info.branch}`], info.sourceDir);
-      if (fetched.code === 0 && pending.code === 0 && !pending.out.trim()) {
+      const pending = await this.notInstalled(info);
+      if (fetched.code === 0 && pending.ok && !pending.changes.length) {
         this.set({ state: 'updating', step: 'Restarting Ghost', progress: 0.9 });
         this.log('--- Restarting (no changes to Ghost itself)');
         this.o.clis.restart();

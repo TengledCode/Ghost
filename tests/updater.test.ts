@@ -147,4 +147,19 @@ describe("Settings → Updates: the brains' CLIs", () => {
     expect(ran.filter(c => !c.startsWith('git log'))).toEqual(['claude update', 'agy update', 'git fetch --quiet origin main', 'git pull --ff-only origin main', 'npm install --no-audit --no-fund', 'npm run dist:win']);
     expect(installed).toBe(join(r.src, 'dist', 'Ghost Setup 0.1.0.exe'));
   });
+
+  it("offers and builds a change made in the Ghost folder that isn't on GitHub yet", async () => {
+    const r = repos();
+    writeFileSync(join(r.src, 'a.txt'), 'held back');
+    git(r.src, '-c', 'commit.gpgsign=false', 'commit', '-am', 'Recordings fix');
+    const { run } = fakeClis({ latest: '2.1.283' }); // Claude Code already current
+    let installed = '';
+    const u = new Updater({ info: { sourceDir: r.src, branch: 'main', commit: r.commit }, version: '0.1.0', installable: true, logFile: join(r.root, 'log'), run,
+      install: p => { installed = p; }, clis: { stopBrains: () => {}, restart: () => { throw new Error('should rebuild, not just restart'); } } });
+    const s = await u.check();
+    expect(s.state).toBe('available');
+    expect(s.changes).toEqual(['Recordings fix (on this PC only)']);
+    await u.update();
+    expect(installed).toBe(join(r.src, 'dist', 'Ghost Setup 0.1.0.exe'));
+  });
 });
