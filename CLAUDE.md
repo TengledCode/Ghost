@@ -180,7 +180,7 @@ Work through it one item at a time, asking Aaron before design-level changes.
     1. **Ghost staring at the blinking text cursor:** look at the input only while typing (a key in the last second or two) or just after clicking into it; otherwise follow the mouse.
     2. **Starting sooner after boot:** Run-key apps are delayed by Windows. Replace the login item with a Task Scheduler "at log on" task.
     3. **Ghost changes his own settings on request:** Aaron chose **an Undo notice** (change straight away, with Undo on the notice). Safety settings, the ElevenLabs key and the vault location are off-limits.
-  - **Built 3 Nov, committed on this PC only, waiting for Aaron's test, then push:**
+  - **Done and tested on Aaron's PC (3–4 Nov), pushed 4 Nov:**
     - **Silent lines show at once** (commit "Show 'Recording your screen.' at once"). "record my screen" never goes to a brain and the recorder starts in ~0.5 s. Ghost seemed to take 8 s because the overlay waited for a voice that never comes (its no-voice safety net). `turn_end` now carries `silent: true`.
     - **Screenshot viewer** (commit "Screenshot viewer: …"), as Aaron specified:
       - The reply says where the file went ("Screenshot saved in Pictures\Ghost and copied to the clipboard.", "Recording saved in Videos\Ghost (9 s).").
@@ -188,14 +188,14 @@ Work through it one item at a time, asking Aaron before design-level changes.
       - Ghost "projects" it: he glances at it, a cone of light runs from his eye to the picture (`#projection` SVG), and the picture scans in cyan, then settles to full colour.
       - Recordings get the same, with a video frame (Windows' thumbnail) and a ▶.
       - **"show my last screenshot" / "previous recording"** gives "Previous screenshot saved in Pictures\Ghost (3 Nov, 9:42 pm)." with the same card.
-      - How it works: `turn_end.file` carries the capture; IPC `ghost:capture-preview` / `ghost:capture-open`; `src/main/captureFiles.ts` allows only .png/.mp4/.webm inside Pictures\Ghost and Videos\Ghost.
+      - How it works: `turn_end.file` carries the capture; IPC `ghost:capture-preview` / `ghost:capture-open`; `src/main/captureFiles.ts` allows only .png/.jpg/.mp4/.webm inside Pictures\Ghost, Pictures\Screenshots and Videos\Ghost. "Last screenshot" is the newest of Pictures\Ghost and Pictures\Screenshots; sending a message clears the previous card at once.
       - The brains get the card too (commit "Brains' screenshots and recordings …"):
         - `take_screenshot`, `stop_recording` and the new `show_last_capture` tool set `turn.file`;
         - a turn that starts a recording goes quiet (`turn.quiet`: shown, not spoken), so its reply isn't in the video;
         - the shortcuts understand more wordings.
       - Aaron's point (3 Nov): the shortcuts are only a fast lane for plain phrases. Recording, screenshots and so on are Ghost's tools, which either brain can direct; anything a shortcut doesn't match goes to the brain.
       - Checked in the browser preview (`npm run preview:ui`, which now has pretend captures).
-      - **Aaron to check:** the update installs; "Recording your screen." shows at once; screenshot card, Open, Show in folder; "show my last screenshot".
+      - **Passed (Aaron, 3–4 Nov):** Update listed and installed the "(on this PC only)" commits; "Recording your screen." shows at once; the card, Open, Show in folder; a Windows screenshot, then "whats my last screenshot?" shows it; "can you pull up the screenshot from earlier" (Gemini): no card while thinking, the card and cone with the reply; "please record my current screen" (Gemini) stays silent, with no voice in the video.
   - **Proposed, waiting for Aaron:** leave notes-only commits (only `.md` files) out of the update list and don't rebuild for them. Aaron was confused by "CLAUDE.md: Electron 45 done…" showing as an update.
   - **Include Ghost in recordings:** a Settings switch. His voice is always recorded anyway, so this is about his picture.
   - **Secondary brain follows the primary** (Claude ↔ Gemini) when the primary is changed in Settings: done.
