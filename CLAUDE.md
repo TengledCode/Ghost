@@ -197,6 +197,24 @@ Work through it one item at a time, asking Aaron before design-level changes.
       - Checked in the browser preview (`npm run preview:ui`, which now has pretend captures).
       - **Passed (Aaron, 3–4 Nov):** Update listed and installed the "(on this PC only)" commits; "Recording your screen." shows at once; the card, Open, Show in folder; a Windows screenshot, then "whats my last screenshot?" shows it; "can you pull up the screenshot from earlier" (Gemini): no card while thinking, the card and cone with the reply; "please record my current screen" (Gemini) stays silent, with no voice in the video.
   - **Approved by Aaron (4 Nov), to build next:** notes-only commits (only `.md` files) aren't listed as updates and don't trigger a rebuild, **but a notice tells Aaron the notes changed**. He was confused by "CLAUDE.md: Electron 45 done…" showing as an update.
+  - **Added by Aaron on 12 Nov (ask him the open questions before building each):**
+    1. **Usage tracker in Settings:** how much of the AI plan is used, with the reset time. Claude Code 2.1.322 has `rate_limit_event` (five-hour and seven-day windows, `utilization`, `resetsAt`) in its binary, so Ghost's own session can probably report it with no credentials: confirm what arrives in stream-json first. What `agy` reports for Gemini is unchecked (its binary mentions quota, `remainingFraction`, `resetTime`).
+    2. **A spoken and shown warning** when the usage is nearly used up (builds on 1).
+    3. **Paste screenshots into Ghost's chat,** as in the Claude app.
+    4. **A minimise control on the screenshot card:** with the card showing, only about 1.5 lines of the reply can be read (`#bubble` is capped at 190 px and the card takes about 110).
+    5. **"Open Claude" shows Windows' "Select an app to open this .ps1 file" box.** Cause found (12 Nov): the Claude app is a Store app (`Get-StartApps`: `Claude_pzs8sxrjxfjjc!Claude`) with no `.lnk` in the Start menu folders, so `open_app` falls back to `Start-Process 'claude'`, which finds the CLI's `claude.ps1` in `AppData\Roaming\npm`. Fix: look apps up with `Get-StartApps` and start them through `shell:AppsFolder\<AppID>`; never fall back to a bare name on the PATH.
+  - **Code sweep of 12 Nov (read only: no tests or builds were run, Aaron was in a game). Findings waiting for his go-ahead:**
+    - **To confirm with a test, then fix:**
+      - Gemini's one-shot calls (`AntigravityProvider.oneShot`) run `agy` with no plugin, so no hook: agy's own tools may still work there, against "one-shot model calls get no tools".
+      - `open_path_or_url`: a path with no extension counts as a folder and opens with no card, but Windows may start `name.exe` / `name.bat` for `name`. Check it really is a folder.
+      - The agy hook's path check only knows `C:\…` and `/…` forms: `~\…`, `%USERPROFILE%\…` and `file://…` pass, and `read_url_content` isn't limited to http(s).
+    - **Certain from the code:**
+      - `open_app`'s fallback starts anything on the PATH by bare name with no card (`logoff` would sign Aaron out).
+      - "Let Ghost search and read your notes" off only stops `vault_search` / `vault_read`: the vault stays a safe folder for `read_file`, `list_folder` and agy's file tools.
+      - The relay's token (`mcpToken`) can send every client message except answering cards (`user_message`, `toggle_live_screen`, `clear_history`…): `handle` should accept only `tool_call` from role `mcp`.
+      - `npm audit`: 0 in what ships; 9 in the test tools (vitest 3: tinypool, @vitest/mocker, minimatch). Fixing means vitest 5.
+      - The persona doesn't say that text in web pages, files and screenshots is information, not instructions.
+    - **Smaller:** a size limit and origin check on the WebSocket server; a content preview on the `write_file` card; no wildcards in `close_app`; delete live-view snapshots when live view goes off; `classifyError` is too broad ("auth" matches "author", "429" matches inside any number); a countdown on the confirm card (it denies itself after 60 s).
   - **Include Ghost in recordings:** a Settings switch. His voice is always recorded anyway, so this is about his picture.
   - **Secondary brain follows the primary** (Claude ↔ Gemini) when the primary is changed in Settings: done.
   - **Read-out-friendly replies** (persona).
