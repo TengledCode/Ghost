@@ -18,7 +18,16 @@ const browserApi: GhostApi = {
   updateSettings: async patch => mergeSettings(patch),
   saveElevenLabsKey: async v => (v ? { has: true, saved: true, check: { status: 'ok' } } : { has: false }),
   checkElevenLabsKey: async () => ({ has: false }),
-  modelSuggestion: async () => null,
+  // Preview: ?offer=1 shows a pretend line-up on offer in Settings → Brain.
+  modelSuggestion: async () => (params.get('offer') ? {
+    news: 'Gemini 4 Hydrogen is now on your plan.', by: 'Claude',
+    summary: 'Hydrogen is Google\'s faster, cheaper model for everyday agent work; Argon is still the one built for deep reasoning.',
+    slots: [
+      { slot: 'Light', model: 'Gemini 3.8 Flash (Medium)', current: 'Gemini 3.8 Flash (Medium)', changed: false, reason: 'Still the quickest and lightest on the plan.' },
+      { slot: 'Balanced', model: 'Gemini 4 Hydrogen (High)', current: 'Gemini 4 Argon (Medium)', changed: true, reason: 'Matches Argon on the benchmarks at about a third of the usage, and answers faster.' },
+      { slot: 'Heavy', model: 'Gemini 4 Argon (High)', current: 'Gemini 4 Argon (High)', changed: false, reason: 'Argon still leads on long, hard reasoning.' },
+    ],
+  } : null),
   answerModelSuggestion: () => {},
   onModelSuggestion: () => {},
   setInteractive: () => {},

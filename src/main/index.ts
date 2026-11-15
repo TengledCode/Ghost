@@ -275,6 +275,8 @@ app.whenReady().then(async () => {
     save: patch => store.update(patch),
     notify: (level, text) => core.notify(level, text),
     onSuggestion: s => { for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send('ghost:model-suggestion', s); },
+    // Which model suits which slot: Claude looks it up (Gemini itself if Claude can't answer).
+    advise: prompt => core.research(prompt, 'gemini'),
   });
   models?.start();
   ipcMain.handle('ghost:model-suggestion', () => models?.suggestion ?? null);

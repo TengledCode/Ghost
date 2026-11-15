@@ -1,7 +1,7 @@
 /** "gemini-3.8-flash-high" → "Gemini 3.8 Flash (high)", "claude-opus-4-6-thinking" → "Claude Opus 4.6 (thinking)". */
 export function modelLabel(id: string): string {
   const parts = id.split('-');
-  const suffix = /^(low|medium|high|thinking|max|minimal)$/.test(parts.at(-1) ?? '') ? parts.pop() : undefined;
+  const suffix = /^(low|medium|high|xhigh|thinking|max|minimal)$/.test(parts.at(-1) ?? '') ? parts.pop() : undefined;
   const words: string[] = [];
   for (let i = 0; i < parts.length; i++) {
     const p = parts[i];

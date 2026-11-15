@@ -179,14 +179,30 @@ function renderVoices(id: string, list: VoiceOption[], engine: 'elevenlabs' | 'e
 }
 
 // ElevenLabs key: stored encrypted by the main process and never sent back to the page.
-// A new Gemini family on offer (from the model watcher): Use it or Not now.
+// A Gemini line-up on offer (from the model watcher, after the other brain looked the models up):
+// what changed, the model proposed for each slot with its reason, then Use it or Not now.
 const offer = document.getElementById('modelOffer')!;
 const showOffer = (s: ModelSuggestion | null) => {
   offer.hidden = !s;
-  if (s) offer.querySelector('p')!.textContent = `${s.label} is now on your plan. Use it instead of ${s.current || 'the current model'} for Balanced and Heavy?`;
+  if (!s) return;
+  offer.querySelector('.offer-news')!.textContent = `${s.news} ${s.by} looked up the latest benchmarks and suggests:`;
+  offer.querySelector('ul')!.replaceChildren(...s.slots.map(slot => {
+    const li = document.createElement('li');
+    const name = document.createElement('strong');
+    name.textContent = `${slot.slot}: ${slot.model}`;
+    const note = document.createElement('small');
+    note.textContent = slot.changed ? (slot.current ? `instead of ${slot.current}` : 'new') : 'no change';
+    const why = document.createElement('span');
+    why.textContent = slot.reason;
+    li.classList.toggle('same', !slot.changed);
+    li.append(name, ' ', note, why);
+    return li;
+  }));
+  offer.querySelector('.offer-summary')!.textContent = s.summary;
 };
 void bridge.modelSuggestion().then(showOffer);
-bridge.onModelSuggestion(s => { showOffer(s); modelLists.delete('gemini'); renderBrains(); });
+// Use it changes the slots in the main process, so read the settings afresh before redrawing them.
+bridge.onModelSuggestion(async s => { showOffer(s); settings = (await bridge.bootstrap()).settings; modelLists.delete('gemini'); renderBrains(); });
 document.getElementById('offerUse')!.addEventListener('click', () => { bridge.answerModelSuggestion(true); showOffer(null); });
 document.getElementById('offerLater')!.addEventListener('click', () => { bridge.answerModelSuggestion(false); showOffer(null); });
 

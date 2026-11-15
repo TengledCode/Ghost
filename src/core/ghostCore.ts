@@ -200,6 +200,34 @@ export class GhostCore {
     throw new Error(lastError);
   }
 
+  /**
+   * Have a brain look something up on the web and answer (web search only, none of Ghost's tools), in
+   * a call of its own outside the conversation. For a question about one brain's models the other
+   * brain is asked first, on its Balanced model; the brain itself only if the other can't answer.
+   */
+  async research(prompt: string, about: ProviderId): Promise<{ text: string; by: string }> {
+    const s = this.o.settings();
+    const other: ProviderId = about === 'gemini' ? 'claude' : 'gemini';
+    let lastError = 'no brain available';
+    for (const pid of [other, about]) {
+      const provider = this.o.providers[pid];
+      if (!provider) continue;
+      let text = '';
+      let failed = false;
+      try {
+        for await (const ev of provider.send({
+          prompt, model: modelFor(pid, 'balanced', s.brainModels), persona: '', personaFile: this.personaFile, mcpConfigPath: this.mcpConfigPath,
+          workspace: this.workspace, signal: AbortSignal.timeout(600_000), oneShot: true, web: true, // Gemini took nearly 5 min once
+        })) {
+          if (ev.type === 'done') text = ev.text;
+          if (ev.type === 'error') { failed = true; lastError = ev.message; }
+        }
+      } catch (e) { failed = true; lastError = String((e as Error).message ?? e); }
+      if (!failed && text.trim()) return { text, by: brainName(pid) };
+    }
+    throw new Error(lastError);
+  }
+
   /** Start the brains' CLIs now, so the first message doesn't wait for them to boot. */
   private warmBrains(): void {
     const s = this.o.settings();
