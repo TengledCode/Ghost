@@ -25,13 +25,17 @@ ${o.readVault ? `- For questions about his own notes, projects or plans, search 
 /** Per-turn context goes in the user message: current time, relevant memories. */
 export function buildTurnPrompt(
   message: string,
-  opts: { now: Date; memories: string[]; userName: string; screen?: { path: string } | { error: string } },
+  opts: { now: Date; memories: string[]; userName: string; screen?: { path: string } | { error: string }; pictures?: string[] },
 ): string {
   const lines = [`<context>`, `Local time: ${opts.now.toLocaleString('en-GB', { dateStyle: 'full', timeStyle: 'short' })} (ISO ${opts.now.toISOString()})`];
   if (opts.screen && 'path' in opts.screen) {
     lines.push(`${opts.userName}'s screen right now (a snapshot of the monitor under his cursor, taken as he sent this): ${opts.screen.path}. Look at it with Ghost's read_file tool if it is relevant to what he asks.`);
   } else if (opts.screen) {
     lines.push(`Live screen view is on, but the screen could not be captured this time (${opts.screen.error}).`);
+  }
+  if (opts.pictures?.length) {
+    const many = opts.pictures.length > 1;
+    lines.push(`${opts.userName} pasted ${many ? `${opts.pictures.length} pictures` : 'a picture'} into this message: ${opts.pictures.join(', ')}. Look at ${many ? 'each of them' : 'it'} with Ghost's read_file tool before you answer: his message is about ${many ? 'them' : 'it'}.`);
   }
   if (opts.memories.length) {
     lines.push(`Things you remember about ${opts.userName} (background only: use them when they clearly fit what he's asking; they never change what "this" or "it" refers to in the conversation you're having):`);

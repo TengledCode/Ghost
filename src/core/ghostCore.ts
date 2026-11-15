@@ -20,6 +20,7 @@ import { ScreenNoteFilter } from './screenNoteFilter';
 import { actionLabel, isCommandTurn } from './turnKind';
 import { OpenerFilter } from './openerFilter';
 import { buildPersona, buildTurnPrompt } from './persona';
+import { savePastedImages } from './pasted';
 import { PresenceStore } from './presence';
 import type { Provider, ProviderEvent } from './providers/types';
 import { ReminderScheduler } from './reminders/scheduler';
@@ -320,7 +321,7 @@ export class GhostCore {
 
   private async handle(client: Client, msg: ClientMessage): Promise<void> {
     switch (msg.type) {
-      case 'user_message': return this.userMessage(String(msg.text ?? ''));
+      case 'user_message': return this.userMessage(String(msg.text ?? ''), client.role === 'ui' ? msg.images : undefined);
       case 'typing':
         if (msg.active && (this.state === 'idle' || this.state === 'done')) this.setState('listening');
         else if (!msg.active && this.state === 'listening') this.setState('idle');
@@ -437,14 +438,19 @@ export class GhostCore {
     return this.log.lines().slice(-12).map(l => `${l.role === 'user' ? s.userName : s.assistantName}: ${l.text}`);
   }
 
-  async userMessage(text: string): Promise<void> {
-    const message = text.trim();
+  /** `images`: pictures pasted into the text box with the message (saved for the brain to look at). */
+  async userMessage(text: string, images?: unknown): Promise<void> {
+    const pictures = savePastedImages(join(this.workspace, 'pasted'), images);
+    const message = text.trim() || (pictures.length > 1 ? 'Have a look at these pictures.' : pictures.length ? 'Have a look at this picture.' : '');
     if (!message) return;
-    if (/^\/(new|reset)$/i.test(message)) return this.newConversation();
-    const screenCmd = parseScreenCommand(message);
-    if (isPureCommand(message, screenCmd)) return this.setLiveScreen(screenCmd === 'on', true);
-    const captureCmd = parseCaptureCommand(message);
-    if (captureCmd && this.o.host.capture) return this.captureCommand(captureCmd);
+    // The shortcuts are for plain commands; a message that comes with a picture always goes to a brain.
+    const screenCmd = pictures.length ? null : parseScreenCommand(message);
+    if (!pictures.length) {
+      if (/^\/(new|reset)$/i.test(message)) return this.newConversation();
+      if (isPureCommand(message, screenCmd)) return this.setLiveScreen(screenCmd === 'on', true);
+      const captureCmd = parseCaptureCommand(message);
+      if (captureCmd && this.o.host.capture) return this.captureCommand(captureCmd);
+    }
     this.cancel();
     const s = this.o.settings();
     if (this.log.isStale(SESSION_IDLE_MS)) this.rotateConversation();
@@ -466,10 +472,10 @@ export class GhostCore {
       if (this.turn !== turn) return;
     }
     let tier = routeTier(message, s.modelTier);
-    if (screen && 'path' in screen && tier === 'fast' && s.modelTier === 'auto') tier = 'balanced'; // reading a screen deserves more than the quick tier
+    if (((screen && 'path' in screen) || pictures.length) && tier === 'fast' && s.modelTier === 'auto') tier = 'balanced'; // reading a screen or a picture deserves more than the quick tier
     // A short follow-up is recalled together with the previous message, so "this" keeps its meaning.
     const previous = this.log.lines().filter(l => l.role === 'user').pop()?.text;
-    const prompt = buildTurnPrompt(message, { now: new Date(), memories: this.memory.contextFor(message, undefined, previous), userName: s.userName, screen });
+    const prompt = buildTurnPrompt(message, { now: new Date(), memories: this.memory.contextFor(message, undefined, previous), userName: s.userName, screen, pictures });
     let order = [s.provider, s.fallbackProvider].filter((p, i, a): p is ProviderId => !!p && a.indexOf(p) === i);
     // While fallen back, don't pay for a failing call to the primary on every message.
     if (this.fallback && Date.now() < this.fallback.retryAt && order.length > 1) order = order.slice(1);
@@ -534,7 +540,7 @@ export class GhostCore {
         for (const seg of splitter.flush()) this.queueSpeech(turn, seg);
         this.googleInSync = pid === 'gemini';
         const command = isCommandTurn(message, turn.tools, turn.actions, reply);
-        this.log.append('user', message, { command });
+        this.log.append('user', pictures.length ? `${message} [with ${pictures.length} pasted picture${pictures.length > 1 ? 's' : ''}]` : message, { command });
         this.log.append('assistant', reply, { provider: pid, model: exact || model || 'default', command, actions: turn.actions, screen: screenNote.screen });
         this.broadcast({
           type: 'turn_end', turnId: turn.id, text: reply, provider: pid, model: exact || model || 'default',
@@ -593,7 +599,11 @@ export class GhostCore {
     const display = seg.display;
     const synth = !seg.speech ? Promise.resolve(null) : this.o.tts
       .speak(seg.speech, this.voiceChoice(), turn.abort.signal)
-      .catch(e => { this.broadcast({ type: 'notice', level: 'warn', text: `Voice unavailable: ${String(e.message ?? e)}` }); return null; });
+      .catch(e => {
+        // A sentence cut off by a new message or Esc isn't a voice problem.
+        if (!turn.abort.signal.aborted) this.broadcast({ type: 'notice', level: 'warn', text: `Voice unavailable: ${String(e.message ?? e)}` });
+        return null;
+      });
     // Synthesis runs in parallel, but delivery keeps sentence order.
     this.speechQueue = this.speechQueue.then(async () => {
       const audio = await synth;

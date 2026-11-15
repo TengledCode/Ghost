@@ -50,7 +50,7 @@ recMic.addEventListener('click', () => core.send({ type: 'recording_mic', on: re
 $('#shell .rec-stop').addEventListener('click', () => core.send({ type: 'recording_stop' }));
 const historyEl = $('#history');
 const form = $('#input') as HTMLFormElement;
-const input = form.querySelector('input')!;
+const input = form.querySelector('textarea')!;
 const confirmEl = $('#confirm');
 const noticeEl = $('#notice');
 
@@ -128,10 +128,13 @@ function caretPoint(): { x: number; y: number } {
   const r = input.getBoundingClientRect();
   const cs = getComputedStyle(input);
   measure.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
-  const before = input.value.slice(0, input.selectionStart ?? input.value.length);
-  const padL = parseFloat(cs.paddingLeft) || 0, padR = parseFloat(cs.paddingRight) || 0;
-  const x = r.left + padL + Math.max(0, Math.min(measure.measureText(before).width - input.scrollLeft, r.width - padL - padR));
-  return { x, y: r.top + r.height / 2 };
+  // The text box can hold several lines: the caret is on the last one before it (near enough for a glance).
+  const lines = input.value.slice(0, input.selectionStart ?? input.value.length).split('\n');
+  const padL = parseFloat(cs.paddingLeft) || 0, padR = parseFloat(cs.paddingRight) || 0, padT = parseFloat(cs.paddingTop) || 0;
+  const lineHeight = parseFloat(cs.lineHeight) || 20;
+  const x = r.left + padL + Math.max(0, Math.min(measure.measureText(lines.at(-1) ?? '').width, r.width - padL - padR));
+  const y = r.top + padT + (lines.length - 0.5) * lineHeight - input.scrollTop;
+  return { x, y: Math.max(r.top, Math.min(y, r.bottom)) };
 }
 
 // What Ghost looks at, measured from the page every frame (see attention.ts): the Allow button while
@@ -492,23 +495,75 @@ function openInput(): void {
 function closeInput(): void {
   form.hidden = true;
   input.value = '';
+  setPictures([]);
   core.send({ type: 'typing', active: false });
   bridge.dismissed();
   refreshInteractivity();
 }
 
+// Pictures pasted into the text box (a screenshot from the clipboard): small previews above it, each
+// with an ✕, sent along with the message for the brain to look at.
+const MAX_PICTURES = 4;
+const MAX_PICTURE_BYTES = 12_000_000;
+const attachmentsEl = form.querySelector<HTMLElement>('.attachments')!;
+let pictures: { mime: string; data: string; url: string }[] = [];
+function setPictures(next: typeof pictures): void {
+  pictures = next;
+  attachmentsEl.hidden = !pictures.length;
+  attachmentsEl.replaceChildren(...pictures.map(p => {
+    const box = document.createElement('div');
+    box.className = 'attachment';
+    const img = document.createElement('img');
+    img.src = p.url;
+    img.alt = 'Pasted picture';
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.textContent = '✕';
+    remove.title = 'Leave this picture out';
+    remove.addEventListener('click', () => { setPictures(pictures.filter(x => x !== p)); input.focus(); });
+    box.append(img, remove);
+    return box;
+  }));
+  refreshInteractivity();
+}
+input.addEventListener('paste', e => {
+  const files = [...(e.clipboardData?.files ?? [])].filter(f => /^image\/(png|jpeg|webp|gif|bmp)$/.test(f.type));
+  if (!files.length) return; // ordinary text: pasted as usual
+  e.preventDefault();
+  touch();
+  for (const file of files) {
+    if (file.size > MAX_PICTURE_BYTES) { showNotice('That picture is too large to send (over 12 MB).', 'warn'); continue; }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const url = String(reader.result);
+      if (pictures.length >= MAX_PICTURES) { showNotice(`Only ${MAX_PICTURES} pictures fit in one message.`, 'warn'); return; }
+      setPictures([...pictures, { mime: file.type, data: url.slice(url.indexOf(',') + 1), url }]);
+    };
+    reader.readAsDataURL(file);
+  }
+});
+
+// Messages sent this session, newest last: Up in an empty box brings them back, as in a terminal.
+const sent: string[] = [];
+let recalled = -1; // which of `sent` is in the box (-1: none)
+
 form.addEventListener('submit', e => {
   e.preventDefault();
   const text = input.value.trim();
-  if (!text) return;
-  pushHistory({ who: 'user', text });
+  if (!text && !pictures.length) return;
+  const note = pictures.length ? `${text ? `${text} ` : ''}(${pictures.length === 1 ? 'a picture' : `${pictures.length} pictures`})` : text;
+  pushHistory({ who: 'user', text: note });
   renderHistory();
   // A small reaction while Ghost works on it: a curious tilt for questions, a happy spin after thanks.
   const mood = moodFromMessage(text);
   if (mood === 'curious') shell?.express('curious');
   thankedThisTurn = mood === 'happy';
-  core.send({ type: 'user_message', text });
+  core.send({ type: 'user_message', text, ...(pictures.length ? { images: pictures.map(p => ({ mime: p.mime, data: p.data })) } : {}) });
+  if (text && sent.at(-1) !== text) sent.push(text);
+  if (sent.length > 50) sent.shift();
+  recalled = -1;
   input.value = '';
+  setPictures([]);
   replyText = '';
   clearFile(); // the last reply's screenshot card doesn't belong under the new "…"
   showBubble('…');
@@ -529,6 +584,18 @@ input.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     if (state === 'thinking' || state === 'searching' || state === 'speaking') { core.send({ type: 'cancel' }); player.stop(); subtitles.revealAll(); }
     else closeInput();
+  } else if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+    // Enter sends; Shift+Enter starts a new line.
+    e.preventDefault();
+    form.requestSubmit();
+  } else if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && sent.length && (input.value === '' || (recalled >= 0 && input.value === sent[recalled]))) {
+    // Up in an empty box (or on a recalled message): the earlier message; Down: the later one, then empty again.
+    const next = e.key === 'ArrowUp' ? (recalled < 0 ? sent.length - 1 : Math.max(0, recalled - 1)) : (recalled < 0 ? -1 : recalled + 1);
+    if (next === recalled) return;
+    e.preventDefault();
+    recalled = next >= sent.length ? -1 : next;
+    input.value = recalled < 0 ? '' : sent[recalled];
+    input.setSelectionRange(input.value.length, input.value.length);
   }
 });
 
@@ -637,7 +704,7 @@ function updateIdle(): void {
   const idle = isIdle({ busy: busy(), hovering: hoveringUi(), quietMs: now - lastActive, holdMs: ACTIVE_HOLD_MS, hoverQuietMs: now - lastHover, hoverHoldMs: HOVER_HOLD_MS });
   if (idle) stage.dataset.idle = ''; else delete stage.dataset.idle;
   // A long-idle, empty input bar tucks itself away; the hotkey or a click brings it back.
-  if (idle && now - Math.max(lastActive, lastHover) > HIDE_INPUT_MS && !form.hidden && !input.value) closeInput();
+  if (idle && now - Math.max(lastActive, lastHover) > HIDE_INPUT_MS && !form.hidden && !input.value && !pictures.length) closeInput();
 }
 
 setInterval(updateIdle, 250);

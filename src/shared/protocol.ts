@@ -15,7 +15,8 @@ export type ClientRole = 'ui' | 'mcp';
 
 export type ClientMessage =
   | { type: 'hello'; token: string; role: ClientRole }
-  | { type: 'user_message'; text: string }
+  // `images`: pictures pasted into the text box, for the brain to look at with the message.
+  | { type: 'user_message'; text: string; images?: PastedImage[] }
   | { type: 'typing'; active: boolean }
   | { type: 'cancel' }
   | { type: 'approval_response'; id: string; approved: boolean }
@@ -66,6 +67,9 @@ export type CoreMessage =
 export type TtsEngineId = 'elevenlabs' | 'edge' | 'none';
 
 export interface CaptureFile { path: string; kind: 'screenshot' | 'recording' }
+
+/** A picture pasted into the text box: its type ("image/png") and its bytes in base64. */
+export interface PastedImage { mime: string; data: string }
 
 export interface ObsidianStatusInfo {
   vaults: { path: string; name: string; open: boolean }[]; // vaults Obsidian knows about on this PC
