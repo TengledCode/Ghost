@@ -20,6 +20,14 @@ const SAFE_TO_OPEN = new Set([
   '.zip', '.7z', '.rar',
 ]);
 
+/**
+ * Whether an open_app "name" is really a path, a protocol or a program or script file: those are
+ * started as written (after Aaron's confirm card), never looked up as an app name.
+ */
+export function startsCommand(name: string): boolean {
+  return /[\\/:]|\.(exe|bat|cmd|com|ps1|psm1|vbs|vbe|js|jse|wsf|wsh|msi|msix|appx|lnk|url|scr|hta|cpl|msc|pif|reg|jar|py|sh)$/i.test(name.trim());
+}
+
 export function classify(tool: string, args: Record<string, unknown>, ctx: RiskContext = { safeReadRoots: [] }): Risk {
   if (ALWAYS_CONFIRM.has(tool)) return 'confirm';
   switch (tool) {
@@ -30,11 +38,10 @@ export function classify(tool: string, args: Record<string, unknown>, ctx: RiskC
       const ext = extname(target).toLowerCase();
       return ext === '' || SAFE_TO_OPEN.has(ext) ? 'safe' : 'confirm'; // no extension: a folder
     }
-    case 'open_app': {
-      // A plain app name ("spotify") is looked up in the Start menu. A path or protocol could start anything.
-      const name = String(args.name ?? '').trim();
-      return /[\\/:]|\.(exe|bat|cmd|ps1|vbs|js|msi|lnk|scr|com|hta)$/i.test(name) ? 'confirm' : 'safe';
-    }
+    case 'open_app':
+      // A plain app name ("spotify") only ever opens an app from the Start menu's own list (see
+      // tools/apps.ts). A path, a protocol or a program file could start anything.
+      return startsCommand(String(args.name ?? '')) ? 'confirm' : 'safe';
     case 'read_file':
     case 'list_folder':
       return isInside(String(args.path ?? ''), ctx.safeReadRoots) ? 'safe' : 'confirm';

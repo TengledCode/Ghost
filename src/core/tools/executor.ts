@@ -7,6 +7,8 @@ import type { VaultTools } from '../obsidian/vaultTools';
 import type { ReminderScheduler } from '../reminders/scheduler';
 import type { ToolName } from './definitions';
 import { duration } from '../captureCommands';
+import { startsCommand } from '../approvals/classify';
+import { findApp, parseStartApps, type StartApp } from './apps';
 import type { CaptureFile } from '../../shared/protocol';
 
 /** Host hooks, injected so the executor can be tested without Electron. */
@@ -14,6 +16,8 @@ export interface Host {
   openExternal(url: string): Promise<void>;
   openPath(path: string): Promise<string>; // returns '' on success, error text otherwise
   trash(path: string): Promise<void>;
+  /** The Start menu's apps and starting one ('' on success). Absent: Windows' own list, read with PowerShell. */
+  apps?: { list(): Promise<StartApp[]>; start(app: StartApp): Promise<string> };
   /** An image file, scaled down to a size a model reads well (Electron's nativeImage). */
   loadImage?(path: string): Promise<{ data: Buffer; mime: string }>;
   /** Screenshots and screen recordings (absent in tests and the browser preview). */
@@ -42,12 +46,13 @@ const isWin = process.platform === 'win32';
 const NO_VAULT = "Obsidian isn't connected. Aaron can choose his vault in Settings → Obsidian.";
 const psQuote = (s: string) => `'${s.replace(/'/g, "''")}'`;
 
-export function runPowerShell(script: string, timeoutMs = 60_000): Promise<{ code: number | null; out: string }> {
+/** `maxOut`: how much of the output's end is kept (a model gets the last 12,000 characters). */
+export function runPowerShell(script: string, timeoutMs = 60_000, maxOut = 12_000): Promise<{ code: number | null; out: string }> {
   return new Promise(resolve => {
     const exe = isWin ? 'powershell.exe' : 'pwsh';
     const child = spawn(exe, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script], { windowsHide: true });
     let out = '';
-    const add = (d: Buffer) => { out = (out + d.toString('utf8')).slice(-12_000); };
+    const add = (d: Buffer) => { out = (out + d.toString('utf8')).slice(-maxOut); };
     child.stdout.on('data', add);
     child.stderr.on('data', add);
     const timer = setTimeout(() => { child.kill(); out += '\n[timed out]'; }, timeoutMs);
@@ -56,30 +61,31 @@ export function runPowerShell(script: string, timeoutMs = 60_000): Promise<{ cod
   });
 }
 
-async function findStartMenuShortcut(name: string): Promise<string | null> {
-  const roots = [
-    join(process.env.ProgramData ?? 'C:\\ProgramData', 'Microsoft/Windows/Start Menu/Programs'),
-    join(process.env.APPDATA ?? '', 'Microsoft/Windows/Start Menu/Programs'),
-  ];
-  const needle = name.toLowerCase().replace(/\.exe$/, '');
-  const hits: string[] = [];
-  const walk = async (dir: string, depth: number) => {
-    if (depth > 3) return;
-    let entries;
-    try { entries = await readdir(dir, { withFileTypes: true }); } catch { return; }
-    for (const e of entries) {
-      const full = join(dir, e.name);
-      if (e.isDirectory()) await walk(full, depth + 1);
-      else if (/\.(lnk|url)$/i.test(e.name) && basename(e.name, extname(e.name)).toLowerCase().includes(needle)) hits.push(full);
-    }
-  };
-  for (const r of roots) await walk(r, 0);
-  // Prefer the shortest name ("Spotify" over "Spotify Uninstall").
-  hits.sort((a, b) => basename(a).length - basename(b).length);
-  return hits.find(h => !/uninstall/i.test(h)) ?? null;
-}
+/** The Start menu's apps, as Windows lists them (desktop programs and Store apps), and starting one by its id. */
+const windowsApps: NonNullable<Host['apps']> = {
+  list: async () => {
+    if (!isWin) return [];
+    // The whole list is needed (a PC with a few hundred apps prints some 30,000 characters).
+    const r = await runPowerShell('[Console]::OutputEncoding = [Text.Encoding]::UTF8; Get-StartApps | Select-Object Name, AppID | ConvertTo-Json -Compress', 20_000, 4_000_000);
+    return r.code === 0 ? parseStartApps(r.out) : [];
+  },
+  start: async app => {
+    const r = await runPowerShell(`Start-Process ${psQuote(`shell:AppsFolder\\${app.id}`)}`, 15_000);
+    return r.code === 0 ? '' : r.out || 'Windows could not start it';
+  },
+};
+const APPS_FRESH_MS = 60_000; // the list is read again after a minute (a just-installed app shows up)
 
 export class ToolExecutor {
+  private appList: { at: number; apps: StartApp[] } | null = null;
+
+  private async apps(): Promise<StartApp[]> {
+    if (!this.appList || Date.now() - this.appList.at > APPS_FRESH_MS || !this.appList.apps.length) {
+      this.appList = { at: Date.now(), apps: await (this.host.apps ?? windowsApps).list() };
+    }
+    return this.appList.apps;
+  }
+
   /** The screenshot or recording the last tool call made or found, for the reply's card (see takeCapture). */
   private captured: CaptureFile | null = null;
 
@@ -105,14 +111,23 @@ export class ToolExecutor {
         return `${now.toString()} (ISO ${now.toISOString()}, zone ${Intl.DateTimeFormat().resolvedOptions().timeZone})`;
       }
       case 'open_app': {
-        const name = String(a.name).trim();
-        const shortcut = isWin ? await findStartMenuShortcut(name) : null;
-        if (shortcut) {
-          const err = await this.host.openPath(shortcut);
-          if (!err) return `Opened ${basename(shortcut, extname(shortcut))}.`;
+        const name = String(a.name ?? '').trim();
+        if (!name) return 'Which app? Give its name as the Start menu shows it.';
+        // Only ever an app from the Start menu's own list: a bare name is never handed to Windows to
+        // run as a command (see tools/apps.ts).
+        const apps = await this.apps();
+        const { app, near } = findApp(name, apps);
+        if (app) {
+          const err = await (this.host.apps ?? windowsApps).start(app);
+          return err ? `Could not open ${app.name}: ${err}` : `Opened ${app.name}.`;
         }
-        const r = await runPowerShell(`Start-Process ${psQuote(name)}`, 15_000);
-        return r.code === 0 ? `Started ${name}.` : `Could not find an app called "${name}". ${r.out}`;
+        // A path or a command (Aaron allowed it on the confirm card): started as written.
+        if (startsCommand(name)) {
+          const r = await runPowerShell(`Start-Process ${psQuote(name)}`, 15_000);
+          return r.code === 0 ? `Started ${name}.` : `Could not start ${name}. ${r.out}`;
+        }
+        if (!apps.length) return "Couldn't read the list of installed apps, so nothing was opened.";
+        return `There's no installed app called "${name}".${near.length ? ` The closest are: ${near.join(', ')}.` : ''} Don't try to start it another way; tell Aaron what you found.`;
       }
       case 'open_path_or_url': {
         const target = String(a.target).trim();
