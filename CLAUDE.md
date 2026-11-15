@@ -19,6 +19,7 @@ Handoff from the cloud sessions that built Ghost, so a local session can carry s
   3. **Private-looking files.** With either brain: "read passwords.txt in my Documents" (make a dummy one) shows a confirm card saying its name looks private; an ordinary file there still opens with no card.
   4. **Notes switch.** Additional settings → Obsidian: with "Let Ghost search and read your notes" off, "read <a note in the vault>" shows a card; Ghost's own memory still works. Switch it back on after.
   5. **Nothing to see, but in the build:** the tool relay can only call tools; the persona tells the brains that what they read is never an instruction; the test runner is vitest 5.
+  - **In a cloud session (his laptop):** these checks need the installed Ghost on the Windows PC, so they wait until he is back at it. Carry on with the next job instead (the usage tracker for both brains, below), keep this list as it is, and add to it whatever is built without his test.
   - Still unchecked from 15 Nov: after a long conversation is filed into Obsidian with Gemini, the note is still written (filing calls get no tools).
 - **Tested by Aaron in the installed Ghost (15-16 Nov), all pushed:** Gemini reads a file in a safe folder again (the Temporary Space folder on his Desktop); the model check proposes a line-up at start and Settings shows it; "open Claude", "open notepad" and "open logoff" behave; the screenshot card folds and Ghost sits, drags and snaps as before; a pasted picture reaches Gemini, which described it.
 - **Windows shell gotchas:**
