@@ -360,6 +360,7 @@ function showFile(turnId: string, file: CaptureFile): void {
   fileRow.classList.remove('projecting');
   filePreview.removeAttribute('src');
   fileRow.hidden = false;
+  setFolded(false); // each new picture is shown
   refreshInteractivity();
   void bridge.capturePreview(file.path).then(async url => {
     if (shownFile?.file !== file) return;
@@ -408,9 +409,23 @@ function hull(points: { x: number; y: number }[]): { x: number; y: number }[] {
 }
 
 fileRow.querySelector('.file-preview')!.addEventListener('click', () => { if (shownFile) bridge.openCapture(shownFile.file.path, 'open'); });
-for (const b of fileRow.querySelectorAll<HTMLButtonElement>('.file-actions button')) {
+for (const b of fileRow.querySelectorAll<HTMLButtonElement>('.file-actions [data-how]')) {
   b.addEventListener('click', () => { if (shownFile) bridge.openCapture(shownFile.file.path, b.dataset.how === 'folder' ? 'folder' : 'open'); });
 }
+
+// The picture can be folded away to leave the reply room: one slim row stays, with the picture's
+// name (which brings it back), Open and Show in folder.
+const foldButton = fileRow.querySelector<HTMLButtonElement>('.file-fold')!;
+function setFolded(on: boolean): void {
+  const video = shownFile?.file.kind === 'recording';
+  fileRow.classList.toggle('folded', on);
+  foldButton.setAttribute('aria-expanded', String(!on));
+  foldButton.textContent = on ? (video ? 'Recording' : 'Screenshot') : (video ? 'Hide video' : 'Hide picture');
+  foldButton.title = on ? `Show the ${video ? 'video' : 'picture'} again` : `Fold the ${video ? 'video' : 'picture'} away to read the reply`;
+  bubbleText.scrollTop = bubbleText.scrollHeight;
+  refreshInteractivity();
+}
+foldButton.addEventListener('click', () => setFolded(!fileRow.classList.contains('folded')));
 
 function scheduleBubbleHide(): void {
   clearTimeout(bubbleTimer);

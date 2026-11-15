@@ -125,6 +125,18 @@ html, body { margin: 0; height: 100%; background: transparent; overflow: hidden;
 .file-actions button:hover { background: rgba(255,255,255,.16); }
 .file-actions [data-how="open"] { background: color-mix(in srgb, var(--edge) 30%, transparent); }
 .file-actions [data-how="open"]:hover { background: color-mix(in srgb, var(--edge) 42%, transparent); }
+/* Folding the picture away leaves the reply room: one slim row with the picture's name (which
+   brings it back), Open and Show in folder. While the picture shows, the bubble is taller instead. */
+#bubble:has(.bubble-file:not([hidden]):not(.folded)) { max-height: 260px; }
+.file-actions .file-fold { padding: 2px 6px; font-size: 11.5px; color: var(--muted); background: none; }
+.file-actions .file-fold:hover { color: var(--text); background: rgba(255,255,255,.08); }
+.file-fold::after { content: '▴'; margin-left: 5px; font-size: 9px; }
+.bubble-file.folded { margin-top: 6px; }
+.bubble-file.folded .file-preview { display: none; }
+.bubble-file.folded .file-actions { flex-direction: row; align-items: center; }
+.bubble-file.folded .file-actions button { flex: 1; padding: 4px 8px; font-size: 12.5px; }
+.bubble-file.folded .file-fold { order: -1; flex: none; color: var(--text); border: 1px solid color-mix(in srgb, var(--edge) 45%, transparent); }
+.bubble-file.folded .file-fold::after { content: '▾'; }
 /* Being projected: the picture scans in from Ghost's side, bright and cyan, then settles to full colour. */
 .bubble-file.projecting .file-preview img { animation: holo-scan .7s cubic-bezier(.3,.7,.3,1) both, holo-tint 1.5s ease-out both; }
 .bubble-file.projecting.from-below .file-preview img { animation-name: holo-scan-up, holo-tint; }
