@@ -19,15 +19,22 @@ const browserApi: GhostApi = {
   saveElevenLabsKey: async v => (v ? { has: true, saved: true, check: { status: 'ok' } } : { has: false }),
   checkElevenLabsKey: async () => ({ has: false }),
   // Preview: ?offer=1 shows a pretend line-up on offer in Settings → Brain.
-  modelSuggestion: async () => (params.get('offer') ? {
-    news: 'Gemini 4 Hydrogen is now on your plan.', by: 'Claude',
+  modelSuggestion: async () => (params.get('offer') ? [{
+    brain: 'gemini' as const, brainName: 'Gemini', news: 'Gemini 4 Hydrogen is now on your plan.', by: 'Claude',
     summary: 'Hydrogen is Google\'s faster, cheaper model for everyday agent work; Argon is still the one built for deep reasoning.',
     slots: [
-      { slot: 'Light', model: 'Gemini 3.8 Flash (Medium)', current: 'Gemini 3.8 Flash (Medium)', changed: false, reason: 'Still the quickest and lightest on the plan.' },
-      { slot: 'Balanced', model: 'Gemini 4 Hydrogen (High)', current: 'Gemini 4 Argon (Medium)', changed: true, reason: 'Matches Argon on the benchmarks at about a third of the usage, and answers faster.' },
-      { slot: 'Heavy', model: 'Gemini 4 Argon (High)', current: 'Gemini 4 Argon (High)', changed: false, reason: 'Argon still leads on long, hard reasoning.' },
+      { key: 'fast' as const, slot: 'Light', model: 'Gemini 4 Hydrogen (Low)', current: 'Gemini 3.8 Flash (Medium)', changed: true, reason: 'About twice as fast as Flash and stronger at tool use.' },
+      { key: 'balanced' as const, slot: 'Balanced', model: 'Gemini 4 Hydrogen (High)', current: 'Gemini 4 Argon (Medium)', changed: true, reason: 'Matches Argon on the benchmarks at about a third of the usage, and answers faster.' },
+      { key: 'deep' as const, slot: 'Heavy', model: 'Gemini 4 Argon (High)', current: 'Gemini 4 Argon (High)', changed: false, reason: 'Argon still leads on long, hard reasoning.' },
     ],
-  } : null),
+  }, {
+    brain: 'claude' as const, brainName: 'Claude', news: 'Claude Fable 5.2 is now included in your Claude plan.', by: 'Gemini', summary: 'Fable is the strongest model, and by far the heaviest on the plan\'s limits.',
+    slots: [
+      { key: 'fast' as const, slot: 'Light', model: 'Claude Haiku 5.5', current: 'Claude Haiku 5.5', changed: false, reason: 'Still the fastest and lightest.' },
+      { key: 'balanced' as const, slot: 'Balanced', model: 'Claude Sonnet 5.5', current: 'Claude Sonnet 5.5', changed: false, reason: 'The best balance for everyday use.' },
+      { key: 'deep' as const, slot: 'Heavy', model: 'Claude Fable 5.2', current: 'Claude Opus 5.5', changed: true, reason: 'Leads the reasoning benchmarks; it uses the plan several times faster than Opus.' },
+    ],
+  }] : []),
   answerModelSuggestion: () => {},
   onModelSuggestion: () => {},
   setInteractive: () => {},

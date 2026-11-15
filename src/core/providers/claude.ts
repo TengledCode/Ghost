@@ -108,6 +108,58 @@ export class ClaudeStreamParser {
   }
 }
 
+/** How the model watcher finds out which Claude models the subscription includes (see claudeModelProbe). */
+export interface ClaudeModelProbe {
+  /** Claude Code's version ("2.1.322"), '' if it can't be read. */
+  version(): Promise<string>;
+  /** Short model names Claude Code's own help mentions ("fable", "opus", "sonnet"). */
+  aliases(): Promise<string[]>;
+  /** One word from a model: the exact model behind the name, and whether the subscription itself paid for it. null: couldn't tell (signed out, at the limit, offline). */
+  probe(alias: string): Promise<{ model: string; included: boolean } | null>;
+}
+
+/**
+ * Claude Code has no command that lists the plan's models, so each short name is asked for one word,
+ * on the subscription login only. A model counts as included when it answers and Claude Code reports
+ * that no usage credits ("overage") paid for it. Each probe costs a few tokens of the plan, so the
+ * watcher only does this when Claude Code's version changes and once a week.
+ */
+export function claudeModelProbe(command = 'claude', cwd = process.cwd()): ClaudeModelProbe {
+  const output = async (args: string[], stdin = '', ms = 20_000) => {
+    const run = runCli(command, args, { stdin, cwd, signal: AbortSignal.timeout(ms), subscriptionOnly: true });
+    const lines: string[] = [];
+    for await (const line of run.lines) lines.push(line);
+    await run.exit;
+    return lines;
+  };
+  return {
+    version: async () => (await output(['--version']).catch(() => [])).join(' ').match(/\d+\.\d+\.\d+/)?.[0] ?? '',
+    aliases: async () => {
+      const help = (await output(['--help']).catch(() => [])).join('\n');
+      const about = help.match(/--model <model>([\s\S]*?)(?=\n\s*-{1,2}[a-zA-Z])/)?.[1] ?? '';
+      return [...about.matchAll(/'([a-z][a-z0-9-]*)'/g)].map(m => m[1]);
+    },
+    probe: async alias => {
+      if (!/^[a-z][a-z0-9.-]*$/.test(alias)) return null;
+      let model = '', overage: boolean | undefined, result: { is_error?: boolean; result?: unknown; subtype?: string } | null = null;
+      const lines = await output(['-p', '--output-format', 'stream-json', '--verbose', '--model', alias, '--strict-mcp-config', '--tools', ''], 'Reply with the single word: ok', 90_000).catch(() => []);
+      for (const line of lines) {
+        let msg: any;
+        try { msg = JSON.parse(line); } catch { continue; }
+        if (msg.type === 'assistant' && msg.message?.model) model = String(msg.message.model);
+        if (msg.type === 'rate_limit_event' && typeof msg.rate_limit_info?.isUsingOverage === 'boolean') overage = msg.rate_limit_info.isUsingOverage;
+        if (msg.type === 'result') result = msg;
+      }
+      if (!result) return null;
+      if (result.is_error || (result.subtype && result.subtype !== 'success')) {
+        // Signed out or at the limit says nothing about the model; anything else means it isn't on offer.
+        return classifyError(String(result.result ?? result.subtype ?? '')) === 'other' ? { model: '', included: false } : null;
+      }
+      return { model, included: !!model && overage === false };
+    },
+  };
+}
+
 export class ClaudeCliProvider implements Provider {
   readonly id = 'claude' as const;
   constructor(private readonly command = 'claude') {}

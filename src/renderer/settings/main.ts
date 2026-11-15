@@ -179,32 +179,60 @@ function renderVoices(id: string, list: VoiceOption[], engine: 'elevenlabs' | 'e
 }
 
 // ElevenLabs key: stored encrypted by the main process and never sent back to the page.
-// A Gemini line-up on offer (from the model watcher, after the other brain looked the models up):
-// what changed, the model proposed for each slot with its reason, then Use it or Not now.
-const offer = document.getElementById('modelOffer')!;
-const showOffer = (s: ModelSuggestion | null) => {
-  offer.hidden = !s;
-  if (!s) return;
-  offer.querySelector('.offer-news')!.textContent = `${s.news} ${s.by} looked up the latest benchmarks and suggests:`;
-  offer.querySelector('ul')!.replaceChildren(...s.slots.map(slot => {
-    const li = document.createElement('li');
-    const name = document.createElement('strong');
-    name.textContent = `${slot.slot}: ${slot.model}`;
-    const note = document.createElement('small');
-    note.textContent = slot.changed ? (slot.current ? `instead of ${slot.current}` : 'new') : 'no change';
-    const why = document.createElement('span');
-    why.textContent = slot.reason;
-    li.classList.toggle('same', !slot.changed);
-    li.append(name, ' ', note, why);
-    return li;
-  }));
-  offer.querySelector('.offer-summary')!.textContent = s.summary;
+// Line-ups on offer (from the model watcher, after the other brain looked the models up): one card
+// per brain with what changed, the model proposed for each slot and why. Aaron answers each slot on
+// its own (Use it / Not now), or all the open ones at once with the two buttons underneath.
+const offers = document.getElementById('modelOffers')!;
+const button = (label: string, onClick: () => void) => {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.textContent = label;
+  b.addEventListener('click', onClick);
+  return b;
 };
-void bridge.modelSuggestion().then(showOffer);
+const showOffers = (list: ModelSuggestion[]) => {
+  offers.replaceChildren(...list.map(s => {
+    const card = document.createElement('div');
+    card.className = 'offer';
+    const news = document.createElement('p');
+    news.textContent = `${s.news} ${s.by} looked up the latest benchmarks and suggests, for ${s.brainName}:`;
+    const rows = document.createElement('ul');
+    rows.append(...s.slots.map(slot => {
+      const li = document.createElement('li');
+      const open = slot.changed && !slot.answered;
+      const name = document.createElement('strong');
+      name.textContent = `${slot.slot}: ${slot.model}`;
+      const note = document.createElement('small');
+      note.textContent = slot.answered === 'used' ? 'now in use' : slot.answered === 'kept' ? `not now: ${slot.current} stays` : slot.changed ? (slot.current ? `instead of ${slot.current}` : 'new') : 'no change';
+      const why = document.createElement('span');
+      why.textContent = slot.reason;
+      li.classList.toggle('same', !open);
+      li.append(name, ' ', note, why);
+      if (open) {
+        const answer = document.createElement('div');
+        answer.className = 'row';
+        answer.append(button('Use it', () => bridge.answerModelSuggestion(s.brain, true, slot.key)), button('Not now', () => bridge.answerModelSuggestion(s.brain, false, slot.key)));
+        li.append(answer);
+      }
+      return li;
+    }));
+    const summary = document.createElement('p');
+    summary.className = 'offer-summary';
+    summary.textContent = s.summary;
+    card.append(news, rows, summary);
+    // For everything still open at once (only worth showing when more than one slot is).
+    if (s.slots.filter(slot => slot.changed && !slot.answered).length > 1) {
+      const all = document.createElement('div');
+      all.className = 'row offer-all';
+      all.append(button('Use all of them', () => bridge.answerModelSuggestion(s.brain, true)), button('Not now for any', () => bridge.answerModelSuggestion(s.brain, false)));
+      card.append(all);
+    }
+    return card;
+  }));
+};
+void bridge.modelSuggestion().then(showOffers);
 // Use it changes the slots in the main process, so read the settings afresh before redrawing them.
-bridge.onModelSuggestion(async s => { showOffer(s); settings = (await bridge.bootstrap()).settings; modelLists.delete('gemini'); renderBrains(); });
-document.getElementById('offerUse')!.addEventListener('click', () => { bridge.answerModelSuggestion(true); showOffer(null); });
-document.getElementById('offerLater')!.addEventListener('click', () => { bridge.answerModelSuggestion(false); showOffer(null); });
+bridge.onModelSuggestion(async list => { showOffers(list); settings = (await bridge.bootstrap()).settings; modelLists.delete('gemini'); modelLists.delete('claude'); renderBrains(); });
 
 // Each time Settings opens and on every save, the key is checked with ElevenLabs (no credits spent).
 const keyStatus = document.getElementById('keyStatus')!;

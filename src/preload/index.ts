@@ -15,10 +15,11 @@ const api = {
   /** Checks a new key with ElevenLabs and saves it unless it's rejected ('' removes the key). */
   saveElevenLabsKey: (value: string): Promise<KeyState> => ipcRenderer.invoke('ghost:save-eleven-key', value),
   checkElevenLabsKey: (): Promise<KeyState> => ipcRenderer.invoke('ghost:check-eleven-key'),
-  /** A new Gemini family on offer for Balanced and Heavy (null when there's none). */
-  modelSuggestion: (): Promise<ModelSuggestion | null> => ipcRenderer.invoke('ghost:model-suggestion'),
-  answerModelSuggestion: (use: boolean) => ipcRenderer.send('ghost:model-suggestion-answer', use),
-  onModelSuggestion: (cb: (s: ModelSuggestion | null) => void): void => { ipcRenderer.on('ghost:model-suggestion', (_e, s) => cb(s)); },
+  /** Line-ups on offer for the brains' slots: none, Gemini's, Claude's or both. */
+  modelSuggestion: (): Promise<ModelSuggestion[]> => ipcRenderer.invoke('ghost:model-suggestion'),
+  /** Use the proposed model or not: for one slot, or (no slot) for every slot still open. */
+  answerModelSuggestion: (brain: 'gemini' | 'claude', use: boolean, slot?: 'fast' | 'balanced' | 'deep') => ipcRenderer.send('ghost:model-suggestion-answer', brain, use, slot),
+  onModelSuggestion: (cb: (s: ModelSuggestion[]) => void): void => { ipcRenderer.on('ghost:model-suggestion', (_e, s) => cb(s)); },
   setInteractive: (on: boolean) => ipcRenderer.send('ghost:interactive', on),
   dragArm: () => ipcRenderer.send('ghost:drag-arm'),
   dragStart: () => ipcRenderer.send('ghost:drag-start'),

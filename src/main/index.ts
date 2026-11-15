@@ -4,6 +4,7 @@ import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { GhostCore } from '../core/ghostCore';
 import { ClaudeLiveProvider } from '../core/providers/claudeLive';
+import { claudeModelProbe } from '../core/providers/claude';
 import { AntigravityProvider } from '../core/providers/antigravity';
 import { MockProvider } from '../core/providers/mock';
 import { EdgeTts } from '../core/tts/edge';
@@ -266,7 +267,7 @@ app.whenReady().then(async () => {
   });
   updater.on('status', status => { for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send('ghost:update', status); });
 
-  // Keeping up with new Gemini models (Claude's aliases do that by themselves).
+  // Keeping each brain's Light / Balanced / Heavy models up to date (see modelWatcher.ts).
   const models = gemini && new ModelWatcher({
     file: join(app.getPath('userData'), 'data', 'models.json'),
     // Testing from source only: GHOST_EXTRA_MODELS="gemini-4-carbon-high,…" pretends agy offers more.
@@ -275,12 +276,16 @@ app.whenReady().then(async () => {
     save: patch => store.update(patch),
     notify: (level, text) => core.notify(level, text),
     onSuggestion: s => { for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send('ghost:model-suggestion', s); },
-    // Which model suits which slot: Claude looks it up (Gemini itself if Claude can't answer).
-    advise: prompt => core.research(prompt, 'gemini'),
+    // Which model suits which slot: the other brain looks it up (the brain itself if the other can't answer).
+    advise: (prompt, about) => core.research(prompt, about),
+    claude: claudeModelProbe('claude', join(app.getPath('userData'), 'data', 'workspace')),
   });
   models?.start();
-  ipcMain.handle('ghost:model-suggestion', () => models?.suggestion ?? null);
-  ipcMain.on('ghost:model-suggestion-answer', (_e, use: boolean) => models?.answer(!!use));
+  ipcMain.handle('ghost:model-suggestion', () => models?.suggestions ?? []);
+  ipcMain.on('ghost:model-suggestion-answer', (_e, brain: unknown, use: unknown, slot: unknown) => {
+    if (brain !== 'gemini' && brain !== 'claude') return;
+    models?.answer(brain, use === true, slot === 'fast' || slot === 'balanced' || slot === 'deep' ? slot : undefined);
+  });
   ipcMain.handle('ghost:update-status', () => updater.current);
   ipcMain.handle('ghost:update-check', () => updater.check());
   ipcMain.on('ghost:update-run', () => { void updater.update(); });

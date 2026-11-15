@@ -92,6 +92,21 @@ export interface ModelAdvice {
   by: string; // who looked it up: "Claude" or "Gemini"
   news: string; // what set it off: "Gemini 4 Hydrogen is now on your plan."
   at: number;
+  /** Slots Aaron has already answered one by one (the offer goes once every changed slot is answered). */
+  answered?: Partial<Record<Slot, 'used' | 'kept'>>;
+}
+
+/**
+ * What the watcher remembers about Claude's models. Claude Code has no list to read, so the plan's
+ * models are found by asking each short name ("opus") for one word: it counts when it answers on the
+ * subscription itself, without usage credits. That's done when Claude Code's version changes and once a week.
+ */
+export interface ClaudeWatchState {
+  version?: string; // Claude Code's version at the last look
+  probedAt?: number;
+  models: Record<string, string>; // short name → exact model, for the models the subscription includes
+  catalog?: string[]; // "opus=claude-opus-5-5"… when the line-up was last looked into
+  advice: ModelAdvice | null;
 }
 
 /** What the watcher remembers between checks (data/models.json). */
@@ -100,6 +115,7 @@ export interface ModelWatchState {
   inUse: Partial<Record<Slot, string>>; // what each Gemini slot used at the last check
   catalog?: string[]; // the Gemini models on offer when the line-up was last looked into (sorted)
   advice: ModelAdvice | null; // a proposed line-up, waiting for Aaron's answer
+  claude?: ClaudeWatchState;
 }
 export const EMPTY_WATCH: ModelWatchState = { known: [], inUse: {}, advice: null };
 
@@ -177,6 +193,7 @@ export function watchModels(ids: string[], prev: ModelWatchState, slots: Record<
     inUse,
     catalog: base,
     advice: prev.advice,
+    claude: prev.claude,
   };
   return { state, pinTop, notices, changed };
 }

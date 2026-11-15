@@ -613,12 +613,12 @@ let updateReady = false;
 let modelOffered = false;
 const showGearDot = () => {
   gear.classList.toggle('has-update', updateReady || modelOffered);
-  gear.title = updateReady ? 'Settings · an update is ready' : modelOffered ? 'Settings · a new Gemini model is on offer' : 'Settings';
+  gear.title = updateReady ? 'Settings · an update is ready' : modelOffered ? 'Settings · new models are on offer' : 'Settings';
 };
 const showUpdate = (s: { state: string }) => { updateReady = s.state === 'available'; showGearDot(); };
 bridge.onUpdate(showUpdate);
 void bridge.updateStatus().then(showUpdate);
-const showModelOffer = (s: unknown) => { modelOffered = !!s; showGearDot(); };
+const showModelOffer = (s: unknown[]) => { modelOffered = s.length > 0; showGearDot(); };
 bridge.onModelSuggestion(showModelOffer);
 void bridge.modelSuggestion().then(showModelOffer);
 
