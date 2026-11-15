@@ -79,9 +79,9 @@ function renderMeta(): void {
   else if (!settings.voiceEnabled && modelLabel) parts.push('voice off'); // so a silent reply is never a mystery
   bubbleMeta.textContent = parts.filter(Boolean).join(' · ');
 }
-const history: { who: 'user' | 'ghost'; text: string }[] = [];
-/** The history panel shows the last 30 messages; older ones aren't kept in the page. */
-function pushHistory(m: { who: 'user' | 'ghost'; text: string }): void { history.push(m); if (history.length > 60) history.splice(0, history.length - 60); }
+const history: { who: 'user' | 'ghost'; text: string; pictures?: number }[] = [];
+/** The history panel shows the last 30 messages; older ones aren't kept in the page. `pictures`: how many were pasted with it. */
+function pushHistory(m: { who: 'user' | 'ghost'; text: string; pictures?: number }): void { history.push(m); if (history.length > 60) history.splice(0, history.length - 60); }
 
 const boot = await bridge.bootstrap();
 settings = boot.settings;
@@ -444,6 +444,13 @@ function renderHistory(): void {
     const p = document.createElement('p');
     p.className = `msg ${h.who}`;
     p.append(renderMarkdownLite(h.text));
+    // Pictures pasted with a message: a small tag after the words, not more words.
+    if (h.pictures) {
+      const tag = document.createElement('span');
+      tag.className = 'msg-pictures';
+      tag.textContent = h.pictures === 1 ? '1 picture' : `${h.pictures} pictures`;
+      p.append(tag);
+    }
     return p;
   }));
   historyEl.scrollTop = historyEl.scrollHeight;
@@ -551,8 +558,7 @@ form.addEventListener('submit', e => {
   e.preventDefault();
   const text = input.value.trim();
   if (!text && !pictures.length) return;
-  const note = pictures.length ? `${text ? `${text} ` : ''}(${pictures.length === 1 ? 'a picture' : `${pictures.length} pictures`})` : text;
-  pushHistory({ who: 'user', text: note });
+  pushHistory({ who: 'user', text, pictures: pictures.length });
   renderHistory();
   // A small reaction while Ghost works on it: a curious tilt for questions, a happy spin after thanks.
   const mood = moodFromMessage(text);

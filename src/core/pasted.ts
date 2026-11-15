@@ -5,12 +5,18 @@ import type { PastedImage } from '../shared/protocol';
 // Pictures Aaron pastes into Ghost's text box (a screenshot from the clipboard, as in the Claude
 // app). A pasted picture isn't a file, and the brains look at pictures through read_file, so each
 // one is saved in Ghost's working folder (a safe folder: no confirm card) and named in the message's
-// context. Only the newest few are kept.
+// context. They aren't needed afterwards (Aaron, 15 Nov): the folder is emptied when Ghost starts and
+// when it closes, and holds at most the newest few in between.
 
 export const MAX_PASTED = 4; // pictures in one message
 const MAX_BYTES = 12_000_000; // each
 const KEEP = 20; // on disk
 const TYPES: Record<string, string> = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp', 'image/gif': 'gif', 'image/bmp': 'bmp' };
+
+/** Removes every pasted picture (Ghost starting or closing). */
+export function clearPastedImages(dir: string): void {
+  try { rmSync(dir, { recursive: true, force: true }); } catch { /* in use: the next start clears it */ }
+}
 
 /** Saves the pictures that are really pictures (a known type, not too big) and returns their paths. */
 export function savePastedImages(dir: string, images: unknown, now = new Date()): string[] {

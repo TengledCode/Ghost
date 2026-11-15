@@ -159,8 +159,14 @@ html, body { margin: 0; height: 100%; background: transparent; overflow: hidden;
 .history-toggle { background: none; border: 0; color: var(--muted); font: inherit; cursor: pointer; padding: 2px 0; }
 .history-toggle:hover { color: var(--text); }
 
-#history { padding: 10px 12px; max-height: 240px; overflow-y: auto; user-select: text; }
-#history .msg { margin: 0 0 8px; white-space: pre-wrap; }
+/* The transcript shares the window's height with the reply and the text box. It gives way first
+   (down to a few lines), and while it's open the reply keeps to about five lines: the transcript
+   holds the same words. Long unbroken text (a file path, a link) wraps instead of scrolling sideways. */
+#history { padding: 10px 12px; max-height: 240px; min-height: 56px; flex: 0 20 auto; overflow-y: auto; overflow-x: hidden; user-select: text; }
+#stack:has(#history:not([hidden])) #bubble:not(:has(.bubble-file:not([hidden]):not(.folded))) { max-height: 120px; }
+#history .msg { margin: 0 0 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
+#history .msg-pictures { display: inline-block; margin-left: 6px; padding: 0 7px; border-radius: 999px; font-size: 11px; line-height: 17px; white-space: nowrap;
+  color: var(--muted); border: 1px solid var(--panel-border); vertical-align: 1px; }
 #history .msg.user { color: var(--muted); }
 #history .msg.user::before { content: "You · "; font-size: 11px; }
 

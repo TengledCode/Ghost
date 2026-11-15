@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { GhostCore } from '../src/core/ghostCore';
-import { savePastedImages } from '../src/core/pasted';
+import { clearPastedImages, savePastedImages } from '../src/core/pasted';
 import { buildTurnPrompt } from '../src/core/persona';
 import type { Provider, ProviderEvent, SendRequest } from '../src/core/providers/types';
 import { TtsService } from '../src/core/tts/service';
@@ -34,6 +34,13 @@ describe('pictures pasted into the text box', () => {
     const kept = readdirSync(dir).sort();
     expect(kept).toHaveLength(20);
     expect(kept[0]).toBe('pasted-2026-11-15T12-02-00-000Z-1.png'); // the first two messages' pictures are gone
+  });
+  it('are gone once Ghost closes, and when it next starts', () => {
+    const dir = join(tmp(), 'pasted');
+    savePastedImages(dir, [png()]);
+    clearPastedImages(dir);
+    expect(existsSync(dir)).toBe(false);
+    clearPastedImages(dir); // nothing there: no error
   });
   it('are named in the message\'s context, with the tool to look at them', () => {
     const now = new Date('2026-11-15T12:00:00Z');

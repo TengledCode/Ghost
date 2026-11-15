@@ -20,7 +20,7 @@ import { ScreenNoteFilter } from './screenNoteFilter';
 import { actionLabel, isCommandTurn } from './turnKind';
 import { OpenerFilter } from './openerFilter';
 import { buildPersona, buildTurnPrompt } from './persona';
-import { savePastedImages } from './pasted';
+import { clearPastedImages, savePastedImages } from './pasted';
 import { PresenceStore } from './presence';
 import type { Provider, ProviderEvent } from './providers/types';
 import { ReminderScheduler } from './reminders/scheduler';
@@ -108,6 +108,7 @@ export class GhostCore {
     this.personaFile = join(o.dataDir, 'persona.generated.md');
     this.mcpConfigPath = join(o.dataDir, 'ghost-mcp.json');
     mkdirSync(this.workspace, { recursive: true });
+    clearPastedImages(join(this.workspace, 'pasted')); // pictures pasted last time aren't kept
     this.reminders = new ReminderScheduler(join(o.dataDir, 'reminders.json'), r => this.fireReminder(r.id, r.text));
     this.connectStores();
     this.sessionId = this.log.current.claudeSessionId; // resume the Claude conversation after a restart
@@ -255,6 +256,7 @@ export class GhostCore {
   }
 
   stop(): void {
+    clearPastedImages(join(this.workspace, 'pasted'));
     this.clearLiveTimer();
     if (this.presenceTimer) clearInterval(this.presenceTimer);
     this.presence.update({ lastSeen: Date.now() });
