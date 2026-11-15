@@ -12,6 +12,13 @@ Handoff from the cloud sessions that built Ghost, so a local session can carry s
 - Explain things plainly and briefly. Ask Aaron before big or design-level changes. Make one change at a time and say what changed.
 - **Test in the real app before pushing**, and say plainly what you could not test. A pushed change that broke Ghost on Windows cost Aaron a lot of time once (see "Compatible drawing" below).
   - A change can be held back: commit it locally, don't push. **Settings → Updates** builds from this folder, lists such commits as "(on this PC only)" and installs them. Push once Aaron confirms. (By hand: `npm run dist:win`, then `dist\Ghost Setup 0.1.0.exe /S --force-run`.)
+  - **When Aaron says he's leaving, push everything, tested or not** (his rule, 15 Nov), so he can carry on from his laptop with Claude Code in the cloud. Anything pushed without his test in the installed Ghost is listed in "Not yet tested in the installed Ghost" just below, and **getting those tests done is the first job of the next session, on whichever machine**. Nothing installs until he presses Update, so a push can't break the Ghost that's running.
+- **Not yet tested in the installed Ghost (start here):** five changes built on 15 Nov. Each passed its unit tests and the checks named; none has run in the installed app. Details are in the to-do list under "Built 15 Nov". For Aaron to check after an Update:
+  1. **Gemini's hook:** with Gemini as the brain, "read <a file in Documents>" works with no card; a file elsewhere shows one. After a long conversation is filed into Obsidian, the note is still written.
+  2. **Model check:** about 30 s after start, a notice proposes a Gemini line-up for Hydrogen; Settings → Brain shows each slot with a reason; Use it changes the three slots, Not now leaves them.
+  3. **Open app:** "open Claude" opens the Claude app; "open notepad" and "open calculator" work; "open logoff" opens nothing.
+  4. **Screenshot card:** "take a screenshot", then Hide picture and the Screenshot button fold and unfold it; the reply stays readable; Ghost sits where he was and drags and snaps as before (his window is 70 px taller).
+  5. **Text box:** it grows as he types, Shift+Enter makes a new line, Up brings back the last message; Win+Shift+S then Ctrl+V shows a small preview with an ✕, and the brain describes the picture.
 - **Windows shell gotchas:**
   - PowerShell 5.1 mangles quotes in `git commit -m`: write the message to a file and use `git commit -F`.
   - Commands run through cmd (the updater's `runCommand`) lose a `^`: use git's `--not` instead of `^commit`.
@@ -180,6 +187,20 @@ Work through it one item at a time, asking Aaron before design-level changes.
     1. **Ghost staring at the blinking text cursor:** look at the input only while typing (a key in the last second or two) or just after clicking into it; otherwise follow the mouse.
     2. **Starting sooner after boot:** Run-key apps are delayed by Windows. Replace the login item with a Task Scheduler "at log on" task.
     3. **Ghost changes his own settings on request:** Aaron chose **an Undo notice** (change straight away, with Undo on the notice). Safety settings, the ElevenLabs key and the vault location are off-limits.
+  - **Built 15 Nov, not yet tested in the installed Ghost** (see "start here" at the top for what Aaron checks):
+    - **Gemini's hook** (`agyPlugin.ts`): knows agy's renamed `read_file`; the tools agy added stay refused. One-shot calls now get a plugin folder of their own (`root-no-tools`) whose hook refuses everything; `root-web` allows `search_web` only (`SendRequest.web`, for research). Tested with the real agy from a script.
+    - **Model check** (`modelAdvice.ts`, `modelWatcher.ts`, `GhostCore.research`): Aaron's rules:
+      - it runs **whenever the list of models changes**, not only for a new family;
+      - the **other brain's Balanced model** looks the models up, the brain's own Balanced model if the other fails;
+      - the look-up must **search for benchmarks and current information first**; names say nothing;
+      - he still approves it: **Use it / Not now**, each slot shown with its reason;
+      - other makers' models on agy's list (Claude, GPT-OSS) are left out of the recommendation but stay pickable by hand in the slot dropdowns.
+      - On 15 Nov, for Hydrogen: Claude Sonnet (28 s) proposed Light Hydrogen Low, Balanced Hydrogen High, Heavy Argon High; Gemini (286 s) the same with Light Hydrogen Medium. An earlier wording gave Heavy to Hydrogen XHigh, so the prompt now says a small lead on one index isn't enough for Heavy.
+      - **Only Gemini's slots are checked so far.** Open question for Aaron: Claude's slots are aliases (haiku / sonnet / opus) and Fable is off-limits, so a check there could only ever answer Haiku / Sonnet / Opus. Does he want it anyway, and may Fable be a candidate?
+    - **Open app** (`tools/apps.ts`): apps come from `Get-StartApps` and start through `shell:AppsFolder\<AppID>`; no bare-name fallback; uninstallers, reset tools and web links in the Start menu are never picked. `runPowerShell` takes a `maxOut` (the app list is about 30,000 characters; the default keeps the last 12,000).
+    - **Screenshot card:** a "Hide picture" button folds it into one row; the bubble may be 260 px tall while a picture shows; `windowSize` is 70 px taller. Checked in the browser preview.
+    - **Text box and pasting** (`pasted.ts`, overlay): a textarea that grows to four lines, Enter / Shift+Enter, Up for earlier messages; pasted pictures as previews with an ✕ (four per message), saved in `workspace\pasted` (newest 20 kept: Aaron hasn't said yet whether he'd rather they go when the conversation ends). Checked in the browser preview.
+    - `.claude/launch.json` starts the browser preview (`npm run preview:ui`) for Claude's built-in browser. Add `&offer=1` to the Settings page's address to see a pretend model offer.
   - **Done and tested on Aaron's PC (3–4 Nov), pushed 4 Nov:**
     - **Silent lines show at once** (commit "Show 'Recording your screen.' at once"). "record my screen" never goes to a brain and the recorder starts in ~0.5 s. Ghost seemed to take 8 s because the overlay waited for a voice that never comes (its no-voice safety net). `turn_end` now carries `silent: true`.
     - **Screenshot viewer** (commit "Screenshot viewer: …"), as Aaron specified:
