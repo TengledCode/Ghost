@@ -281,7 +281,7 @@ export class GhostCore {
     };
     writeFileSync(this.mcpConfigPath, JSON.stringify({ mcpServers: { ghost: server } }, null, 2));
     // Antigravity: Ghost's tools and permission hooks as a plugin, and the persona as GEMINI.md.
-    writeAgyPlugin(this.agy, { nodeExecPath: this.o.nodeExecPath, mcpServerPath: this.o.mcpServerPath, env: { GHOST_CORE_URL: this.url, GHOST_TOKEN: this.mcpToken }, safeReadRoots: this.safeReadRoots() });
+    writeAgyPlugin(this.agy, { nodeExecPath: this.o.nodeExecPath, mcpServerPath: this.o.mcpServerPath, env: { GHOST_CORE_URL: this.url, GHOST_TOKEN: this.mcpToken }, safeReadRoots: this.safeReadRoots(), cardRoots: this.cardRoots() });
     writeAgyPersona(this.agy, buildPersona(this.o.personaPath, s));
     // Claude Code: keep this folder free of project instructions.
     writeFileSync(join(this.workspace, 'README.txt'), 'Ghost working folder for the Claude CLI. Safe to leave empty.\n');
@@ -322,6 +322,9 @@ export class GhostCore {
   }
 
   private async handle(client: Client, msg: ClientMessage): Promise<void> {
+    // The tool relay may call tools and nothing else. Its password sits in the CLIs' config files,
+    // so whoever holds it must not be able to speak as Aaron, switch live view on or clear history.
+    if (client.role !== 'ui' && msg.type !== 'tool_call') return;
     switch (msg.type) {
       case 'user_message': return this.userMessage(String(msg.text ?? ''), client.role === 'ui' ? msg.images : undefined);
       case 'typing':
@@ -651,7 +654,7 @@ export class GhostCore {
     const reply = (ok: boolean, result: string, image?: { data: string; mime: string }) => this.send(client, { type: 'tool_result', id, ok, result, image });
     if (!Object.hasOwn(TOOL_DEFS, tool)) return reply(false, `Unknown tool ${tool}`);
     const previous = this.state;
-    if (classify(tool, args, { safeReadRoots: this.safeReadRoots() }) === 'confirm') {
+    if (classify(tool, args, { safeReadRoots: this.safeReadRoots(), cardRoots: this.cardRoots() }) === 'confirm') {
       const approved = await this.requestApproval(tool, args);
       if (!approved) { this.setState(previous === 'approval' ? 'thinking' : previous); return reply(false, `${this.o.settings().userName} declined this action. Do not retry it; ask what he would prefer instead.`); }
     }
@@ -674,9 +677,20 @@ export class GhostCore {
     }
   }
 
-  /** Where reading needs no confirmation: Ghost's folders, the vault, Desktop, Documents, Downloads. */
+  /**
+   * Where reading needs no confirmation: Ghost's folders, the vault, Desktop, Documents, Downloads.
+   * With "Let Ghost search and read your notes" off, only Ghost's own folder in the vault counts.
+   */
   private safeReadRoots(): string[] {
-    return safeReadRoots({ ghostDirs: [this.workspace, ...(this.o.readableDirs ?? [])], vault: this.o.settings().obsidian.vaultPath });
+    const o = this.o.settings().obsidian;
+    const vault = o.vaultPath && !o.readVault ? join(o.vaultPath, o.folder) : o.vaultPath;
+    return safeReadRoots({ ghostDirs: [this.workspace, ...(this.o.readableDirs ?? [])], vault });
+  }
+
+  /** Folders that always ask, even inside a safe one: the rest of the vault while reading notes is off (it may sit on the Desktop). */
+  private cardRoots(): string[] {
+    const o = this.o.settings().obsidian;
+    return o.vaultPath && !o.readVault ? [o.vaultPath] : [];
   }
 
   private requestApproval(tool: string, args: Record<string, unknown>): Promise<boolean> {

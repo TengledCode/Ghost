@@ -2,7 +2,7 @@ import { appendFileSync, existsSync, mkdirSync, mkdtempSync, symlinkSync, writeF
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { classify } from '../src/core/approvals/classify';
+import { classify, describe as describe_ } from '../src/core/approvals/classify';
 import { ConversationLog } from '../src/core/memory/conversations';
 import { MemoryStore } from '../src/core/memory/store';
 import { agyHookDecision, agyPaths, writeAgyPlugin } from '../src/core/providers/agyPlugin';
@@ -10,7 +10,7 @@ import { execFileSync, execSync } from 'node:child_process';
 import { classifyError } from '../src/core/providers/types';
 import { ReminderScheduler } from '../src/core/reminders/scheduler';
 import { ToolExecutor } from '../src/core/tools/executor';
-import { isInside, safeReadRoots } from '../src/core/tools/fileAccess';
+import { isInside, looksSensitive, readsFreely, safeReadRoots, SENSITIVE } from '../src/core/tools/fileAccess';
 import { mergeSettings } from '../src/shared/settings';
 
 const host = { openExternal: async () => {}, openPath: async () => '', trash: async () => {} };
@@ -30,6 +30,64 @@ describe('file access', () => {
   });
   it('never treats a network share as safe', () => {
     expect(isInside('\\\\server\\share\\x.txt', ['\\\\server\\share'])).toBe(false);
+  });
+});
+
+describe('private-looking files, even inside the safe folders', () => {
+  const docs = join(tmp('ghost-docs-'), 'Documents');
+  const PRIVATE = [
+    'passwords.txt', 'MyPasswords2024.xlsx', 'Passport scan.pdf', 'bank statement Oct.pdf', 'Tax\\2025 return.pdf', 'IRAS notice.pdf', 'CPF statement.pdf',
+    'payslip-oct.pdf', 'salary 2026.xlsx', 'vault.kdbx', 'server.pem', 'id_rsa', '.ssh\\config', '.env', '.env.local', 'api key.txt', 'API_KEY.txt',
+    'seed phrase.txt', 'wallet.dat', 'recovery codes.txt', 'backup-codes.txt', 'Private\\notes.txt', 'secrets.json', 'work.ovpn', 'NRIC front.jpg', 'logins.csv', '2FA.txt',
+  ];
+  const ORDINARY = [
+    'plan.md', 'holiday photos\\beach.jpg', 'embankment walk.jpg', 'syntax notes.txt', 'keyboard shortcuts.txt', 'key points.docx', 'monkey.png', 'taxi receipt.pdf',
+    'README.md', 'LICENSE', 'Screenshot 2026-11-15 12-00-00.png', 'report (final).docx', 'environment.md', 'bankruptcy law essay.docx', 'design tokens.json', 'passage.txt',
+  ];
+  it('are told by name and type only', () => {
+    for (const f of PRIVATE) expect(looksSensitive(join(docs, f)), f).toBe(true);
+    for (const f of ORDINARY) expect(looksSensitive(join(docs, f)), f).toBe(false);
+  });
+  it('show a confirm card where an ordinary file is read straight away', () => {
+    const ctx = { safeReadRoots: [docs] };
+    expect(classify('read_file', { path: join(docs, 'plan.md') }, ctx)).toBe('safe');
+    expect(classify('read_file', { path: join(docs, 'passwords.txt') }, ctx)).toBe('confirm');
+    expect(classify('list_folder', { path: join(docs, 'Bank') }, ctx)).toBe('confirm');
+    expect(classify('list_folder', { path: docs }, ctx)).toBe('safe');
+    expect(describe_('read_file', { path: join(docs, 'passwords.txt') })).toMatch(/its name looks private/);
+    expect(describe_('read_file', { path: join(docs, 'plan.md') })).not.toMatch(/private/);
+  });
+  it("are refused to Antigravity's own file tool by the very same lists", () => {
+    const roots = ['C:\\Users\\Aaron\\Documents'];
+    const hook = (f: string) => agyHookDecision({ name: 'read_file', args: { Path: `C:\\Users\\Aaron\\Documents\\${f}` } }, roots, undefined, 'full', { sensitive: SENSITIVE });
+    for (const f of PRIVATE) expect(hook(f).decision, f).toBe('deny');
+    for (const f of ORDINARY) expect(hook(f).decision, f).toBe('allow');
+    expect(hook('passwords.txt').reason).toMatch(/looks private.*read_file/);
+  });
+});
+
+describe('"Let Ghost search and read your notes" switched off', () => {
+  // Aaron's vault sits on his Desktop, which is a safe folder itself.
+  const desktop = join(tmp('ghost-home-'), 'Desktop');
+  const vault = join(desktop, 'Second Brain');
+  const own = join(vault, 'Ghost');
+  it('makes the vault ask, wherever it sits, except Ghost\'s own folder in it', () => {
+    const off = { safeReadRoots: [desktop, own], cardRoots: [vault] };
+    expect(readsFreely(join(vault, 'Ideas.md'), off.safeReadRoots, off.cardRoots)).toBe(false);
+    expect(readsFreely(join(own, 'Memory', 'People.md'), off.safeReadRoots, off.cardRoots)).toBe(true);
+    expect(readsFreely(join(desktop, 'todo.txt'), off.safeReadRoots, off.cardRoots)).toBe(true);
+    expect(classify('read_file', { path: join(vault, 'Ideas.md') }, off)).toBe('confirm');
+    expect(classify('list_folder', { path: vault }, off)).toBe('confirm');
+    expect(classify('read_file', { path: join(own, 'Memory', 'People.md') }, off)).toBe('safe');
+    // Switched on: the vault is a safe folder like the others.
+    expect(classify('read_file', { path: join(vault, 'Ideas.md') }, { safeReadRoots: [desktop, vault] })).toBe('safe');
+  });
+  it("holds for Antigravity's own file tool too", () => {
+    const roots = ['C:\\Users\\Aaron\\Desktop', 'C:\\Users\\Aaron\\Desktop\\Second Brain\\Ghost'];
+    const read = (p: string) => agyHookDecision({ name: 'read_file', args: { Path: p } }, roots, undefined, 'full', { cardRoots: ['C:\\Users\\Aaron\\Desktop\\Second Brain'] }).decision;
+    expect(read('C:\\Users\\Aaron\\Desktop\\Second Brain\\Ideas.md')).toBe('deny');
+    expect(read('C:\\Users\\Aaron\\Desktop\\Second Brain\\Ghost\\Memory\\People.md')).toBe('allow');
+    expect(read('C:\\Users\\Aaron\\Desktop\\todo.txt')).toBe('allow');
   });
 });
 

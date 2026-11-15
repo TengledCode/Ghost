@@ -1,12 +1,14 @@
 // Decides which Ghost tool calls run straight away and which need Aaron's one-click confirmation.
 import { extname, isAbsolute, win32 } from 'node:path';
-import { isInside } from '../tools/fileAccess';
+import { looksSensitive, readsFreely } from '../tools/fileAccess';
 
 export type Risk = 'safe' | 'confirm';
 
 export interface RiskContext {
   /** Folders Ghost may read without asking (see tools/fileAccess.ts). */
   safeReadRoots: string[];
+  /** Folders that always ask, even inside a safe one: the vault while reading notes is switched off. */
+  cardRoots?: string[];
 }
 
 const ALWAYS_CONFIRM = new Set(['run_command', 'write_file', 'delete_path', 'close_app', 'vault_write']);
@@ -43,8 +45,11 @@ export function classify(tool: string, args: Record<string, unknown>, ctx: RiskC
       // tools/apps.ts). A path, a protocol or a program file could start anything.
       return startsCommand(String(args.name ?? '')) ? 'confirm' : 'safe';
     case 'read_file':
-    case 'list_folder':
-      return isInside(String(args.path ?? ''), ctx.safeReadRoots) ? 'safe' : 'confirm';
+    case 'list_folder': {
+      // Free inside the safe folders, unless the file or folder looks private by its name or type.
+      const path = String(args.path ?? '');
+      return readsFreely(path, ctx.safeReadRoots, ctx.cardRoots) && !looksSensitive(path) ? 'safe' : 'confirm';
+    }
     default:
       return 'safe';
   }
@@ -58,8 +63,8 @@ export function describe(tool: string, args: Record<string, unknown>): string {
     case 'close_app': return `Close ${String(args.name ?? '')}`;
     case 'open_path_or_url': return `Open ${String(args.target ?? '')}`;
     case 'open_app': return `Start ${String(args.name ?? '')}`;
-    case 'read_file': return `Read ${String(args.path ?? '')}`;
-    case 'list_folder': return `Look inside ${String(args.path ?? '')}`;
+    case 'read_file': return `Read ${String(args.path ?? '')}${looksSensitive(String(args.path ?? '')) ? ' (its name looks private)' : ''}`;
+    case 'list_folder': return `Look inside ${String(args.path ?? '')}${looksSensitive(String(args.path ?? '')) ? ' (its name looks private)' : ''}`;
     case 'vault_write': {
       const verb = { create: 'Create note', append: 'Add to note', replace: 'Replace note' }[String(args.mode)] ?? 'Write note';
       const content = String(args.content ?? '').replace(/\s+/g, ' ').trim();

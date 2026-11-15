@@ -39,7 +39,7 @@ export const TOOL_DEFS = {
     shape: { kind: z.enum(['screenshot', 'recording']) },
   },
   read_file: {
-    description: "Read a text file, or look at an image (screenshots, photos). Ghost's own folders, the Obsidian vault, Desktop, Documents, Downloads and Pictures\\Screenshots open straight away; anywhere else Aaron confirms first.",
+    description: "Read a text file, or look at an image (screenshots, photos). Ghost's own folders, the Obsidian vault, Desktop, Documents, Downloads and Pictures\\Screenshots open straight away; anywhere else, and for a file whose name or type looks private (passwords, bank, keys), Aaron confirms first.",
     shape: { path: z.string().describe('Absolute path') },
   },
   list_folder: {

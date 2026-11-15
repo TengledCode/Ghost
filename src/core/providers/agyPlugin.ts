@@ -1,5 +1,6 @@
 import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { SENSITIVE, type SensitiveLists } from '../tools/fileAccess';
 
 // Antigravity (`agy`) gets Ghost's tools, and its safety rules, from a plugin in a folder passed with
 // `--add-dir`: <root>/.agents/plugins/ghost/{plugin.json, mcp_config.json, hooks.json}.
@@ -50,7 +51,11 @@ export function agyPaths(dir: string): AgyPaths {
  * slipping through. (Its 11 Nov 2026 update replaced view_file / list_dir / grep_search /
  * find_by_name with read_file, dropped read_url_content, and added subagents, schedules and more.)
  */
-export function agyHookDecision(call: { name?: unknown; args?: Record<string, unknown> }, safeRoots: string[] = [], ownDir?: unknown, mode: AgyHookMode = 'full'): { decision: 'allow' | 'deny'; reason?: string } {
+export function agyHookDecision(
+  call: { name?: unknown; args?: Record<string, unknown> }, safeRoots: string[] = [], ownDir?: unknown, mode: AgyHookMode = 'full',
+  // Folders that always ask even inside a safe one, and the names and types that look private (see tools/fileAccess.ts).
+  extra: { cardRoots?: string[]; sensitive?: SensitiveLists } = {},
+): { decision: 'allow' | 'deny'; reason?: string } {
   const name = String(call.name ?? '');
   // One-shot calls: no tools (filing a conversation), or web search only (researching models).
   if (mode === 'none') return { decision: 'deny', reason: 'this call has no tools. Answer from the text you were given.' };
@@ -67,6 +72,8 @@ export function agyHookDecision(call: { name?: unknown; args?: Record<string, un
     // Paths compared with forward slashes, drive paths in lower case. (No named helper functions in
     // here: the bundler would wrap them in a helper that doesn't exist once this is copied to hook.js.)
     const roots = [...safeRoots, ...own].map(r => r.replace(/\\/g, '/').replace(/\/+$/, '')).map(r => (/^[a-zA-Z]:/.test(r) ? r.toLowerCase() : r));
+    const cards = (extra.cardRoots ?? []).map(r => r.replace(/\\/g, '/').replace(/\/+$/, '')).map(r => (/^[a-zA-Z]:/.test(r) ? r.toLowerCase() : r));
+    const lists = extra.sensitive;
     const values = Object.values(args).flatMap(v => (Array.isArray(v) ? v : [v])).filter((v): v is string => typeof v === 'string');
     for (const v of values) {
       const slashed = v.trim().replace(/\\/g, '/').replace(/\/+$/, '');
@@ -75,9 +82,22 @@ export function agyHookDecision(call: { name?: unknown; args?: Record<string, un
       const climbs = /(^|\/)\.\.(\/|$)/.test(p);
       // A path that would only become one later (~, %USERPROFILE%, $HOME, file://…) can't be checked here.
       const indirect = /^(~|file:|%[^%/]+%|\$(env:|\{|[a-z_]))/i.test(p);
-      if (climbs || indirect || (looksLikePath && !roots.some(r => p === r || p.startsWith(`${r}/`)))) {
+      // Inside a folder that always asks (the vault while reading notes is off), unless a safe folder within it holds the path.
+      const asks = cards.some(c => (p === c || p.startsWith(`${c}/`)) && !roots.some(r => (r === c || r.startsWith(`${c}/`)) && (p === r || p.startsWith(`${r}/`))));
+      if (climbs || indirect || asks || (looksLikePath && !roots.some(r => p === r || p.startsWith(`${r}/`)))) {
         return { decision: 'deny', reason: `${v} is outside the folders Ghost reads freely. Use read_file or list_folder on the ghost_ghost MCP server (call_mcp_tool); Aaron confirms those.` };
       }
+      // A private-looking name or type (the same lists as Ghost's own read_file: looksSensitive in tools/fileAccess.ts).
+      const looksPrivate = !!lists && looksLikePath && p.toLowerCase().split('/').some(part => {
+        if (!part) return false;
+        if (lists.names.includes(part) || part.startsWith('.env')) return true;
+        if (part.includes('.') && lists.types.includes(part.slice(part.lastIndexOf('.') + 1))) return true;
+        const squeezed = part.replace(/[^a-z0-9]+/g, '');
+        if (lists.anywhere.some(w => squeezed.includes(w))) return true;
+        const words = part.split(/[^a-z0-9]+/).filter(Boolean);
+        return words.some((w, i) => lists.words.includes(w) || lists.words.includes(w + (words[i + 1] ?? '')));
+      });
+      if (looksPrivate) return { decision: 'deny', reason: `${v} looks private by its name. Use read_file or list_folder on the ghost_ghost MCP server (call_mcp_tool); Aaron confirms those.` };
     }
     return { decision: 'allow' };
   }
@@ -96,6 +116,7 @@ export interface AgyPluginOptions {
   mcpServerPath: string;
   env: Record<string, string>; // GHOST_CORE_URL, GHOST_TOKEN
   safeReadRoots?: string[]; // where agy's own file tools may look (see agyHookDecision)
+  cardRoots?: string[]; // folders that always ask, even inside a safe one
   windows?: boolean;
 }
 
@@ -124,13 +145,14 @@ function writePluginDir(dir: AgyPluginDir, o: AgyPluginOptions, mode: AgyHookMod
 const decide = ${agyHookDecision.toString()};
 const SAFE_ROOTS = ${JSON.stringify(mode === 'full' ? o.safeReadRoots ?? [] : [])};
 const MODE = ${JSON.stringify(mode)};
+const EXTRA = ${JSON.stringify(mode === 'full' ? { cardRoots: o.cardRoots ?? [], sensitive: SENSITIVE } : {})};
 let input = '';
 process.stdin.setEncoding('utf8');
 process.stdin.on('data', c => (input += c));
 process.stdin.on('end', () => {
   let payload = {};
   try { payload = JSON.parse(input); } catch {}
-  process.stdout.write(JSON.stringify(decide(payload.toolCall || {}, SAFE_ROOTS, payload.artifactDirectoryPath, MODE)));
+  process.stdout.write(JSON.stringify(decide(payload.toolCall || {}, SAFE_ROOTS, payload.artifactDirectoryPath, MODE, EXTRA)));
 });
 `);
   file('preinvoke.js', `// Proves to Ghost that its hooks are loaded (generated).
