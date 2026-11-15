@@ -32,7 +32,7 @@ interface AgyLine {
 const INIT_TIMEOUT_MS = 45_000;
 const IDLE_CLOSE_MS = 15 * 60_000;
 // Ghost's labels for agy's tools ("Searching the web" while it looks something up).
-const TOOL_NAMES: Record<string, string> = { search_web: 'WebSearch', read_url_content: 'WebFetch', view_file: 'Read', list_dir: 'Glob', grep_search: 'Grep', find_by_name: 'Glob' };
+const TOOL_NAMES: Record<string, string> = { search_web: 'WebSearch', read_url_content: 'WebFetch', read_file: 'Read', view_file: 'Read', list_dir: 'Glob', grep_search: 'Grep', find_by_name: 'Glob' };
 
 export class AntigravityProvider implements Provider {
   readonly id = 'gemini' as const;
@@ -49,6 +49,7 @@ export class AntigravityProvider implements Provider {
   private init: Promise<boolean> | null = null;
   private handlers: ((line: AgyLine) => void)[] = [];
   private models: Promise<string[]> | null = null;
+  private oneShots = { none: 0, web: 0 }; // one-shot calls running now, of each kind
 
   private readonly topFamily: () => string;
 
@@ -172,21 +173,37 @@ export class AntigravityProvider implements Provider {
 
   /**
    * A standalone call (e.g. filing a conversation into Obsidian) in its own short-lived agy process,
-   * so it never enters the running conversation. No plugin: it needs no tools.
+   * so it never enters the running conversation. It gets no tools: its plugin folder holds only the
+   * hook, set to refuse everything (agy alone would still let it search the web and read its working
+   * folder). With `req.web` (researching models) web search is allowed, and nothing else.
    */
   private async *oneShot(req: SendRequest): AsyncIterable<ProviderEvent> {
     const model = await this.resolveModel(req.model);
-    const args = ['--output-format', 'stream-json', '--input-format', 'stream-json', '--print', ''];
+    const kind = req.web ? 'web' : 'none';
+    const dir = req.web ? this.paths.webOnly : this.paths.noTools;
+    const args = ['--output-format', 'stream-json', '--input-format', 'stream-json', '--print', '', '--add-dir', dir.root];
     if (model) args.push('--model', model);
+    // Calls of one kind share a marker file: only the first of them clears it.
+    if (!this.oneShots[kind]++) rmSync(dir.marker, { force: true });
     const proc = spawnLive(this.command, args, { cwd: this.paths.workspace, env: AGY_ENV });
     const onAbort = () => proc.kill();
     req.signal.addEventListener('abort', onAbort, { once: true });
     try {
       proc.write({ event: 'user', message: { role: 'user', content: req.prompt } });
       let text = '';
+      let verified = false;
       for await (const raw of proc.lines) {
         let line: AgyLine;
         try { line = JSON.parse(raw); } catch { continue; }
+        const s = line.step_update;
+        // As in a conversation: nothing may act unless Ghost's hook is in place.
+        if (!verified && line.event === 'step_update' && s && s.step_type !== 'user_input' && s.step_type !== 'system_message') {
+          if (!existsSync(dir.marker)) {
+            yield { type: 'error', message: "Antigravity's safety hook didn't load, so Ghost stopped it before it could act.", kind: 'other' };
+            return;
+          }
+          verified = true;
+        }
         if (line.event === 'step_update' && line.step_update?.step_type === 'agent_response' && line.step_update.text_delta) text += line.step_update.text_delta;
         if (line.event === 'result') {
           const r = line.result ?? {};
@@ -198,6 +215,7 @@ export class AntigravityProvider implements Provider {
       if (!req.signal.aborted) { const message = proc.stderr().trim() || 'Antigravity stopped unexpectedly'; yield { type: 'error', message, kind: classifyError(message) }; }
     } finally {
       req.signal.removeEventListener('abort', onAbort);
+      this.oneShots[kind]--;
       proc.kill();
     }
   }

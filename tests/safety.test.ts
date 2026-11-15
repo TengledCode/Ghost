@@ -1,4 +1,4 @@
-import { appendFileSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -81,6 +81,53 @@ describe("Antigravity's own file tools", () => {
   it('keeps the old rules for everything else', () => {
     expect(agyHookDecision({ name: 'search_web', args: { query: 'C:\\secret' } }, roots).decision).toBe('allow');
     expect(agyHookDecision({ name: 'run_command', args: {} }, roots).decision).toBe('deny');
+  });
+  it("knows agy's renamed file tool (read_file, since its 11 Nov 2026 update), with the same folder rule", () => {
+    const read = (Path: string) => agyHookDecision({ name: 'read_file', args: { Path, StartLine: 1, EndLine: 5 } }, roots).decision;
+    expect(read('C:\\Users\\Aaron\\Documents\\plan.md')).toBe('allow');
+    expect(read('C:\\Users\\Aaron\\.ssh\\id_ed25519')).toBe('deny');
+    // Paths that would only turn into one later can't be checked, so they're refused.
+    for (const p of ['~/.ssh/id', '~\\.ssh\\id', '%USERPROFILE%\\.ssh\\id', '$HOME/.ssh/id', '$env:USERPROFILE\\.ssh\\id', 'file:///C:/Users/Aaron/.ssh/id']) expect(read(p)).toBe('deny');
+  });
+  it('refuses the tools agy has added since: writing, subagents, schedules, messages', () => {
+    for (const name of ['write_file', 'edit_file', 'invoke_subagent', 'define_subagent', 'manage_subagents', 'swarm', 'schedule', 'send_message', 'ask_question', 'manage_task']) {
+      expect(agyHookDecision({ name, args: {} }, roots).decision).toBe('deny');
+    }
+    expect(agyHookDecision({ name: 'read_resource', args: { ServerName: 'someone_else', Uri: 'x' } }, roots).decision).toBe('deny');
+    expect(agyHookDecision({ name: 'read_resource', args: { ServerName: 'ghost_ghost', Uri: 'x' } }, roots).decision).toBe('allow');
+  });
+  it('gives one-shot calls no tools, and research calls web search only', () => {
+    const calls = [
+      { name: 'read_file', args: { Path: 'C:\\Users\\Aaron\\Documents\\plan.md' } },
+      { name: 'call_mcp_tool', args: { ServerName: 'ghost_ghost', ToolName: 'run_command' } },
+      { name: 'run_command', args: { CommandLine: 'whoami' } },
+    ];
+    for (const c of calls) {
+      expect(agyHookDecision(c, roots, undefined, 'none').decision).toBe('deny');
+      expect(agyHookDecision(c, roots, undefined, 'web').decision).toBe('deny');
+    }
+    expect(agyHookDecision({ name: 'search_web', args: { query: 'x' } }, roots, undefined, 'none').decision).toBe('deny');
+    expect(agyHookDecision({ name: 'search_web', args: { query: 'x' } }, roots, undefined, 'web').decision).toBe('allow');
+  });
+  it('writes those stricter hooks as real scripts, without Ghost\'s tools', () => {
+    const win = process.platform === 'win32';
+    const docs = win ? 'C:\\Users\\Aaron\\Documents' : '/home/aaron/Documents';
+    const paths = agyPaths(tmp('ghost-oneshot-'));
+    writeAgyPlugin(paths, { nodeExecPath: process.execPath, mcpServerPath: 'x.js', env: { GHOST_TOKEN: 't' }, safeReadRoots: [docs] });
+    const run = (plugin: string, toolCall: object) => {
+      const input = JSON.stringify({ toolCall });
+      const out = win ? execSync(`"${join(plugin, 'hook.cmd')}"`, { input, windowsHide: true }) : execFileSync(join(plugin, 'hook.sh'), { input });
+      return JSON.parse(out.toString()).decision;
+    };
+    const read = { name: 'read_file', args: { Path: join(docs, 'a.md') } };
+    const search = { name: 'search_web', args: { query: 'x' } };
+    expect(run(paths.plugin, read)).toBe('allow');
+    expect([run(paths.noTools.plugin, read), run(paths.noTools.plugin, search)]).toEqual(['deny', 'deny']);
+    expect([run(paths.webOnly.plugin, read), run(paths.webOnly.plugin, search)]).toEqual(['deny', 'allow']);
+    // The relay's password and Ghost's tools stay out of the one-shot folders.
+    expect(existsSync(join(paths.plugin, 'mcp_config.json'))).toBe(true);
+    expect(existsSync(join(paths.noTools.plugin, 'mcp_config.json'))).toBe(false);
+    expect(existsSync(join(paths.webOnly.plugin, 'mcp_config.json'))).toBe(false);
   });
 });
 

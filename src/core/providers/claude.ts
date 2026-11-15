@@ -9,7 +9,14 @@ import { commandExists, runCli } from './spawnCli';
 // go through Ghost's read_file / list_folder, which confirm outside the safe folders.
 export const CLAUDE_BUILTIN_TOOLS = ['WebSearch', 'WebFetch'];
 
-export function claudeArgs(req: Pick<SendRequest, 'model' | 'personaFile' | 'sessionId' | 'mcpConfigPath' | 'oneShot'>): string[] {
+export function claudeArgs(req: Pick<SendRequest, 'model' | 'personaFile' | 'sessionId' | 'mcpConfigPath' | 'oneShot' | 'web'>): string[] {
+  // Research (which model suits which slot): the web tools only, none of Ghost's, and no persona
+  // (the answer is data for Ghost, not something said to Aaron).
+  if (req.oneShot && req.web) {
+    const args = ['-p', '--output-format', 'stream-json', '--verbose', '--strict-mcp-config', '--tools', CLAUDE_BUILTIN_TOOLS.join(','), '--allowedTools', CLAUDE_BUILTIN_TOOLS.join(',')];
+    if (req.model) args.push('--model', req.model);
+    return args;
+  }
   // A one-shot (filing or summarising a conversation) needs no tools, and its prompt is old
   // conversation text, so it gets none: nothing in that text can make it act.
   if (req.oneShot) {

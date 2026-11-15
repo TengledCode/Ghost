@@ -17,6 +17,8 @@ export interface SendRequest {
   workspace: string; // cwd for the CLI, so it never picks up an unrelated project's CLAUDE.md
   signal: AbortSignal;
   oneShot?: boolean;
+  /** With `oneShot`: the call may search the web, and nothing else (researching models; see modelAdvice.ts). */
+  web?: boolean;
   /** Recent lines of the conversation, for a brain whose own conversation may not hold them (Google). */
   history?: { lines: string[]; inSync: boolean }; // a standalone run outside the ongoing conversation (e.g. summarising an old chat)
 }
