@@ -62,21 +62,25 @@ describe('Subtitles (text in step with the voice)', () => {
     expect(at(100.1)).toBe(text);
   });
 
-  it('safety net: reveals the whole reply silently, and starts again in step when the voice comes', () => {
-    const { subs, at, shown } = setup();
+  it('safety net: reveals the reply silently; when the voice comes, the shown words wait for it to catch up', () => {
+    const { subs, at } = setup();
     subs.showSilently('t1', 'Hello there, Aaron. How are you today? ');
-    const mid = at(101);
+    const mid = at(101); // 1 s at 15 characters a second: "Hello there, " or so
     expect(mid.length).toBeGreaterThan(0);
     expect(mid).not.toBe('Hello there, Aaron. How are you today? ');
-    subs.add('t1', 0, 'Late. ', false, true); // a later sentence still without voice: no restart
+    subs.add('t1', 0, 'Late. ', false, true); // a later sentence still without voice: carries on
     expect(at(101.1).startsWith('Hello')).toBe(true);
+    const shownWhenVoiceCame = at(101.1);
     subs.add('t1', 0, 'Hello there, Aaron. ', true); // the voice arrives
-    const before = shown.length;
-    expect(at(101.2)).toBe(''); // waiting for its first word (the bubble keeps what it showed)
-    expect(shown.length).toBe(before);
+    subs.add('t1', 1, 'How are you today? ', true);
+    expect(at(101.2)).toBe(shownWhenVoiceCame); // nothing vanishes before the voice starts
     subs.started('t1', 0, 101.3, 1);
-    expect(at(101.5).length).toBeGreaterThan(0);
-    expect(at(102.4)).toBe('Hello there, Aaron. ');
+    subs.started('t1', 1, 102.3, 1);
+    expect(shownWhenVoiceCame).toBe('Hello there, Aaron. How ');
+    expect(at(101.35)).toBe(shownWhenVoiceCame); // the voice is still behind: the words wait
+    expect(at(102.25)).toBe(shownWhenVoiceCame); // the voice has said "Aaron." but not "How" yet
+    expect(at(102.7)).toBe('Hello there, Aaron. How are '); // caught up: carries on in step
+    expect(at(103.3)).toBe('Hello there, Aaron. How are you today? ');
   });
 
   it('reveals everything on finish or cancel, and resets for the next reply', () => {

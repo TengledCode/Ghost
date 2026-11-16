@@ -25,6 +25,7 @@ export class Subtitles {
   private all: false | 'all' | 'voiced' = false;
   private rendered = '';
   private silentTurn = ''; // a turn revealed silently as a whole by the safety net, until its voice comes
+  private hold = ''; // words the silent reveal had shown when the voice came: they stay until the voice catches up
 
   constructor(private readonly render: (text: string) => void, private readonly now: () => number = () => performance.now() / 1000) {}
 
@@ -35,6 +36,7 @@ export class Subtitles {
     if (turnId === this.turnId) return;
     this.turnId = turnId;
     this.silentTurn = '';
+    this.hold = '';
     this.segs.clear();
     this.all = false;
     this.rendered = '';
@@ -47,9 +49,10 @@ export class Subtitles {
   add(turnId: string, seq: number, display: string, hasAudio: boolean, failed = false): void {
     if (turnId === this.silentTurn) {
       if (!hasAudio) return; // still no voice: the silent reveal carries on
-      // The voice turned up after all: start again in step with it (the shown words stay until its
-      // first word, so nothing blinks).
+      // The voice turned up after all: the words shown so far stay put, and the rest carries on
+      // once the voice has caught up with them (nothing vanishes or starts over).
       this.silentTurn = '';
+      this.hold = this.rendered;
       this.segs.clear();
       this.all = false;
     }
@@ -61,7 +64,8 @@ export class Subtitles {
 
   /**
    * No voice has come for a whole reply (the overlay's safety net): reveal its text word by word at
-   * speaking pace, silently. If the voice turns up after all, the words start again in step with it.
+   * speaking pace, silently. If the voice turns up after all, the words shown so far wait for it to
+   * catch up, then the rest goes on in step with it.
    */
   showSilently(turnId: string, text: string): void {
     this.begin(turnId);
@@ -92,6 +96,11 @@ export class Subtitles {
 
   /** The text that should be visible right now. */
   visibleText(): string {
+    const text = this.inStep();
+    return text.length < this.hold.length ? this.hold : text;
+  }
+
+  private inStep(): string {
     const now = this.now();
     const order = [...this.segs.keys()].sort((a, b) => a - b);
     let out = '';
