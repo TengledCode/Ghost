@@ -81,7 +81,11 @@ function renderMeta(): void {
 }
 const history: { who: 'user' | 'ghost'; text: string; pictures?: number }[] = [];
 /** The history panel shows the last 30 messages; older ones aren't kept in the page. `pictures`: how many were pasted with it. */
-function pushHistory(m: { who: 'user' | 'ghost'; text: string; pictures?: number }): void { history.push(m); if (history.length > 60) history.splice(0, history.length - 60); }
+function pushHistory(m: { who: 'user' | 'ghost'; text: string; pictures?: number }): void {
+  history.push(m);
+  if (history.length > 60) history.splice(0, history.length - 60);
+  ($('#input .transcript') as HTMLElement).hidden = false; // something to show now
+}
 
 const boot = await bridge.bootstrap();
 settings = boot.settings;
@@ -456,11 +460,18 @@ function renderHistory(): void {
   historyEl.scrollTop = historyEl.scrollHeight;
 }
 
-$('.history-toggle').addEventListener('click', () => {
-  historyEl.hidden = !historyEl.hidden;
-  renderHistory();
+// The transcript opens from the reply's "Transcript" link, or from the button beside the text box,
+// which stays reachable after the reply has gone (clicking back onto Ghost after clicking away).
+const transcriptButton = $('#input .transcript') as HTMLButtonElement;
+function setHistoryOpen(open: boolean): void {
+  historyEl.hidden = !open;
+  transcriptButton.setAttribute('aria-pressed', String(open));
+  transcriptButton.title = open ? 'Hide transcript' : 'Show transcript';
+  if (open) renderHistory();
   refreshInteractivity();
-});
+}
+$('.history-toggle').addEventListener('click', () => setHistoryOpen(historyEl.hidden));
+transcriptButton.addEventListener('click', () => { setHistoryOpen(historyEl.hidden); input.focus(); });
 
 let noticeTimer = 0;
 let lastChime = { text: '', at: 0 };
