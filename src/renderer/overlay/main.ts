@@ -698,6 +698,8 @@ setInterval(refreshInteractivity, 200); // completes hover-intent without furthe
 const ACTIVE_HOLD_MS = 6000;
 const HOVER_HOLD_MS = 2000; // after only hovering (no click, typing or reply), fade sooner
 const HIDE_INPUT_MS = 30000;
+const TRANSCRIPT_LINGER_MS = 9000; // as long as a reply stays up (scheduleBubbleHide)
+let idleSince = 0;
 let lastActive = performance.now();
 let lastHover = 0;
 
@@ -720,8 +722,10 @@ function updateIdle(): void {
   const now = performance.now();
   const idle = isIdle({ busy: busy(), hovering: hoveringUi(), quietMs: now - lastActive, holdMs: ACTIVE_HOLD_MS, hoverQuietMs: now - lastHover, hoverHoldMs: HOVER_HOLD_MS });
   if (idle) stage.dataset.idle = ''; else delete stage.dataset.idle;
-  // The transcript tucks itself away like the reply does, but only once Ghost has faded (not in use).
-  if (idle && !historyEl.hidden) setHistoryOpen(false);
+  // The transcript fades with Ghost (it's a panel), and once he has stayed faded as long as a reply
+  // stays up, it goes away the way the reply does. Using Ghost again before then keeps it.
+  idleSince = idle ? idleSince || now : 0;
+  if (idleSince && now - idleSince > TRANSCRIPT_LINGER_MS && !historyEl.hidden) setHistoryOpen(false);
   // A long-idle, empty input bar tucks itself away; the hotkey or a click brings it back.
   if (idle && now - Math.max(lastActive, lastHover) > HIDE_INPUT_MS && !form.hidden && !input.value && !pictures.length) closeInput();
 }
