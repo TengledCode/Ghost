@@ -57,7 +57,7 @@ const core = new GhostCore({
   personaPath: join(process.cwd(), 'config/persona.md'),
   mcpServerPath: join(process.cwd(), 'out/main/mcpServer.js'),
   nodeExecPath: process.execPath,
-  providers: { mock: new MockProvider() },
+  providers: { mock: new MockProvider(' I will keep talking for a little while longer, so there is plenty of text to watch as it appears. When you are done testing, you can close this page, and nothing will be saved.') },
   tts: new TtsService(silent, edge),
   host: {
     openExternal: async () => {}, openPath: async () => '', trash: async () => {},

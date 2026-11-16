@@ -6,6 +6,8 @@ const sleep = (ms: number, signal: AbortSignal) =>
 
 export class MockProvider implements Provider {
   readonly id = 'mock' as const;
+  /** `extra`: more reply text (the browser preview uses a longer reply, to watch it being revealed). */
+  constructor(private readonly extra = '') {}
   async isAvailable(): Promise<boolean> { return true; }
 
   async *send(req: SendRequest): AsyncIterable<ProviderEvent> {
@@ -17,7 +19,7 @@ export class MockProvider implements Provider {
       await sleep(1200, req.signal);
       yield { type: 'tool_end', name: 'WebSearch' };
     }
-    const reply = `Understood, Aaron. You said: "${ask.slice(0, 80)}". This is the offline mock, so no subscription usage was spent. Everything else is in working order.`;
+    const reply = `Understood, Aaron. You said: "${ask.slice(0, 80)}". This is the offline mock, so no subscription usage was spent. Everything else is in working order.${this.extra}`;
     for (const word of reply.split(/(?<= )/)) {
       if (req.signal.aborted) return;
       yield { type: 'text_delta', text: word };
