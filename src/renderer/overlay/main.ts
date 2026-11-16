@@ -348,6 +348,9 @@ function showBubble(text: string): void {
   bubbleText.replaceChildren(renderMarkdownLite(text));
   bubbleText.scrollTop = bubbleText.scrollHeight;
   refreshInteractivity();
+  // Shown after Ghost is already idle (the no-voice safety net when the voice failed, a late
+  // reminder): no 'idle' state change is coming to start the countdown, so start it here.
+  if (state === 'idle') scheduleBubbleHide();
 }
 
 // A screenshot or recording Ghost talks about: he projects its preview into the bubble (a cone of
@@ -437,7 +440,11 @@ foldButton.addEventListener('click', () => setFolded(!fileRow.classList.contains
 function scheduleBubbleHide(): void {
   clearTimeout(bubbleTimer);
   bubbleTimer = window.setTimeout(() => {
-    if (bubble.matches(':hover') || !historyEl.hidden) return scheduleBubbleHide();
+    // Held while the pointer is on it or the transcript is open, but not once Ghost has faded: then
+    // he isn't being used, and a stale :hover (the window can miss the pointer leaving while it lets
+    // clicks through) mustn't keep the reply, and its notice, up for good.
+    const faded = 'idle' in stage.dataset;
+    if (!faded && (bubble.matches(':hover') || !historyEl.hidden)) return scheduleBubbleHide();
     bubble.hidden = true;
     refreshInteractivity();
   }, 9000);

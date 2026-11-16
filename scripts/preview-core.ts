@@ -7,7 +7,7 @@ import { GhostCore } from '../src/core/ghostCore';
 import { MockProvider } from '../src/core/providers/mock';
 import { EdgeTts } from '../src/core/tts/edge';
 import { TtsService } from '../src/core/tts/service';
-import type { TtsEngine } from '../src/core/tts/types';
+import { TtsError, type TtsEngine } from '../src/core/tts/types';
 import { mergeSettings } from '../src/shared/settings';
 
 // A short silent MP3 frame stands in for speech when GHOST_PREVIEW_TTS=silent (e.g. offline CI).
@@ -34,8 +34,20 @@ function synthSpeech(text: string): Buffer {
   return Buffer.concat([h, Buffer.from(pcm.buffer)]);
 }
 const synth: TtsEngine = { id: 'edge', synthesize: async text => ({ audio: synthSpeech(text), mime: 'audio/wav' }) };
+// A voice that always fails, as Edge does when Microsoft drops the stream (to check notices and the reply's timing).
+const failing: TtsEngine = { id: 'edge', synthesize: async () => { await new Promise(r => setTimeout(r, 800)); throw new TtsError('Edge TTS failed: Stream closed (pretend)', 'network'); } };
+// Works for some sentences and not others (what Edge does on a bad day).
+// Every second new sentence fails, retries included.
+const flakySeen = new Map<string, number>();
+const flaky: TtsEngine = {
+  id: 'edge',
+  synthesize: async (text, voice, signal) => {
+    if (!flakySeen.has(text)) flakySeen.set(text, flakySeen.size);
+    return (flakySeen.get(text)! % 2 === 1 ? failing : synth).synthesize(text, voice, signal);
+  },
+};
 const mode = process.env.GHOST_PREVIEW_TTS;
-const edge = mode === 'silent' ? silent : mode === 'synth' ? synth : new EdgeTts();
+const edge = mode === 'silent' ? silent : mode === 'synth' ? synth : mode === 'fail' ? failing : mode === 'flaky' ? flaky : new EdgeTts();
 
 const core = new GhostCore({
   dataDir: mkdtempSync(join(tmpdir(), 'ghost-preview-')),
