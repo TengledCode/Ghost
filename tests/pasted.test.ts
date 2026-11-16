@@ -80,7 +80,7 @@ describe('a message with a pasted picture, in the core', () => {
     expect(provider.sent).toHaveLength(1);
     expect(provider.sent[0].model).toBe('sonnet');
     expect(provider.sent[0].prompt).toContain(join(dataDir, 'workspace', 'pasted'));
-    expect(core.log.lines().find(l => l.role === 'user')?.text).toBe('hi [with 1 pasted picture]');
+    expect(core.log.lines().find(l => l.role === 'user')?.text).toBe('hi *(with 1 pasted picture)*');
   });
   it('works with no words at all', async () => {
     const { core, provider } = makeCore();

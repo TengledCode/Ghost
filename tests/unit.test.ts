@@ -245,6 +245,30 @@ describe('TTS fallback', () => {
     const eleven: TtsEngine = { id: 'elevenlabs', synthesize: async () => ({ audio: Buffer.from('11'), mime: 'audio/mpeg' }) };
     expect((await new TtsService(eleven, edge).speak('hi', choice)).engine).toBe('elevenlabs');
   });
+  it('tries Edge a second time when its stream closes early, but not after a cancel', async () => {
+    const edgeChoice = { ...choice, engine: 'edge' as const };
+    let calls = 0;
+    const flaky: TtsEngine = { id: 'edge', synthesize: async () => { if (calls++ === 0) throw new TtsError('Edge TTS failed: Stream closed', 'network'); return { audio: Buffer.from('ok'), mime: 'audio/mpeg' }; } };
+    expect((await new TtsService(edge, flaky).speak('hi', edgeChoice)).audio.toString()).toBe('ok');
+    expect(calls).toBe(2);
+    const dead: TtsEngine = { id: 'edge', synthesize: vi.fn(async () => { throw new TtsError('down', 'network'); }) };
+    await expect(new TtsService(edge, dead).speak('hi', edgeChoice)).rejects.toThrow('down');
+    expect(dead.synthesize).toHaveBeenCalledTimes(2);
+    const cancel = new AbortController(); // Esc pressed while the sentence was being made
+    const cancelled: TtsEngine = { id: 'edge', synthesize: vi.fn(async () => { cancel.abort(); throw new TtsError('aborted', 'other'); }) };
+    await expect(new TtsService(edge, cancelled).speak('hi', edgeChoice, cancel.signal)).rejects.toThrow('aborted');
+    expect(cancelled.synthesize).toHaveBeenCalledTimes(1);
+  });
+  it('asks Edge for at most two sentences at once, in order', async () => {
+    let busy = 0, most = 0;
+    const order: string[] = [];
+    const slow: TtsEngine = { id: 'edge', synthesize: async (t: string) => { order.push(t); most = Math.max(most, ++busy); await new Promise(r => setTimeout(r, 5)); busy--; return { audio: Buffer.from(t), mime: 'audio/mpeg' }; } };
+    const svc = new TtsService(edge, slow);
+    const out = await Promise.all(['a', 'b', 'c', 'd', 'e'].map(t => svc.speak(t, { ...choice, engine: 'edge' })));
+    expect(out.map(o => o.audio.toString())).toEqual(['a', 'b', 'c', 'd', 'e']);
+    expect(most).toBe(2);
+    expect(order).toEqual(['a', 'b', 'c', 'd', 'e']);
+  });
 });
 
 describe('placement', () => {

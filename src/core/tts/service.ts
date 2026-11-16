@@ -7,6 +7,8 @@ export interface TtsChoice {
 }
 export interface SpokenAudio extends TtsResult { engine: 'elevenlabs' | 'edge' }
 
+const EDGE_AT_ONCE = 2;
+
 /** What the chat notice says when ElevenLabs fails and Ghost switches to the Edge voice. */
 export function voiceFallbackNotice(kind: TtsError['kind'], reason: string): string {
   switch (kind) {
@@ -39,7 +41,32 @@ export class TtsService {
         this.onFallback(err.message, err.kind);
       }
     }
-    return { ...(await this.edge.synthesize(text, choice.edgeVoice, signal)), engine: 'edge' };
+    // Microsoft's service closes a stream early ("Stream closed before the synthesis completed") when
+    // too many sentences ask at once (one in six failed with six at a time, 16 Nov), so Edge gets at
+    // most EDGE_AT_ONCE requests together, and a failed one is tried once more a moment later.
+    await this.edgeTurn(signal);
+    try {
+      try {
+        return { ...(await this.edge.synthesize(text, choice.edgeVoice, signal)), engine: 'edge' };
+      } catch (e) {
+        if (signal?.aborted) throw e;
+        await new Promise(r => setTimeout(r, 300));
+        if (signal?.aborted) throw e;
+        return { ...(await this.edge.synthesize(text, choice.edgeVoice, signal)), engine: 'edge' };
+      }
+    } finally {
+      this.edgeBusy--;
+      this.edgeWaiting.shift()?.();
+    }
+  }
+
+  private edgeBusy = 0;
+  private readonly edgeWaiting: (() => void)[] = [];
+  /** Waits for a free Edge slot (in arrival order, so sentences stay roughly in order). */
+  private async edgeTurn(signal?: AbortSignal): Promise<void> {
+    if (this.edgeBusy >= EDGE_AT_ONCE) await new Promise<void>(r => this.edgeWaiting.push(r));
+    this.edgeBusy++;
+    if (signal?.aborted) { this.edgeBusy--; this.edgeWaiting.shift()?.(); throw new TtsError('aborted', 'other'); }
   }
 
   resetBackoff(): void { this.elevenBlockedUntil = 0; }

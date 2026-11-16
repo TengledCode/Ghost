@@ -52,6 +52,8 @@ export interface CoreOptions {
   readableDirs?: string[];
   /** Speak a short greeting when the overlay first connects (off in tests). */
   greetOnStart?: boolean;
+  /** Writes a line to ghost.log (voice failures, so their cause can be found later). */
+  log?: (event: string, detail?: unknown) => void;
 }
 
 interface Client { ws: WebSocket; role: ClientRole | null }
@@ -114,7 +116,10 @@ export class GhostCore {
     this.sessionId = this.log.current.claudeSessionId; // resume the Claude conversation after a restart
     this.presence = new PresenceStore(join(o.dataDir, 'presence.json'));
     this.agy = agyPaths(join(o.dataDir, 'agy'));
-    o.tts.onFallback = (reason, kind) => this.broadcast({ type: 'notice', level: 'warn', text: voiceFallbackNotice(kind, reason) });
+    o.tts.onFallback = (reason, kind) => {
+      o.log?.('voice: ElevenLabs failed, using Edge', { kind, reason });
+      this.broadcast({ type: 'notice', level: 'warn', text: voiceFallbackNotice(kind, reason) });
+    };
   }
 
   async start(): Promise<void> {
@@ -545,7 +550,7 @@ export class GhostCore {
         for (const seg of splitter.flush()) this.queueSpeech(turn, seg);
         this.googleInSync = pid === 'gemini';
         const command = isCommandTurn(message, turn.tools, turn.actions, reply);
-        this.log.append('user', pictures.length ? `${message} [with ${pictures.length} pasted picture${pictures.length > 1 ? 's' : ''}]` : message, { command });
+        this.log.append('user', pictures.length ? `${message} *(with ${pictures.length} pasted picture${pictures.length > 1 ? 's' : ''})*` : message, { command });
         this.log.append('assistant', reply, { provider: pid, model: exact || model || 'default', command, actions: turn.actions, screen: screenNote.screen });
         this.broadcast({
           type: 'turn_end', turnId: turn.id, text: reply, provider: pid, model: exact || model || 'default',
@@ -606,7 +611,10 @@ export class GhostCore {
       .speak(seg.speech, this.voiceChoice(), turn.abort.signal)
       .catch(e => {
         // A sentence cut off by a new message or Esc isn't a voice problem.
-        if (!turn.abort.signal.aborted) this.broadcast({ type: 'notice', level: 'warn', text: `Voice unavailable: ${String(e.message ?? e)}` });
+        if (!turn.abort.signal.aborted) {
+          this.o.log?.('voice: no audio for a sentence', String(e.message ?? e));
+          this.broadcast({ type: 'notice', level: 'warn', text: `Voice unavailable: ${String(e.message ?? e)}` });
+        }
         return null;
       });
     // Synthesis runs in parallel, but delivery keeps sentence order.

@@ -117,6 +117,7 @@ app.whenReady().then(async () => {
     captureScreen: () => captureScreen(join(app.getPath('userData'), 'data', 'workspace', 'screens'), hideGhost),
     onLiveScreen: on => tray?.setToolTip(on ? 'Ghost: watching screen' : 'Ghost'),
     greetOnStart: true,
+    log,
   });
   await core.start();
 
