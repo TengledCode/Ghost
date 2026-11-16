@@ -720,6 +720,8 @@ function updateIdle(): void {
   const now = performance.now();
   const idle = isIdle({ busy: busy(), hovering: hoveringUi(), quietMs: now - lastActive, holdMs: ACTIVE_HOLD_MS, hoverQuietMs: now - lastHover, hoverHoldMs: HOVER_HOLD_MS });
   if (idle) stage.dataset.idle = ''; else delete stage.dataset.idle;
+  // The transcript tucks itself away like the reply does, but only once Ghost has faded (not in use).
+  if (idle && !historyEl.hidden) setHistoryOpen(false);
   // A long-idle, empty input bar tucks itself away; the hotkey or a click brings it back.
   if (idle && now - Math.max(lastActive, lastHover) > HIDE_INPUT_MS && !form.hidden && !input.value && !pictures.length) closeInput();
 }
