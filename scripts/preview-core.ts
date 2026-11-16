@@ -46,8 +46,10 @@ const flaky: TtsEngine = {
     return (flakySeen.get(text)! % 2 === 1 ? failing : synth).synthesize(text, voice, signal);
   },
 };
+// A voice that takes 20 s to come (Edge retrying), so the no-voice safety net reveals the text first.
+const slow: TtsEngine = { id: 'edge', synthesize: async (text, voice, signal) => { await new Promise(r => setTimeout(r, 20_000)); return synth.synthesize(text, voice, signal); } };
 const mode = process.env.GHOST_PREVIEW_TTS;
-const edge = mode === 'silent' ? silent : mode === 'synth' ? synth : mode === 'fail' ? failing : mode === 'flaky' ? flaky : new EdgeTts();
+const edge = mode === 'silent' ? silent : mode === 'synth' ? synth : mode === 'fail' ? failing : mode === 'flaky' ? flaky : mode === 'slow' ? slow : new EdgeTts();
 
 const core = new GhostCore({
   dataDir: mkdtempSync(join(tmpdir(), 'ghost-preview-')),

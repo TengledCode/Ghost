@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { NO_AUDIO_GRACE, Subtitles } from '../src/renderer/overlay/subtitles';
+import { NO_AUDIO_GRACE, SPOKEN_CHARS_PER_SECOND, Subtitles } from '../src/renderer/overlay/subtitles';
 
 function setup() {
   let t = 100;
@@ -47,6 +47,36 @@ describe('Subtitles (text in step with the voice)', () => {
     subs.add('t1', 0, 'Voice is down. ', true);
     expect(at(100 + NO_AUDIO_GRACE - 0.1)).toBe('');
     expect(at(100 + NO_AUDIO_GRACE + 0.1)).toBe('Voice is down. ');
+  });
+
+  it('reveals a sentence whose voice failed word by word, at speaking pace, even after the voice finished', () => {
+    const { subs, at } = setup();
+    const text = 'This sentence lost its voice somewhere. '; // 40 characters: about 2.7 s at 15 a second
+    subs.add('t1', 0, text, false, true);
+    subs.revealAll('t1', false); // the player had nothing to play, so it finished at once
+    const early = at(100.5);
+    expect(early.length).toBeGreaterThan(0);
+    expect(early.length).toBeLessThan(text.length);
+    expect(at(100 + text.trim().length / SPOKEN_CHARS_PER_SECOND + 0.1)).toBe(text);
+    subs.revealAll('t1'); // Esc: everything at once
+    expect(at(100.1)).toBe(text);
+  });
+
+  it('safety net: reveals the whole reply silently, and starts again in step when the voice comes', () => {
+    const { subs, at, shown } = setup();
+    subs.showSilently('t1', 'Hello there, Aaron. How are you today? ');
+    const mid = at(101);
+    expect(mid.length).toBeGreaterThan(0);
+    expect(mid).not.toBe('Hello there, Aaron. How are you today? ');
+    subs.add('t1', 0, 'Late. ', false, true); // a later sentence still without voice: no restart
+    expect(at(101.1).startsWith('Hello')).toBe(true);
+    subs.add('t1', 0, 'Hello there, Aaron. ', true); // the voice arrives
+    const before = shown.length;
+    expect(at(101.2)).toBe(''); // waiting for its first word (the bubble keeps what it showed)
+    expect(shown.length).toBe(before);
+    subs.started('t1', 0, 101.3, 1);
+    expect(at(101.5).length).toBeGreaterThan(0);
+    expect(at(102.4)).toBe('Hello there, Aaron. ');
   });
 
   it('reveals everything on finish or cancel, and resets for the next reply', () => {

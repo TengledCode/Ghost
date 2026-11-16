@@ -628,7 +628,7 @@ export class GhostCore {
         this.broadcast({ type: 'audio', turnId: turn.id, seq, mime: audio.mime, data: audio.audio.toString('base64'), engine: audio.engine, last: false, display });
       } else {
         // Keep the sequence contiguous so the player doesn't wait for a sentence that will never come.
-        this.broadcast({ type: 'audio', turnId: turn.id, seq, mime: 'audio/mpeg', data: '', engine: 'none', last: false, display });
+        this.broadcast({ type: 'audio', turnId: turn.id, seq, mime: 'audio/mpeg', data: '', engine: 'none', last: false, display, ...(seg.speech ? { failed: true } : {}) });
       }
       if (seq === turn.spoken - 1 && turn.textDone) this.maybeFinish(turn);
     });
@@ -841,7 +841,11 @@ export class GhostCore {
       this.broadcast({ type: 'audio', turnId, seq: 0, mime: audio.mime, data: audio.audio.toString('base64'), engine: audio.engine, last: false, display });
       this.broadcast({ type: 'audio', turnId, seq: 1, mime: audio.mime, data: '', engine: 'none', last: true });
     } catch (e) {
+      this.o.log?.('voice: no audio for a line', String((e as Error).message ?? e));
       this.broadcast({ type: 'notice', level: 'warn', text: `Voice unavailable: ${String((e as Error).message ?? e)}` });
+      // The words still appear at once, word by word as if spoken, rather than after the safety net.
+      this.broadcast({ type: 'audio', turnId, seq: 0, mime: 'audio/mpeg', data: '', engine: 'none', last: false, display, failed: true });
+      this.broadcast({ type: 'audio', turnId, seq: 1, mime: 'audio/mpeg', data: '', engine: 'none', last: true });
     }
   }
 

@@ -6,6 +6,7 @@ interface Seg {
   display: string;
   words: string[]; // display split into words, whitespace kept, so partial text reads naturally
   hasAudio: boolean;
+  silent?: boolean; // words to say but no voice (it failed): revealed at speaking pace anyway
   addedAt: number;
   startAt?: number; // when its audio starts (clock seconds)
   duration?: number;
@@ -14,11 +15,16 @@ interface Seg {
 /** If a segment's audio hasn't started this long after it could have, show its text anyway. */
 export const NO_AUDIO_GRACE = 2.5;
 
+/** About how fast Ghost speaks (characters a second), for revealing words that have no voice. */
+export const SPOKEN_CHARS_PER_SECOND = 15;
+const spokenFor = (text: string) => Math.max(0.6, text.trim().length / SPOKEN_CHARS_PER_SECOND);
+
 export class Subtitles {
   private turnId = '';
   private segs = new Map<number, Seg>();
-  private all = false;
+  private all: false | 'all' | 'voiced' = false;
   private rendered = '';
+  private silentTurn = ''; // a turn revealed silently as a whole by the safety net, until its voice comes
 
   constructor(private readonly render: (text: string) => void, private readonly now: () => number = () => performance.now() / 1000) {}
 
@@ -28,16 +34,40 @@ export class Subtitles {
   begin(turnId: string): void {
     if (turnId === this.turnId) return;
     this.turnId = turnId;
+    this.silentTurn = '';
     this.segs.clear();
     this.all = false;
     this.rendered = '';
   }
 
-  /** The text for one segment arrived with its audio (`hasAudio` false: nothing to say, e.g. a code block). */
-  add(turnId: string, seq: number, display: string, hasAudio: boolean): void {
+  /**
+   * The text for one segment arrived with its audio. `hasAudio` false: nothing to say (a code block,
+   * shown at once), or, with `failed`, its voice failed (revealed word by word at speaking pace).
+   */
+  add(turnId: string, seq: number, display: string, hasAudio: boolean, failed = false): void {
+    if (turnId === this.silentTurn) {
+      if (!hasAudio) return; // still no voice: the silent reveal carries on
+      // The voice turned up after all: start again in step with it (the shown words stay until its
+      // first word, so nothing blinks).
+      this.silentTurn = '';
+      this.segs.clear();
+      this.all = false;
+    }
     this.begin(turnId);
     if (this.segs.has(seq)) return;
-    this.segs.set(seq, { display, words: display.split(/(?<=\s)/), hasAudio, addedAt: this.now() });
+    this.segs.set(seq, { display, words: display.split(/(?<=\s)/), hasAudio, silent: !hasAudio && failed, addedAt: this.now() });
+    this.tick();
+  }
+
+  /**
+   * No voice has come for a whole reply (the overlay's safety net): reveal its text word by word at
+   * speaking pace, silently. If the voice turns up after all, the words start again in step with it.
+   */
+  showSilently(turnId: string, text: string): void {
+    this.begin(turnId);
+    this.silentTurn = turnId;
+    this.segs.clear();
+    this.segs.set(0, { display: text, words: text.split(/(?<=\s)/), hasAudio: false, silent: true, addedAt: this.now() });
     this.tick();
   }
 
@@ -50,10 +80,13 @@ export class Subtitles {
     this.tick();
   }
 
-  /** Playback finished, was cancelled, or voice is unavailable: show everything now. */
-  revealAll(turnId = this.turnId): void {
+  /**
+   * Show everything now: cancelled (`everything`), or the voice finished playing, when sentences
+   * without a voice keep their speaking pace (the voice can finish early when sentences failed).
+   */
+  revealAll(turnId = this.turnId, everything = true): void {
     if (turnId !== this.turnId) return;
-    this.all = true;
+    this.all = everything ? 'all' : 'voiced';
     this.tick();
   }
 
@@ -67,7 +100,12 @@ export class Subtitles {
       const seq = order[i];
       if (seq !== i) break; // wait for a missing earlier segment, so text never appears out of order
       const s = this.segs.get(seq)!;
-      if (this.all) { out += s.display; continue; }
+      if (this.all === 'all' || (this.all === 'voiced' && !s.silent)) { out += s.display; continue; }
+      // A sentence without its voice starts revealing as soon as it's its turn, as if spoken.
+      if (s.silent && s.startAt === undefined) {
+        s.startAt = Math.max(s.addedAt, Number.isFinite(prevEnd) ? prevEnd : s.addedAt);
+        s.duration = spokenFor(s.display);
+      }
       if (s.startAt !== undefined && s.duration !== undefined) {
         if (now < s.startAt) break;
         // Spread the words over ~90% of the audio so the last word lands just before it ends.

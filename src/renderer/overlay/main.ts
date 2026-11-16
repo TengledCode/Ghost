@@ -101,7 +101,7 @@ player.onChunkStart = (turnId, seq, at, duration) => {
   if (pendingFile?.turnId === turnId) { const { file } = pendingFile; setTimeout(() => showFile(turnId, file), Math.max(0, at * 1000 - performance.now())); }
   if (sentAt && !standalone(turnId) && timing.heard === undefined) { timing.heard = at * 1000 - sentAt; renderMeta(); }
 };
-player.onFinished = turnId => { subtitles.revealAll(turnId); core.send({ type: 'playback_finished', turnId }); };
+player.onFinished = turnId => { subtitles.revealAll(turnId, false); core.send({ type: 'playback_finished', turnId }); };
 (function tickSubtitles() { requestAnimationFrame(tickSubtitles); subtitles.tick(); })();
 if (!inElectron) (window as unknown as { ghostDebug: object }).ghostDebug = { player, subtitles, GhostFilter, showConfirm: (id: string, text: string) => showConfirm(id, text), showNotice: (t: string, level?: 'info' | 'warn' | 'error') => showNotice(t, level) }; // browser preview: inspectable
 await customElements.whenDefined('voice-orb').catch(() => {});
@@ -261,8 +261,9 @@ core.on((m: CoreMessage) => {
       modelLabel = m.model ? `${m.provider} · ${m.model}` : '';
       if (standalone(m.turnId)) { timing = {}; sentAt = 0; }
       renderMeta();
-      // Safety net: no voice came for this reply at all, so show the text. Generous, as the Edge voice
-      // takes ~3 s to start; a sentence whose voice fails still arrives (silent) with its words.
+      // Safety net: no voice came for this reply at all, so reveal the text word by word, silently.
+      // Generous, as Edge can take a while; a sentence whose voice fails still arrives (marked
+      // `failed`) with its words, which are revealed the same way.
       if (m.silent || !settings.voiceEnabled) {
         if (m.silent) showBubble(m.text);
         if (m.file) showFile(m.turnId, m.file);
@@ -272,7 +273,7 @@ core.on((m: CoreMessage) => {
         if (subtitles.activeTurn !== m.turnId) {
           setTimeout(() => {
             if (subtitles.activeTurn === m.turnId) return;
-            showBubble(m.text);
+            subtitles.showSilently(m.turnId, m.text); // word by word, as if spoken; restarts if the voice comes
             if (pendingFile?.turnId === m.turnId) showFile(m.turnId, pendingFile.file);
           }, 8000);
         }
@@ -282,14 +283,14 @@ core.on((m: CoreMessage) => {
       if (thankedThisTurn) { shell?.express('happy'); thankedThisTurn = false; }
       break;
     case 'audio':
-      if (!m.last && m.display !== undefined) subtitles.add(m.turnId, m.seq, m.display, !!m.data);
+      if (!m.last && m.display !== undefined) subtitles.add(m.turnId, m.seq, m.display, !!m.data, !!m.failed);
       player.push(m.turnId, m.seq, m.data, m.last);
       break;
     case 'reminder': {
       // Spoken reminders appear with their voice; if no voice follows, show the text anyway.
       const turnId = `reminder-${m.id}`;
       if (!settings.voiceEnabled) showBubble(m.text);
-      else setTimeout(() => { if (subtitles.activeTurn !== turnId) showBubble(m.text); }, 3000);
+      else setTimeout(() => { if (subtitles.activeTurn !== turnId) subtitles.showSilently(turnId, m.text); }, 3000);
       glanceAt(bubble); // a reminder appearing catches his eye
       pushHistory({ who: 'ghost', text: m.text });
       renderHistory();
@@ -444,7 +445,7 @@ function scheduleBubbleHide(): void {
     // he isn't being used, and a stale :hover (the window can miss the pointer leaving while it lets
     // clicks through) mustn't keep the reply, and its notice, up for good.
     const faded = 'idle' in stage.dataset;
-    if (!faded && (bubble.matches(':hover') || !historyEl.hidden)) return scheduleBubbleHide();
+    if (busy() || (!faded && (bubble.matches(':hover') || !historyEl.hidden))) return scheduleBubbleHide();
     bubble.hidden = true;
     refreshInteractivity();
   }, 9000);

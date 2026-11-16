@@ -47,7 +47,8 @@ export type CoreMessage =
   // `file`: a screenshot or recording the line is about; the bubble shows it with Open / Show in folder.
   | { type: 'turn_end'; turnId: string; text: string; provider: string; model: string; silent?: boolean; file?: CaptureFile }
   // `display` is the reply text this audio speaks, revealed in step with it (empty `data` = nothing to say).
-  | { type: 'audio'; turnId: string; seq: number; mime: string; data: string; engine: TtsEngineId; last: boolean; display?: string }
+  // `failed`: this sentence had words to say but its voice failed (no data); shown word by word, silently.
+  | { type: 'audio'; turnId: string; seq: number; mime: string; data: string; engine: TtsEngineId; last: boolean; display?: string; failed?: boolean }
   | { type: 'approval_request'; id: string; tool: string; summary: string; args: Record<string, unknown> }
   | { type: 'approval_resolved'; id: string; approved: boolean }
   | { type: 'reminder'; id: string; text: string }
