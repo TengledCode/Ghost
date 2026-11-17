@@ -1,5 +1,6 @@
 import { BrowserWindow, desktopCapturer, ipcMain, screen, session, type IpcMainEvent } from 'electron';
 import { createWriteStream, existsSync, mkdirSync, rmSync, statSync, type WriteStream } from 'node:fs';
+import { rename, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { log } from './log';
 import { fixMp4Duration } from './mp4Duration';
@@ -26,7 +27,8 @@ const MAX_MS = 60 * 60_000;
 export class ScreenRecorder {
   private win: BrowserWindow | null = null;
   private file: WriteStream | null = null;
-  private path = '';
+  private path = ''; // the file being written
+  private saveAs = ''; // the finished recording
   private status: RecordingStatus = { on: false, mic: false };
   private starting: { resolve: () => void; reject: (e: Error) => void } | null = null;
   private stopping: ((path: string) => void)[] = [];
@@ -44,7 +46,10 @@ export class ScreenRecorder {
     ipcMain.on('recorder:started', (e, mime: string) => {
       if (!fromRecorder(e)) return;
       mkdirSync(this.o.dir(), { recursive: true });
-      this.path = join(this.o.dir(), `Ghost recording ${stamp(new Date())}.${mime.startsWith('video/mp4') ? 'mp4' : 'webm'}`);
+      const mp4 = mime.startsWith('video/mp4');
+      this.saveAs = join(this.o.dir(), `Ghost recording ${stamp(new Date())}.${mp4 ? 'mp4' : 'webm'}`);
+      // An MP4 is recorded into a .part file and written out again as a plain MP4 when it stops.
+      this.path = mp4 ? `${this.saveAs}.part` : this.saveAs;
       this.file = createWriteStream(this.path);
       this.setStatus({ on: true, startedAt: Date.now(), mic: false });
       log('recording started', { mime, path: this.path });
@@ -109,25 +114,19 @@ export class ScreenRecorder {
 
   private finish(): void {
     const path = this.path;
+    const saveAs = this.saveAs;
     const file = this.file;
     const waiting = this.stopping.splice(0);
-    const done = () => {
+    const done = async () => {
       // A recording that never got any frames is just an empty file: don't leave it behind.
       try { if (path && statSync(path).size === 0) rmSync(path, { force: true }); } catch { /* none */ }
-      // Rewrite the browser's fragmented MP4 as a plain one, which every app opens (WhatsApp hangs on
-      // fragments). If that fails, at least give it its total length, so Media Player can seek.
-      if (path.endsWith('.mp4') && existsSync(path)) {
-        try { log('recording rewritten as a plain MP4', flattenMp4(path)); } catch (e) {
-          log('recording not rewritten', String(e));
-          try { log('recording length', fixMp4Duration(path)); } catch (e2) { log('recording length not fixed', String(e2)); }
-        }
-      }
-      log('recording saved', path);
-      for (const w of waiting) w(path);
+      const saved = path !== saveAs && existsSync(path) ? await finishMp4(path, saveAs) : path;
+      log('recording saved', saved);
+      for (const w of waiting) w(saved);
     };
     this.file = null;
     this.cleanUp();
-    if (file) file.end(done); else done();
+    if (file) file.end(() => void done()); else void done();
   }
 
   private cleanUp(): void {
@@ -141,6 +140,39 @@ export class ScreenRecorder {
   }
 
   private setStatus(s: RecordingStatus): void { this.status = s; this.o.onStatus(this.current); }
+}
+
+/**
+ * Turns the recorded .part file into the finished recording at `saveAs`: the browser's fragmented MP4
+ * written out as a plain one, which every app opens (WhatsApp hangs on fragments). If that fails, the
+ * .part file itself becomes the recording, with its total length filled in so Media Player can seek.
+ * Returns where the recording ended up.
+ */
+export async function finishMp4(part: string, saveAs: string): Promise<string> {
+  try {
+    const length = flattenMp4(part, saveAs);
+    if (length !== null) {
+      log('recording rewritten as a plain MP4', length);
+      // Windows' virus scanner may still be reading the .part file; keep trying for a few seconds.
+      await rm(part, { force: true, maxRetries: 20, retryDelay: 250 }).catch(e => log('recording .part file left behind', String(e)));
+      return saveAs;
+    }
+  } catch (e) {
+    log('recording not rewritten', String(e));
+  }
+  if (!(await retry(() => rename(part, saveAs)))) { log('recording kept under its .part name'); return part; }
+  try { log('recording length', fixMp4Duration(saveAs)); } catch (e) { log('recording length not fixed', String(e)); }
+  return saveAs;
+}
+
+async function retry(job: () => Promise<unknown>, tries = 20, gapMs = 250): Promise<boolean> {
+  for (let i = 0; i < tries; i++) {
+    try { await job(); return true; } catch (e) {
+      if (i === tries - 1) { log('recording rename failed', String(e)); return false; }
+      await new Promise(r => setTimeout(r, gapMs));
+    }
+  }
+  return false;
 }
 
 /** "2026-10-01 14-03-09", safe in a Windows file name. */

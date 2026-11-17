@@ -1,4 +1,4 @@
-import { closeSync, fstatSync, openSync, renameSync, rmSync, writeSync } from 'node:fs';
+import { closeSync, fstatSync, openSync, rmSync, writeSync } from 'node:fs';
 import { type Box, boxes, child, children, readAt, topLevel, writeLength } from './mp4Duration';
 
 // The browser's MediaRecorder writes MP4 in fragments: a header with empty sample tables, then a
@@ -160,12 +160,13 @@ function buildMoov(moov: Buffer, root: Box, tracks: Map<number, Track>, chunkOff
 }
 
 /**
- * Rewrites a fragmented MP4 as a plain one, in place (through a temporary file). Returns the length
- * in seconds, or null if the file isn't a fragmented MP4, in which case it is left as it was.
+ * Writes a fragmented MP4 (`path`) out again as a plain one at `dest`, a new file: replacing a file
+ * that was just written fails on Windows while the virus scanner or Explorer still has it open.
+ * Returns the length in seconds, or null if `path` isn't a fragmented MP4 (then nothing is written).
  */
-export function flattenMp4(path: string): number | null {
+export function flattenMp4(path: string, dest: string): number | null {
   const fd = openSync(path, 'r');
-  const tmp = `${path}.flat`;
+  const tmp = dest;
   let out: number | null = null;
   try {
     const top = topLevel(fd);
@@ -225,6 +226,5 @@ export function flattenMp4(path: string): number | null {
   } finally {
     closeSync(fd);
   }
-  if (out !== null) renameSync(tmp, path);
   return out;
 }

@@ -1,8 +1,11 @@
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { flattenMp4 } from '../src/main/mp4Flatten';
+import { finishMp4 } from '../src/main/recorder';
+
+vi.mock('electron', () => ({}));
 
 // A small fragmented MP4 laid out like Chrome's MediaRecorder output (default-base-is-moof, runs with
 // data offsets, per-sample durations and sizes, key frames marked by the first sample's flags).
@@ -89,15 +92,17 @@ function readBack(file: Buffer) {
   });
 }
 
-const tmp = () => join(mkdtempSync(join(tmpdir(), 'ghost-flat-')), 'r.mp4');
+const tmp = () => mkdtempSync(join(tmpdir(), 'ghost-flat-'));
 
 describe('flattenMp4 (recordings every app can open)', () => {
   it('rewrites a fragmented recording as one header and one block of data, every sample in place', () => {
-    const path = tmp();
+    const dir = tmp();
+    const path = join(dir, 'r.mp4.part'), dest = join(dir, 'r.mp4');
     writeFileSync(path, recording());
     // Video: 2 frames, a 500 gap, then 1 more = 3500 at 30 kHz; audio 3072 at 48 kHz. Longest: 0.117 s.
-    expect(flattenMp4(path)).toBeCloseTo(3500 / 30000, 2);
-    const [audio, video] = readBack(readFileSync(path));
+    expect(flattenMp4(path, dest)).toBeCloseTo(3500 / 30000, 2);
+    expect(readFileSync(path).equals(recording())).toBe(true); // the recorded file is only read
+    const [audio, video] = readBack(readFileSync(dest));
     expect(audio.types).toEqual(['ftyp', 'moov', 'mdat']);
     expect(audio.samples).toEqual(['a1a', 'a2a2', 'a3']);
     expect(audio.durations).toEqual([1024, 1024, 1024]);
@@ -109,14 +114,35 @@ describe('flattenMp4 (recordings every app can open)', () => {
     expect(video.stss).toEqual([1]); // only the first frame is a key frame
   });
 
-  it('leaves a file that is already plain, or not an MP4, as it was', () => {
-    const path = tmp();
+  it('writes nothing for a file that is already plain, or not an MP4', () => {
+    const dir = tmp();
+    const path = join(dir, 'r.mp4.part'), plain = join(dir, 'r.mp4'), again = join(dir, 'again.mp4');
     writeFileSync(path, recording());
-    flattenMp4(path);
-    const once = readFileSync(path);
-    expect(flattenMp4(path)).toBeNull();
-    expect(readFileSync(path).equals(once)).toBe(true);
+    flattenMp4(path, plain);
+    expect(flattenMp4(plain, again)).toBeNull();
+    expect(existsSync(again)).toBe(false);
     writeFileSync(path, Buffer.from('not a video at all'));
-    expect(flattenMp4(path)).toBeNull();
+    expect(flattenMp4(path, again)).toBeNull();
+    expect(existsSync(again)).toBe(false);
+  });
+});
+
+describe('finishMp4 (the recorded .part file becomes the recording)', () => {
+  it('writes the plain MP4 under the final name and removes the .part file', async () => {
+    const dir = tmp();
+    const part = join(dir, 'r.mp4.part'), saveAs = join(dir, 'r.mp4');
+    writeFileSync(part, recording());
+    expect(await finishMp4(part, saveAs)).toBe(saveAs);
+    expect(existsSync(part)).toBe(false);
+    expect(readBack(readFileSync(saveAs))[1].samples).toEqual(['K1K1K', 'v2v2v2', 'v3v']);
+  });
+
+  it('keeps the recorded file itself when it cannot be rewritten', async () => {
+    const dir = tmp();
+    const part = join(dir, 'r.mp4.part'), saveAs = join(dir, 'r.mp4');
+    writeFileSync(part, Buffer.from('not fragmented'));
+    expect(await finishMp4(part, saveAs)).toBe(saveAs);
+    expect(existsSync(part)).toBe(false);
+    expect(readFileSync(saveAs, 'latin1')).toBe('not fragmented');
   });
 });
