@@ -61,7 +61,6 @@ let currentTurn = '';
 let replyText = '';
 let bubbleTimer = 0;
 let pendingApproval: string | null = null;
-let thankedThisTurn = false;
 let materialised = false;
 // Reply timings (Settings → Brain → Show reply timings), measured from when Aaron pressed Enter.
 let sentAt = 0;
@@ -280,7 +279,6 @@ core.on((m: CoreMessage) => {
       }
       pushHistory({ who: 'ghost', text: m.text });
       renderHistory();
-      if (thankedThisTurn) { shell?.express('happy'); thankedThisTurn = false; }
       break;
     case 'audio':
       if (!m.last && m.display !== undefined) subtitles.add(m.turnId, m.seq, m.display, !!m.data, !!m.failed);
@@ -579,10 +577,8 @@ form.addEventListener('submit', e => {
   if (!text && !pictures.length) return;
   pushHistory({ who: 'user', text, pictures: pictures.length });
   renderHistory();
-  // A small reaction while Ghost works on it: a curious tilt for questions, a happy spin after thanks.
-  const mood = moodFromMessage(text);
-  if (mood === 'curious') shell?.express('curious');
-  thankedThisTurn = mood === 'happy';
+  // A small reaction while Ghost works on it: a curious tilt for questions.
+  if (moodFromMessage(text) === 'curious') shell?.express('curious');
   core.send({ type: 'user_message', text, ...(pictures.length ? { images: pictures.map(p => ({ mime: p.mime, data: p.data })) } : {}) });
   if (text && sent.at(-1) !== text) sent.push(text);
   if (sent.length > 50) sent.shift();

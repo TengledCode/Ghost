@@ -265,10 +265,12 @@ export type Mood = 'happy' | 'curious' | 'sad' | 'boop' | 'perk' | 'wake';
 export const HAPPY_SPIN = { front: 1, rear: -0.5 };
 export const spinKick = (turns: number, stiffness: number) => turns * 2 * Math.PI * stiffness;
 
-/** Guess a mood from what Aaron typed, for a small reaction while Ghost works on the reply. */
+/**
+ * Guess a mood from what Aaron typed, for a small reaction while Ghost works on the reply. Thanks gets
+ * no reaction: Aaron dropped the happy spin after thanks (17 Nov), since words alone misread it.
+ */
 export function moodFromMessage(text: string): Mood | null {
   const t = text.toLowerCase();
-  if (/\b(thanks?|thank you|cheers|ty|great job|well done|nice one|love (it|you)|brilliant|awesome|good (job|boy|work))\b/.test(t)) return 'happy';
   if (/\?\s*$/.test(t) || /^(what|why|how|who|where|when|which|could|can|would|should|is|are|do|does)\b/.test(t)) return 'curious';
   return null;
 }

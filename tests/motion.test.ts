@@ -144,9 +144,9 @@ describe('MicroLife', () => {
 });
 
 describe('moodFromMessage', () => {
-  it('reads thanks and questions', () => {
-    expect(moodFromMessage('thanks ghost')).toBe('happy');
-    expect(moodFromMessage('Cheers, that was great')).toBe('happy');
+  it('reads questions, and nothing from thanks', () => {
+    expect(moodFromMessage('thanks ghost')).toBeNull();
+    expect(moodFromMessage('my plan failed thanks to bob')).toBeNull();
     expect(moodFromMessage('what time is it in Tokyo?')).toBe('curious');
     expect(moodFromMessage('open spotify')).toBeNull();
   });
