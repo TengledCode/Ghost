@@ -5,7 +5,6 @@ import { CoreClient } from '../shared/coreClient';
 import { VoicePlayer } from './audio/player';
 import { GhostFilter } from './audio/ghostFilter';
 import { GhostShell } from './shell/ghostShell';
-import { moodFromMessage } from './shell/motion';
 import { playChime } from './chime';
 import { isIdle } from './idle';
 import { Subtitles } from './subtitles';
@@ -577,8 +576,6 @@ form.addEventListener('submit', e => {
   if (!text && !pictures.length) return;
   pushHistory({ who: 'user', text, pictures: pictures.length });
   renderHistory();
-  // A small reaction while Ghost works on it: a curious tilt for questions.
-  if (moodFromMessage(text) === 'curious') shell?.express('curious');
   core.send({ type: 'user_message', text, ...(pictures.length ? { images: pictures.map(p => ({ mime: p.mime, data: p.data })) } : {}) });
   if (text && sent.at(-1) !== text) sent.push(text);
   if (sent.length > 50) sent.shift();

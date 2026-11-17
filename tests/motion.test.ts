@@ -103,7 +103,7 @@ describe('QualityGovernor', () => {
   });
 });
 
-import { Articulator, EmphasisDetector, MicroLife, moodFromMessage } from '../src/renderer/overlay/shell/motion';
+import { Articulator, EmphasisDetector, MicroLife } from '../src/renderer/overlay/shell/motion';
 
 describe('EmphasisDetector', () => {
   const dt = 1 / 60;
@@ -140,15 +140,6 @@ describe('MicroLife', () => {
     expect(counts.blink).toBeGreaterThan(6);
     expect(counts.blink).toBeLessThan(25);
     expect(counts.calibrate).toBeGreaterThan(2);
-  });
-});
-
-describe('moodFromMessage', () => {
-  it('reads questions, and nothing from thanks', () => {
-    expect(moodFromMessage('thanks ghost')).toBeNull();
-    expect(moodFromMessage('my plan failed thanks to bob')).toBeNull();
-    expect(moodFromMessage('what time is it in Tokyo?')).toBe('curious');
-    expect(moodFromMessage('open spotify')).toBeNull();
   });
 });
 
