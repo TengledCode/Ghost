@@ -25,7 +25,6 @@ Read this first, then `README.md` and `docs/SETUP.md`. It holds how to work with
 2. **Words without a voice:** after the 8 s safety net, or at once when the voice has definitely failed (`audio.failed`, a failed greeting), the words appear one by one at speaking pace (`SPOKEN_CHARS_PER_SECOND` 15), silently. If the voice arrives late, the shown words wait until it has caught up, then follow it. He watched this work in the browser preview; in the real Ghost it only shows when the voice is slow or fails.
 3. **A reply never hides while Ghost is busy;** one shown after Ghost went idle (a failed greeting) goes ~9 s later.
 4. **Filing with Gemini:** with Gemini primary, chat, then `/new`; within a minute the "… Ghost conversation" note in Obsidian gets a title and a summary.
-5. **No tilt for questions** (17 Nov, held on the PC until he has tried it): a question ("what time is it?") gets no head tilt any more; Ghost just goes into thinking. (No spin after thanks: he confirmed.)
 - Can't be forced by hand: a recording that can't be converted ends Ghost's "Recording saved" reply with "It couldn't be fully converted, so some apps or services may not accept it." (unit-tested). Edge gets at most two sentences at once and one retry (unit-tested). Voice failures are logged in `ghost.log` ("voice: …").
 - Preview modes for voice trouble: `GHOST_PREVIEW_TTS=fail` / `flaky` / `slow` (voice after 12 s) / `silent` / `synth`, set in the shell before `npm run preview:ui`. The preview's pretend brain gives a longer reply there, for watching it appear.
 
