@@ -3,6 +3,7 @@
 const ABBREVIATIONS = /\b(?:Mr|Mrs|Ms|Dr|Prof|Sr|Jr|St|vs|etc|e\.g|i\.e|approx|No)\.$/i;
 const MIN_CHARS = 12; // merge very short fragments ("Right.") into the next sentence
 const FIRST_CLAUSE_CHARS = 18; // the opening clause may be spoken on its own once it's this long
+const FIRST_CLAUSE_TAIL_WORDS = 4; // ... and at least this many words of its sentence follow the comma
 
 /** One piece of the reply: the text exactly as written, and how it should be spoken (may be empty). */
 export interface Segment { display: string; speech: string }
@@ -48,7 +49,16 @@ export class SentenceSplitter {
       if (ch === '\n' && text[i + 1] === '\n' && i >= 1) return i + 2;
       if (this.firstClause && this.first && (ch === ',' || ch === ';' || ch === '—') && /\s/.test(text[i + 1] ?? '')) {
         const head = text.slice(0, i + 1).trim();
-        if (head.length >= FIRST_CLAUSE_CHARS && head.split(/\s+/).length >= 3 && !head.includes('`')) return i + 1;
+        if (head.length >= FIRST_CLAUSE_CHARS && head.split(/\s+/).length >= 3 && !head.includes('`')) {
+          // Only when a good stretch follows: spoken alone, a short tail ("Here and listening, | Aaron.")
+          // comes out after a gap with odd intonation. Wait until the tail is long enough or the sentence ends.
+          const rest = text.slice(i + 1);
+          const stop = rest.search(/[.!?…](?=[\s"')\]]|$)/);
+          const tail = (stop < 0 ? rest : rest.slice(0, stop)).trim().split(/\s+/).filter(Boolean);
+          const whole = stop >= 0 || /\s$/.test(rest) ? tail.length : tail.length - 1; // the last word may still be arriving
+          if (whole >= FIRST_CLAUSE_TAIL_WORDS) return i + 1;
+          if (stop < 0) return -1;
+        }
       }
       if (ch !== '.' && ch !== '!' && ch !== '?' && ch !== '…') continue;
       const next = text[i + 1];

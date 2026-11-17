@@ -53,6 +53,18 @@ describe('speaking sooner', () => {
     expect(segs.slice(1).map(x => x.display.trim())).toEqual(['although there are a few caveats worth knowing, and here they are.', 'First, rent is flexible.']);
   });
 
+  it('keeps a short tail with its opening clause ("Here and listening, Aaron.")', () => {
+    const s = new SentenceSplitter(true);
+    // Streamed in pieces, as a brain sends it: no cut at the comma while the tail is still arriving.
+    expect(s.push('Here and listening, ')).toEqual([]);
+    expect(s.push('Aar')).toEqual([]);
+    expect([...s.push('on. What can I do for you? '), ...s.flush()].map(x => x.display.trim())).toEqual(['Here and listening, Aaron.', 'What can I do for you?']);
+    // A long tail still lets the opening clause go first.
+    const t = new SentenceSplitter(true);
+    expect(t.push('Here and listening, so tell me what').map(x => x.display)).toEqual([]); // "what" may still be growing
+    expect(t.push(' you').map(x => x.display)).toEqual(['Here and listening,']);
+  });
+
   it('keeps short openers ("Very good, Aaron.") whole, and is off by default', () => {
     const s = new SentenceSplitter(true);
     expect(s.push('Very good, Aaron. Done. ').map(x => x.display.trim())).toEqual(['Very good, Aaron.']);
