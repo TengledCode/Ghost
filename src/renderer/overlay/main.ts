@@ -284,7 +284,7 @@ core.on((m: CoreMessage) => {
       break;
     case 'audio':
       if (!m.last && m.display !== undefined) subtitles.add(m.turnId, m.seq, m.display, !!m.data, !!m.failed);
-      player.push(m.turnId, m.seq, m.data, m.last);
+      player.push(m.turnId, m.seq, m.data, m.last, m.display);
       break;
     case 'reminder': {
       // Spoken reminders appear with their voice; if no voice follows, show the text anyway.

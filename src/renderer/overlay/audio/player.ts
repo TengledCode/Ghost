@@ -1,6 +1,7 @@
 import { BandMeter } from './bands';
 import type { VoiceCharacter } from '../../../shared/settings';
 import { GhostFilter } from './ghostFilter';
+import { pauseAfter, speechBounds } from './trim';
 
 export type KeepAlive = 'while-talking' | 'always' | 'off';
 
@@ -11,6 +12,8 @@ export const PREROLL = 0.25;
 export const WAKE_TIME = 0.9;
 const LEAD = 0.03;
 const FADE_IN = 0.015;
+/** Every piece fades in and out this fast, so trimming a recording never clicks. */
+const EDGE_FADE = 0.005;
 /** Keep-alive tone: 20 Hz at about -46 dBFS. Far below hearing at that pitch, but real signal to a Bluetooth codec. */
 const KEEPALIVE_HZ = 20;
 const KEEPALIVE_LEVEL = 0.005;
@@ -29,7 +32,10 @@ export function chunkStart(now: number, playhead: number, lastSoundEnd: number, 
   return Math.max(now + lead, playhead);
 }
 
-/** Plays the core's sentence-by-sentence audio gaplessly, in order, through the Ghost filter. */
+/**
+ * Plays the core's sentence-by-sentence audio in order, through the Ghost filter: only the speech in
+ * each recording (its padding of silence is trimmed), with a natural pause between pieces (trim.ts).
+ */
 export class VoicePlayer {
   readonly ctx = new AudioContext();
   readonly filter: GhostFilter;
@@ -38,7 +44,7 @@ export class VoicePlayer {
   private playhead = 0;
   private lastSoundEnd = -Infinity;
   private turnId = '';
-  private pending = new Map<number, AudioBuffer | null>();
+  private pending = new Map<number, { buf: AudioBuffer | null; pause: number }>();
   private nextSeq = 0;
   private lastSeq = -1;
   private sources = new Set<AudioBufferSourceNode>();
@@ -117,7 +123,8 @@ export class VoicePlayer {
     this.playhead = 0;
   }
 
-  push(turnId: string, seq: number, base64: string, last: boolean): void {
+  /** `display`: the reply text this piece speaks, which sets the pause after it (a comma, a sentence). */
+  push(turnId: string, seq: number, base64: string, last: boolean, display?: string): void {
     if (turnId !== this.turnId) { this.stop(); this.turnId = turnId; }
     this.wake();
     if (last) { this.lastSeq = seq; this.drain(); return; }
@@ -129,7 +136,7 @@ export class VoicePlayer {
       if (turnId !== this.turnId) return;
       // Make sure the clock is running before scheduling against it.
       if (this.ctx.state !== 'running') { try { await this.ctx.resume(); } catch { /* keeps trying on the next chunk */ } }
-      this.pending.set(seq, buf);
+      this.pending.set(seq, { buf, pause: pauseAfter(display) });
       this.drain();
     });
   }
@@ -138,7 +145,7 @@ export class VoicePlayer {
     void this.ctx.resume();
     while (this.pending.has(this.nextSeq)) {
       const seq = this.nextSeq;
-      const buf = this.pending.get(seq)!;
+      const { buf, pause } = this.pending.get(seq)!;
       this.pending.delete(seq);
       this.nextSeq++;
       if (!buf) continue;
@@ -147,21 +154,25 @@ export class VoicePlayer {
       // The Ghost character plays the voice slightly fast: a smaller-sounding speaker.
       const rate = this.filter.rate;
       src.playbackRate.value = rate;
-      const duration = buf.duration / rate;
+      const channels = Array.from({ length: buf.numberOfChannels }, (_, i) => buf.getChannelData(i));
+      const speech = speechBounds(channels, buf.sampleRate);
+      const length = speech.end - speech.start; // seconds of the recording
+      const duration = length / rate; // seconds on the clock
       const now = this.ctx.currentTime;
-      const gapless = this.sources.size > 0 && this.playhead > now;
-      const start = chunkStart(now, this.playhead, this.lastSoundEnd, this.sources.size > 0, this.warmFor());
-      if (gapless) src.connect(this.filter.input);
-      else {
-        // A short fade-in after silence, so a device waking up doesn't click.
-        const fade = this.ctx.createGain();
-        fade.gain.setValueAtTime(0, start);
-        fade.gain.linearRampToValueAtTime(1, start + FADE_IN);
-        src.connect(fade).connect(this.filter.input);
-      }
+      // Mid-reply (the previous piece, or the pause after it, isn't over yet): straight on after it.
+      const following = this.playhead > now;
+      const start = chunkStart(now, this.playhead, this.lastSoundEnd, following, this.warmFor());
+      // Fade in (longer after silence, so a device waking up doesn't click) and out.
+      const fade = this.ctx.createGain();
+      const fadeIn = following ? EDGE_FADE : FADE_IN;
+      fade.gain.setValueAtTime(0, start);
+      fade.gain.linearRampToValueAtTime(1, start + fadeIn);
+      fade.gain.setValueAtTime(1, Math.max(start + fadeIn, start + duration - EDGE_FADE));
+      fade.gain.linearRampToValueAtTime(0, start + duration);
+      src.connect(fade).connect(this.filter.input);
       if (this.sources.size === 0) this.onStart();
-      src.start(start);
-      this.playhead = start + duration;
+      src.start(start, speech.start, length);
+      this.playhead = start + duration + pause;
       this.sources.add(src);
       // Tell the subtitles when this chunk will actually be heard, on the page's own clock.
       this.onChunkStart(this.turnId, seq, performance.now() / 1000 + (start - now), duration);
