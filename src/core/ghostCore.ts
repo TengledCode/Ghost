@@ -101,6 +101,7 @@ export class GhostCore {
   private agy: AgyPaths;
   /** The exact model each brain's slot last answered with (Claude's aliases only resolve as it replies). */
   private inUse: Partial<Record<ProviderId, Partial<Record<ConcreteTier, string>>>> = {};
+  private shortcutsSince: string[] = []; // shortcuts handled since the last brain turn, to tell the brain
   private googleInSync = false; // whether the Google brain's own conversation holds everything said so far
   private greeted = false;
   private presenceTimer: NodeJS.Timeout | null = null;
@@ -459,7 +460,7 @@ export class GhostCore {
       if (/^\/(new|reset)$/i.test(message)) return this.newConversation();
       if (isPureCommand(message, screenCmd)) return this.setLiveScreen(screenCmd === 'on', true);
       const captureCmd = parseCaptureCommand(message);
-      if (captureCmd && this.o.host.capture) return this.captureCommand(captureCmd);
+      if (captureCmd && this.o.host.capture) return this.captureCommand(captureCmd, message);
     }
     this.cancel();
     const s = this.o.settings();
@@ -485,7 +486,8 @@ export class GhostCore {
     if (((screen && 'path' in screen) || pictures.length) && tier === 'fast' && s.modelTier === 'auto') tier = 'balanced'; // reading a screen or a picture deserves more than the quick tier
     // A short follow-up is recalled together with the previous message, so "this" keeps its meaning.
     const previous = this.log.lines().filter(l => l.role === 'user').pop()?.text;
-    const prompt = buildTurnPrompt(message, { now: new Date(), memories: this.memory.contextFor(message, undefined, previous), userName: s.userName, screen, pictures });
+    const shortcuts = this.shortcutsSince.splice(0);
+    const prompt = buildTurnPrompt(message, { now: new Date(), memories: this.memory.contextFor(message, undefined, previous), userName: s.userName, screen, pictures, shortcuts });
     let order = [s.provider, s.fallbackProvider].filter((p, i, a): p is ProviderId => !!p && a.indexOf(p) === i);
     // While fallen back, don't pay for a failing call to the primary on every message.
     if (this.fallback && Date.now() < this.fallback.retryAt && order.length > 1) order = order.slice(1);
@@ -783,6 +785,18 @@ export class GhostCore {
    * A short line from Ghost itself (no model call): shown in the bubble and spoken (`speech` instead
    * if given; '' keeps it silent). `file`: the screenshot or recording it's about, shown with it.
    */
+  /**
+   * A shortcut ("record my screen") was handled without a brain: write it into the conversation, and
+   * tell the brain with the next message, so "add it to my clipboard" knows what "it" is.
+   */
+  private noteShortcut(asked: string, reply: string, path?: string): void {
+    if (this.log.isStale(SESSION_IDLE_MS)) this.rotateConversation();
+    this.log.append('user', asked, { command: true });
+    this.log.append('assistant', reply, { command: true, ...(path ? { actions: [`saved ${path}`] } : {}) });
+    this.googleInSync = false; // Gemini's own conversation doesn't have it: send recent lines next time
+    this.shortcutsSince.push(`${this.o.settings().userName}: "${asked}" → Ghost: ${reply}${path ? ` (file: ${path})` : ''}`);
+  }
+
   private say(text: string, speech = text, file?: CaptureFile): void {
     const turnId = `say-${randomUUID()}`;
     this.broadcast({ type: 'text_delta', turnId, text });
@@ -793,29 +807,30 @@ export class GhostCore {
   // ---------------------------------------------------------------- screenshots and recording
 
   /** "take a screenshot", "record my screen", "stop recording" (or the REC tag's stop button), "show my last screenshot": done at once. */
-  private async captureCommand(cmd: Exclude<CaptureCommand, null>): Promise<void> {
+  private async captureCommand(cmd: Exclude<CaptureCommand, null>, asked = 'Stop recording (the Stop button on the REC tag)'): Promise<void> {
     const capture = this.o.host.capture;
     if (!capture) return;
+    const say = (text: string, speech = text, file?: CaptureFile) => { this.say(text, speech, file); this.noteShortcut(asked, text, file?.path); };
     try {
       if (cmd === 'screenshot') {
         const shot = await capture.screenshot();
-        this.say(`Screenshot saved in ${folderName(shot.path)} and copied to the clipboard.`, 'Screenshot saved and copied to the clipboard.', { path: shot.path, kind: 'screenshot' });
+        say(`Screenshot saved in ${folderName(shot.path)} and copied to the clipboard.`, 'Screenshot saved and copied to the clipboard.', { path: shot.path, kind: 'screenshot' });
       } else if (cmd === 'last-screenshot' || cmd === 'last-recording') {
         const kind = cmd === 'last-screenshot' ? 'screenshot' : 'recording';
         const last = await capture.latest(kind);
-        if (!last) { this.say(kind === 'screenshot' ? "I haven't taken any screenshots yet." : "I haven't made any recordings yet."); return; }
-        this.say(`Previous ${kind} saved in ${folderName(last.path)} (${when(last.at)}).`, `Here's your previous ${kind}.`, { path: last.path, kind });
+        if (!last) { say(kind === 'screenshot' ? "I haven't taken any screenshots yet." : "I haven't made any recordings yet."); return; }
+        say(`Previous ${kind} saved in ${folderName(last.path)} (${when(last.at)}).`, `Here's your previous ${kind}.`, { path: last.path, kind });
       } else if (cmd === 'record') {
-        if (capture.recording().on) { this.say('Already recording your screen.'); return; }
+        if (capture.recording().on) { say('Already recording your screen.'); return; }
         await capture.startRecording();
         // Shown, not spoken: the recording takes in everything the PC plays, Ghost's voice included.
-        this.say('Recording your screen.', '');
+        say('Recording your screen.', '');
       } else {
         const state = capture.recording();
-        if (!state.on) { this.say("I'm not recording."); return; }
+        if (!state.on) { say("I'm not recording."); return; }
         const path = await capture.stopRecording();
         const took = duration(Date.now() - (state.startedAt ?? Date.now()));
-        this.say(`Recording saved in ${folderName(path)} (${took}).`, 'Recording saved.', { path, kind: 'recording' });
+        say(`Recording saved in ${folderName(path)} (${took}).`, 'Recording saved.', { path, kind: 'recording' });
       }
     } catch (e) {
       const what = { screenshot: "Couldn't take the screenshot", record: "Couldn't start recording", stop: "Couldn't save the recording", 'last-screenshot': "Couldn't find your screenshots", 'last-recording': "Couldn't find your recordings" }[cmd];

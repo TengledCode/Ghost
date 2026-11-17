@@ -99,7 +99,7 @@ async function setup(voiceEnabled = false, brain?: ToolBrain) {
   const c = core;
   cap.onChange(s => c.recordingChanged(s));
   await core.start();
-  if (brain) brain.relay = { url: core.url, token: core.mcpToken };
+  if (brain && 'relay' in brain) brain.relay = { url: core.url, token: core.mcpToken };
   const ws = new WebSocket(core.url);
   const inbox: CoreMessage[] = [];
   ws.on('message', raw => inbox.push(JSON.parse(String(raw))));
@@ -123,7 +123,28 @@ describe('screenshots and recording in the core', () => {
       text: 'Screenshot saved in Pictures\\Ghost and copied to the clipboard.',
       file: { path: 'C:\\Users\\Aaron\\Pictures\\Ghost\\Screenshot 1.png', kind: 'screenshot' }, // shown with Open / Show in folder
     });
-    expect(core.log.lines()).toHaveLength(0); // a command, not a conversation
+    // In the conversation (so the brain knows what "it" is), marked as a command (no note of its own).
+    expect(core.log.lines().map(l => [l.role, l.text, l.command])).toEqual([
+      ['user', 'take a screenshot', true],
+      ['assistant', 'Screenshot saved in Pictures\\Ghost and copied to the clipboard.', true],
+    ]);
+  });
+
+  it('tells the brain about shortcuts it never saw, with the next message', async () => {
+    const prompts: string[] = [];
+    const brain = { id: 'claude' as const, isAvailable: async () => true,
+      async *send(req: { prompt: string }): AsyncIterable<ProviderEvent> { prompts.push(req.prompt); yield { type: 'text_delta', text: 'Done. ' }; yield { type: 'done', text: 'Done. ' }; } };
+    const { core, until } = await setup(false, brain as never);
+    await core.userMessage('record my screen');
+    await until(m => m.type === 'turn_end' && (m as { text: string }).text === 'Recording your screen.');
+    await core.userMessage('stop recording');
+    await until(m => m.type === 'turn_end' && /Recording saved/.test((m as { text: string }).text));
+    await core.userMessage('add it to my clipboard');
+    expect(prompts[0]).toContain('"record my screen" → Ghost: Recording your screen.');
+    expect(prompts[0]).toContain('"stop recording" → Ghost: Recording saved in Videos\\Ghost (');
+    expect(prompts[0]).toContain('(file: C:\\Users\\Aaron\\Videos\\Ghost\\Ghost recording.mp4)');
+    await core.userMessage('thanks');
+    expect(prompts[1]).not.toContain('quick commands'); // told once
   });
 
   it('brings back the previous screenshot, and says when there is no recording yet', async () => {
