@@ -29,7 +29,7 @@ import { SentenceSplitter, type Segment } from './sentenceSplitter';
 import { TOOL_DEFS, type ToolName } from './tools/definitions';
 import { CLAUDE_BUILTIN_TOOLS } from './providers/claude';
 import { agyPaths, writeAgyPersona, writeAgyPlugin, type AgyPaths } from './providers/agyPlugin';
-import { ToolExecutor, type Host, type RecordingState } from './tools/executor';
+import { ToolExecutor, UNCONVERTED, type Host, type RecordingState } from './tools/executor';
 import { safeReadRoots } from './tools/fileAccess';
 import { voiceFallbackNotice, type TtsService } from './tts/service';
 
@@ -828,9 +828,10 @@ export class GhostCore {
       } else {
         const state = capture.recording();
         if (!state.on) { say("I'm not recording."); return; }
-        const path = await capture.stopRecording();
+        const { path, unconverted } = await capture.stopRecording();
         const took = duration(Date.now() - (state.startedAt ?? Date.now()));
-        say(`Recording saved in ${folderName(path)} (${took}).`, 'Recording saved.', { path, kind: 'recording' });
+        if (unconverted) say(`Recording saved in ${folderName(path)} (${took}). ${UNCONVERTED}`, `Recording saved. ${UNCONVERTED}`, { path, kind: 'recording' });
+        else say(`Recording saved in ${folderName(path)} (${took}).`, 'Recording saved.', { path, kind: 'recording' });
       }
     } catch (e) {
       const what = { screenshot: "Couldn't take the screenshot", record: "Couldn't start recording", stop: "Couldn't save the recording", 'last-screenshot': "Couldn't find your screenshots", 'last-recording': "Couldn't find your recordings" }[cmd];

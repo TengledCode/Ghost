@@ -132,17 +132,27 @@ describe('finishMp4 (the recorded .part file becomes the recording)', () => {
     const dir = tmp();
     const part = join(dir, 'r.mp4.part'), saveAs = join(dir, 'r.mp4');
     writeFileSync(part, recording());
-    expect(await finishMp4(part, saveAs)).toBe(saveAs);
+    expect(await finishMp4(part, saveAs)).toEqual({ path: saveAs });
     expect(existsSync(part)).toBe(false);
     expect(readBack(readFileSync(saveAs))[1].samples).toEqual(['K1K1K', 'v2v2v2', 'v3v']);
   });
 
-  it('keeps the recorded file itself when it cannot be rewritten', async () => {
+  it('keeps a file with nothing to convert as it is, with no warning', async () => {
     const dir = tmp();
     const part = join(dir, 'r.mp4.part'), saveAs = join(dir, 'r.mp4');
     writeFileSync(part, Buffer.from('not fragmented'));
-    expect(await finishMp4(part, saveAs)).toBe(saveAs);
+    expect(await finishMp4(part, saveAs)).toEqual({ path: saveAs });
     expect(existsSync(part)).toBe(false);
     expect(readFileSync(saveAs, 'latin1')).toBe('not fragmented');
+  });
+
+  it('keeps a broken recording itself, marked unconverted', async () => {
+    const dir = tmp();
+    const part = join(dir, 'r.mp4.part'), saveAs = join(dir, 'r.mp4');
+    const cut = recording().subarray(0, recording().length - 2); // cut off mid-write: the last fragment's data runs past the end
+    writeFileSync(part, cut);
+    expect(await finishMp4(part, saveAs)).toEqual({ path: saveAs, unconverted: true });
+    expect(existsSync(part)).toBe(false);
+    expect(readFileSync(saveAs).length).toBe(cut.length); // the same file, with only its length filled in
   });
 });

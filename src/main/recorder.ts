@@ -11,6 +11,8 @@ import { flattenMp4 } from './mp4Flatten';
 // so even a long recording never sits in memory. The microphone can be mixed in or out at any time.
 
 export interface RecordingStatus { on: boolean; startedAt?: number; mic: boolean; micError?: string }
+/** A saved recording; `unconverted` when it stayed in the browser's streaming layout, which some apps refuse. */
+export interface SavedRecording { path: string; unconverted?: boolean }
 
 export interface RecorderOptions {
   dir: () => string; // where recordings are saved
@@ -31,7 +33,7 @@ export class ScreenRecorder {
   private saveAs = ''; // the finished recording
   private status: RecordingStatus = { on: false, mic: false };
   private starting: { resolve: () => void; reject: (e: Error) => void } | null = null;
-  private stopping: ((path: string) => void)[] = [];
+  private stopping: ((saved: SavedRecording) => void)[] = [];
   private limit: NodeJS.Timeout | null = null;
   private hiding = false; // Ghost is hidden from captures for this recording (undone exactly once)
 
@@ -99,10 +101,10 @@ export class ScreenRecorder {
     this.limit = setTimeout(() => { log('recording hit its time limit'); void this.stop(); }, this.o.maxMs ?? MAX_MS);
   }
 
-  /** Stop and save. Resolves with the file's path. */
-  stop(): Promise<string> {
+  /** Stop and save. Resolves with the saved file. */
+  stop(): Promise<SavedRecording> {
     if (!this.win) return Promise.reject(new Error("Ghost isn't recording."));
-    const done = new Promise<string>(resolve => this.stopping.push(resolve));
+    const done = new Promise<SavedRecording>(resolve => this.stopping.push(resolve));
     this.win.webContents.send('recorder:stop');
     // If the page doesn't answer, save what has been written so far.
     setTimeout(() => { if (this.stopping.length) this.finish(); }, 5000);
@@ -120,7 +122,7 @@ export class ScreenRecorder {
     const done = async () => {
       // A recording that never got any frames is just an empty file: don't leave it behind.
       try { if (path && statSync(path).size === 0) rmSync(path, { force: true }); } catch { /* none */ }
-      const saved = path !== saveAs && existsSync(path) ? await finishMp4(path, saveAs) : path;
+      const saved = path !== saveAs && existsSync(path) ? await finishMp4(path, saveAs) : { path };
       log('recording saved', saved);
       for (const w of waiting) w(saved);
     };
@@ -146,23 +148,26 @@ export class ScreenRecorder {
  * Turns the recorded .part file into the finished recording at `saveAs`: the browser's fragmented MP4
  * written out as a plain one, which every app opens (WhatsApp hangs on fragments). If that fails, the
  * .part file itself becomes the recording, with its total length filled in so Media Player can seek.
- * Returns where the recording ended up.
+ * Returns where the recording ended up, and whether it is still unconverted.
  */
-export async function finishMp4(part: string, saveAs: string): Promise<string> {
+export async function finishMp4(part: string, saveAs: string): Promise<SavedRecording> {
+  let failed = false; // stays false for a file that was never fragmented: nothing to convert, nothing to warn about
   try {
     const length = flattenMp4(part, saveAs);
     if (length !== null) {
       log('recording rewritten as a plain MP4', length);
       // Windows' virus scanner may still be reading the .part file; keep trying for a few seconds.
       await rm(part, { force: true, maxRetries: 20, retryDelay: 250 }).catch(e => log('recording .part file left behind', String(e)));
-      return saveAs;
+      return { path: saveAs };
     }
   } catch (e) {
     log('recording not rewritten', String(e));
+    failed = true;
   }
-  if (!(await retry(() => rename(part, saveAs)))) { log('recording kept under its .part name'); return part; }
-  try { log('recording length', fixMp4Duration(saveAs)); } catch (e) { log('recording length not fixed', String(e)); }
-  return saveAs;
+  const flag = failed ? { unconverted: true } : {};
+  if (!(await retry(() => rename(part, saveAs)))) { log('recording kept under its .part name'); return { path: part, ...flag }; }
+  if (failed) try { log('recording length', fixMp4Duration(saveAs)); } catch (e) { log('recording length not fixed', String(e)); }
+  return { path: saveAs, ...flag };
 }
 
 async function retry(job: () => Promise<unknown>, tries = 20, gapMs = 250): Promise<boolean> {

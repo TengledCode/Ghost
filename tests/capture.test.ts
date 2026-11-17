@@ -52,17 +52,19 @@ afterEach(() => core?.stop());
 
 function fakeCapture() {
   const calls: string[] = [];
+  const flags = { unconverted: false }; // the next recording couldn't be converted to a plain MP4
+  const unconverted = () => flags.unconverted;
   let state: RecordingState = { on: false, mic: false };
   let notify: (s: RecordingState) => void = () => {};
   const host: CaptureHost = {
     screenshot: async () => { calls.push('screenshot'); return { path: 'C:\\Users\\Aaron\\Pictures\\Ghost\\Screenshot 1.png' }; },
     startRecording: async () => { calls.push('start'); state = { on: true, startedAt: Date.now() - 65_000, mic: false }; notify(state); },
-    stopRecording: async () => { calls.push('stop'); state = { on: false, mic: false }; notify(state); return 'C:\\Users\\Aaron\\Videos\\Ghost\\Ghost recording.mp4'; },
+    stopRecording: async () => { calls.push('stop'); state = { on: false, mic: false }; notify(state); return { path: 'C:\\Users\\Aaron\\Videos\\Ghost\\Ghost recording.mp4', ...(unconverted() ? { unconverted: true } : {}) }; },
     setRecordingMic: on => { calls.push(`mic:${on}`); state = { ...state, mic: false, micError: on ? 'No microphone found' : undefined }; notify(state); },
     recording: () => state,
     latest: async kind => { calls.push(`latest:${kind}`); return kind === 'screenshot' ? { path: 'C:\\Users\\Aaron\\Pictures\\Ghost\\Screenshot 0.png', at: new Date(2026, 10, 3, 21, 42).getTime() } : null; },
   };
-  return { host, calls, onChange: (f: (s: RecordingState) => void) => { notify = f; } };
+  return { host, calls, flags, onChange: (f: (s: RecordingState) => void) => { notify = f; } };
 }
 
 /** A brain that, like Gemini on "please record my current screen", uses one of Ghost's tools through the relay, then answers. */
@@ -180,6 +182,16 @@ describe('screenshots and recording in the core', () => {
     await until(m => m.type === 'audio' && m.turnId === (saved as { turnId: string }).turnId); // spoken once it's stopped
     expect(cap.calls).toEqual(['start', 'mic:true', 'stop']);
     expect(inbox.filter(m => m.type === 'recording').length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("says so when a recording couldn't be converted, without naming any app", async () => {
+    const { core, cap, until } = await setup();
+    cap.flags.unconverted = true;
+    await core.userMessage('record my screen');
+    await until(m => m.type === 'recording' && m.on);
+    await core.userMessage('stop recording');
+    const saved = await until(m => m.type === 'turn_end' && /Recording saved/.test((m as { text: string }).text));
+    expect((saved as { text: string }).text).toMatch(/^Recording saved in Videos\\Ghost \(1 min \d+ s\)\. It couldn't be fully converted, so some apps or services may not accept it\.$/);
   });
 
   it("keeps a brain's reply quiet once it has started a recording (it would be in the video)", async () => {

@@ -67,7 +67,7 @@ const core = new GhostCore({
       return {
         screenshot: async () => ({ path: 'C:\\Users\\Aaron\\Pictures\\Ghost\\Screenshot 2026-11-03 21-42-09.png' }),
         startRecording: async () => { rec = { on: true, startedAt: Date.now(), mic: false }; core.recordingChanged(rec); },
-        stopRecording: async () => { rec = { on: false, mic: false }; core.recordingChanged(rec); return 'C:\\Users\\Aaron\\Videos\\Ghost\\Ghost recording 2026-11-03 22-00-46.mp4'; },
+        stopRecording: async () => { rec = { on: false, mic: false }; core.recordingChanged(rec); return { path: 'C:\\Users\\Aaron\\Videos\\Ghost\\Ghost recording 2026-11-03 22-00-46.mp4' }; },
         setRecordingMic: () => {},
         recording: () => rec,
         latest: async (kind: 'screenshot' | 'recording') => ({ path: kind === 'screenshot' ? 'C:\\Users\\Aaron\\Pictures\\Ghost\\Screenshot 2026-11-03 21-42-09.png' : 'C:\\Users\\Aaron\\Videos\\Ghost\\Ghost recording 2026-11-03 22-00-46.mp4', at: Date.now() - 3_600_000 }),

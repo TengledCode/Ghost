@@ -68,7 +68,7 @@ describe('a message with a pasted picture, in the core', () => {
       providers: { claude: provider }, tts: new TtsService(silent, silent), settings: () => mergeSettings({ provider: 'claude', fallbackProvider: null, voiceEnabled: false }),
       host: {
         openExternal: async () => {}, openPath: async () => '', trash: async () => {},
-        capture: { screenshot: async () => { shots.push('shot'); return { path: 'C:\\p\\s.png' }; }, startRecording: async () => {}, stopRecording: async () => '', setRecordingMic: () => {}, recording: () => ({ on: false, mic: false }), latest: async () => null },
+        capture: { screenshot: async () => { shots.push('shot'); return { path: 'C:\\p\\s.png' }; }, startRecording: async () => {}, stopRecording: async () => ({ path: '' }), setRecordingMic: () => {}, recording: () => ({ on: false, mic: false }), latest: async () => null },
       },
     });
     return { core, provider, dataDir, shots };

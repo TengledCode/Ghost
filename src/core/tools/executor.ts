@@ -11,6 +11,9 @@ import { startsCommand } from '../approvals/classify';
 import { findApp, parseStartApps, type StartApp } from './apps';
 import type { CaptureFile } from '../../shared/protocol';
 
+/** Said when a recording couldn't be converted to a standard MP4 (it still plays, but some apps refuse it). */
+export const UNCONVERTED = "It couldn't be fully converted, so some apps or services may not accept it.";
+
 /** Host hooks, injected so the executor can be tested without Electron. */
 export interface Host {
   openExternal(url: string): Promise<void>;
@@ -28,7 +31,7 @@ export interface RecordingState { on: boolean; startedAt?: number; mic: boolean;
 export interface CaptureHost {
   screenshot(): Promise<{ path: string }>;
   startRecording(): Promise<void>;
-  stopRecording(): Promise<string>; // the saved file
+  stopRecording(): Promise<{ path: string; unconverted?: boolean }>; // the saved file
   setRecordingMic(on: boolean): void;
   recording(): RecordingState;
   /** The newest screenshot (Ghost's or Windows') or recording, if any (`at`: when, in ms). */
@@ -175,9 +178,9 @@ export class ToolExecutor {
       case 'stop_recording': {
         if (!this.host.capture?.recording().on) return "Ghost isn't recording.";
         const started = this.host.capture.recording().startedAt ?? Date.now();
-        const path = await this.host.capture.stopRecording();
+        const { path, unconverted } = await this.host.capture.stopRecording();
         this.captured = { path, kind: 'recording' };
-        return `Saved the recording (${duration(Date.now() - started)}) to ${path}. Your reply shows it with Open and Show in folder buttons.`;
+        return `Saved the recording (${duration(Date.now() - started)}) to ${path}. Your reply shows it with Open and Show in folder buttons.${unconverted ? ` ${UNCONVERTED} Tell Aaron.` : ''}`;
       }
       case 'read_file': return this.readFile(String(a.path ?? ''));
       case 'list_folder': return this.listFolder(String(a.path ?? ''));
