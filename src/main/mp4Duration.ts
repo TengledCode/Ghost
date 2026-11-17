@@ -5,9 +5,9 @@ import { closeSync, fstatSync, openSync, readSync, writeSync } from 'node:fs';
 // Once a recording is saved, this adds up each track's fragments and writes the real duration into
 // the header's existing fields. Nothing changes size, so the rest of the file is untouched.
 
-interface Box { type: string; start: number; header: number; size: number }
+export interface Box { type: string; start: number; header: number; size: number }
 
-function* boxes(buf: Buffer, start: number, end: number): Generator<Box> {
+export function* boxes(buf: Buffer, start: number, end: number): Generator<Box> {
   let o = start;
   while (o + 8 <= end) {
     let size = buf.readUInt32BE(o);
@@ -19,11 +19,11 @@ function* boxes(buf: Buffer, start: number, end: number): Generator<Box> {
   }
 }
 
-const child = (buf: Buffer, parent: Box, type: string) => [...boxes(buf, parent.start + parent.header, parent.start + parent.size)].find(b => b.type === type);
-const children = (buf: Buffer, parent: Box, type: string) => [...boxes(buf, parent.start + parent.header, parent.start + parent.size)].filter(b => b.type === type);
+export const child = (buf: Buffer, parent: Box, type: string) => [...boxes(buf, parent.start + parent.header, parent.start + parent.size)].find(b => b.type === type);
+export const children = (buf: Buffer, parent: Box, type: string) => [...boxes(buf, parent.start + parent.header, parent.start + parent.size)].filter(b => b.type === type);
 
 /** Reads `length` bytes at `pos` of an open file. */
-function readAt(fd: number, pos: number, length: number): Buffer {
+export function readAt(fd: number, pos: number, length: number): Buffer {
   const buf = Buffer.alloc(length);
   let got = 0;
   while (got < length) {
@@ -35,7 +35,7 @@ function readAt(fd: number, pos: number, length: number): Buffer {
 }
 
 /** The top-level boxes of a file, reading only their headers (a recording can be gigabytes). */
-function topLevel(fd: number): Box[] {
+export function topLevel(fd: number): Box[] {
   const end = fstatSync(fd).size;
   const out: Box[] = [];
   let o = 0;
@@ -141,7 +141,7 @@ export function fixMp4Duration(path: string): number | null {
   }
 }
 
-function writeLength(buf: Buffer, at: number, wide: boolean, value: number): void {
+export function writeLength(buf: Buffer, at: number, wide: boolean, value: number): void {
   if (wide) buf.writeBigUInt64BE(BigInt(value), at);
   else buf.writeUInt32BE(Math.min(value, 0xffffffff), at);
 }

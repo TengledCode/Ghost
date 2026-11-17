@@ -3,6 +3,7 @@ import { createWriteStream, existsSync, mkdirSync, rmSync, statSync, type WriteS
 import { join } from 'node:path';
 import { log } from './log';
 import { fixMp4Duration } from './mp4Duration';
+import { flattenMp4 } from './mp4Flatten';
 
 // Screen recording: a hidden page records the monitor under the cursor (plus whatever the PC plays,
 // on Windows) with the browser's MediaRecorder, and streams it here chunk by chunk into a video file,
@@ -113,9 +114,13 @@ export class ScreenRecorder {
     const done = () => {
       // A recording that never got any frames is just an empty file: don't leave it behind.
       try { if (path && statSync(path).size === 0) rmSync(path, { force: true }); } catch { /* none */ }
-      // Give the MP4 its total length, so Windows shows it and Media Player can seek.
+      // Rewrite the browser's fragmented MP4 as a plain one, which every app opens (WhatsApp hangs on
+      // fragments). If that fails, at least give it its total length, so Media Player can seek.
       if (path.endsWith('.mp4') && existsSync(path)) {
-        try { log('recording length', fixMp4Duration(path)); } catch (e) { log('recording length not fixed', String(e)); }
+        try { log('recording rewritten as a plain MP4', flattenMp4(path)); } catch (e) {
+          log('recording not rewritten', String(e));
+          try { log('recording length', fixMp4Duration(path)); } catch (e2) { log('recording length not fixed', String(e2)); }
+        }
       }
       log('recording saved', path);
       for (const w of waiting) w(path);
