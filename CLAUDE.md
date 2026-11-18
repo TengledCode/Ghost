@@ -4,7 +4,7 @@ Read this first, then `README.md` and `docs/SETUP.md`. It holds how to work with
 
 ## Who and how
 
-- **Aaron** (he/him) builds and uses Ghost on a Windows PC. Repo: `C:\Users\AaronTengRyzen\Ghost`, branch `claude/bold-planck-b1n6bl`. He also works from his laptop, where Claude Code runs locally in its own Ghost folder and can run Ghost from source (`npm run dev`, or with `GHOST_PROVIDER=mock` for no subscription use).
+- **Aaron** (he/him) builds and uses Ghost on a Windows PC. Repo: `C:\Users\AaronTengRyzen\Ghost`, branch `claude/bold-planck-b1n6bl`. He also works from his laptop, where Claude Code runs locally in its own Ghost folder and can run Ghost from source (`npm run dev`, or with `GHOST_PROVIDER=mock` for no subscription use). The laptop's copy is in `C:\Users\aaron\Desktop\Playground\Ghost`. **Setting Ghost up on the laptop or any new machine:** read `docs/LAPTOP-ISSUES.md` first (Electron's missing download, `npm.cmd`, a mock that lingers, Claude failing silently after a folder move).
 - **Stay in sync with GitHub:** before starting, `git pull origin claude/bold-planck-b1n6bl`; when done, everything committed and pushed.
 - Explain things plainly and briefly. Ask Aaron before big or design-level changes. One change at a time, and say what changed.
 - **Test in the real app before pushing**, and say plainly what you could not test. A pushed change that broke Ghost on Windows once cost him a lot of time.
